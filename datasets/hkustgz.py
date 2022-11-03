@@ -45,11 +45,12 @@ def colorize_mask(mask):
     return new_mask
 
 
+#TODO Consider other methods to augment the training set. 
 def add_items(items, aug_items, routes, img_path, mask_path, mask_postfix, mode, maxSkip):
     """ 
     Add More items to the list of the augmented dataset
-
     For training set, uniform sample from the augmented extra dataset with an interval of maxSkip, and also return aug_items.
+    Augmented samples for training follow the joint propagation method described in "Improving Semantic Segmentation via Video Propagation and Label Relaxation."
     """
     for r in routes:
         r_items = [name.split('_leftImg8bit.png')[0] for name in os.listdir(
@@ -202,10 +203,19 @@ def make_dataset(quality, mode, maxSkip=0, fine_coarse_mult=6, cv_split=0):
 
 class HKUSTGZ(data.Dataset):
 
-    def __init__(self, quality, mode, maxSkip=0, cv_split=None):
+    def __init__(self, quality, mode, maxSkip=0, joint_transform=None, transform=None, target_transform=None, dump_images=False, cv_split=None, eval_mode=False, eval_scales=None, eval_flip=False):
         self.quality = quality
         self.mode = mode
         self.maxSkip = maxSkip
+        self.joint_transform = joint_transform
+        self.transform = transform
+        self.target_transform = target_transform
+        self.dump_images = dump_images
+        self.eval_mode = eval_mode
+        self.eval_flip = eval_flip
+        self.eval_scales = None
+        if eval_scales != None:
+            self.eval_scales = [float(scale) for scale in eval_scales.split(',')]
 
         if cv_split:
             self.cv_split = cv_split
@@ -219,6 +229,26 @@ class HKUSTGZ(data.Dataset):
             quality, mode, self.maxSkip, cv_split=self.cv_split)
         if len(self.imgs) == 0:
             raise RuntimeError('Found 0 images, please check the dataset.')
+        
+        self.mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    
+    # data augmentation for evaluation
+    def _eval_get_item(self, img, mask, scales, flip_bool):  
+        return_imgs = []
+        for flip in range(int(flip_bool) + 1):
+            imgs = []
+            if flip:
+                img = img.transpose(Image.FLIP_LEFT_RIGHT)
+            for scale in scales:
+                w, h = img.size
+                target_w, target_h = int(w * scale), int(h * scale)
+                resize_img = img.resize((target_w, target_h))
+                tensor_img = transforms.ToTensor()(resize_img)
+                final_tensor = transforms.Normalize(*self.mean_std)(tensor_img)  # params are tuple
+                imgs.append(tensor_img)
+            return_imgs.append(imgs)
+        return return_imgs, mask
+            
 
     def __getitem__(self, index):
         img_path, mask_path = self.imgs[index]
@@ -231,6 +261,40 @@ class HKUSTGZ(data.Dataset):
         mask = np.array(mask)  # Image.open gets image object, not array
         mask_copy = mask.copy()
         for k, v in id_to_trainid.items():
-            mask_copy[mask == k] = v
+            mask_copy[mask == k] = v  # get array of trainID
+            
+        if self.eval_mode:  # eval_mode: do img transform
+            return [transforms.ToTensor()(img)], self._eval_get_item(img, mask_copy,
+                                                                     self.eval_scales,
+                                                                     self.eval_flip), 
+            
+        mask = Image.fromarray(mask_copy.astype(np.uint8))
+        
+        # Image transformations
+        if self.joint_transform is not None:
+            img, mask = self.joint_transform(img, mask)
+        if self.transform is not None:
+            img = self.transform(img)
+        if self.target_transform is not None:
+            mask = self.target_transform(mask)
+            
+        # debug
+        if self.dump_images:
+            outdir = '../../dump_imgs_{}'.format(self.mode)
+            os.makedirs(outdir, exist_ok=True)
+            out_img_fn = os.path.join(outdir, img_name + '.png')
+            out_msk_fn = os.path.join(outdir, img_name + '_mask.png')
+            mask_img = colorize_mask(np.array(mask))
+            img.save(out_img_fn)
+            mask_img.save(out_msk_fn)
+        
+        return img, mask, img_name
+        
+    def __len__(self):
+        return len(self.imgs)
+
+
+            
+        
             
                 
