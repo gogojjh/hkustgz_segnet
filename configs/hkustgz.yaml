@@ -1,0 +1,22 @@
+training:
+    trial_name: 'server01_1105' # name of this trail in wandb
+    wandb_mode: 'disabled' # [disabled, online, offline]
+    test_mode: True # debug mode for training
+    apex: False # Nvidia Apex distributed data parallel
+
+    device: 'cuda'
+    lr: 0.002
+    max_epoch: 180
+
+    model_save_dir: '/save_data/ckpt'
+    model_load_dir: '/save_data/ckpt'
+    log_save_dir: '/save_data/logs'
+
+model:
+    arch: 'WideResNet38' # [ResNeXt50, WideResNet38]  framework: DeepLabV3+
+
+dataset:
+    name: hkustgz # [hkustgz, cityscapes, mapillary]
+    cv_split: 3 # cross-validation split id to use
+
+    coarse_boost_classes: None # use coarse annotations to boost fine data with specific classes
