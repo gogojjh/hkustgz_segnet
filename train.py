@@ -1,5 +1,6 @@
 """ 
 training code
+User-defined params are set in YAML file, and other params are automatically set in the args.
 """
 from ruamel.yaml import YAML
 import wandb
@@ -54,7 +55,6 @@ def main():
     """
 
     prep_experiment(configs, args)
-    
 
 
 if __name__ == 'main':

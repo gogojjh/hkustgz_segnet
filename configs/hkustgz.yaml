@@ -6,17 +6,32 @@ training:
     device: 'cuda'
     lr: 0.002
     max_epoch: 180
-    batch_size_per_gpu: 2
+    batch_size_per_gpu: 2 # batch size for a single gpu
+    val_batch_size_per_gpu: 1 # batch size for a single gpu for validation
 
     model_save_dir: '/save_data/ckpt'
     model_load_dir: '/save_data/ckpt'
     log_save_dir: '/save_data/log'
 
+transform:
+    joint_transform: True # 'Improving Semantic Segmentation via Video Propagation and Label Relaxation'
+        crop_size: 720 # training crop size
+        pre_size: None # resize image shorter edge to this before augmentation
+        scale_min: 0.5 # dynamically scale training images down to this size
+        scale_max: 2.0
+
+        color_aug: 0.25 # level of color augmentation
+        bilateral_blur: False # bilateral blur augmentation.
+        gaussian_blur: True
+
 model:
     arch: 'WideResNet38' # [ResNeXt50, WideResNet38]  framework: DeepLabV3+
 
 dataset:
-    name: hkustgz # [hkustgz, cityscapes, mapillary]
+    name: hkustgz # [hkustgz, cityscapes]
     cv_split: 3 # cross-validation split id to use
+    max_skip: 0 # max_skip is used in uniform sampling/HKUSTGZUniform dataset, otherwise it is HKUSTGZ
 
+    use_coarse_data: True # Use coarse-annotated data or not.
     coarse_boost_classes: None # use coarse annotations to boost fine data with specific classes
+    dump_aug_img: False # Dump augmentated images for sanity check.

@@ -1,7 +1,7 @@
 """ 
 HKUSTGZ Dataset Loader
-
 Label format follows CityScapes dataset
+Different datasets refer to different data augmentation/training data synthesis methods.
 """
 import logging
 import json
@@ -21,7 +21,7 @@ from config import cfg
 trainid_to_name = hkustgz_labels.trainId2name
 id_to_trainid = hkustgz_labels.label2trainid
 num_classes = 19
-ignore_label = 255
+ignore_label = 255  # Define the ignore labels for this dataset.
 root = cfg.DATASET.HKUSTGZ_DIR
 aug_root = cfg.DATASET.HKUSTGZ_AUG_DIR
 
@@ -45,7 +45,7 @@ def colorize_mask(mask):
     return new_mask
 
 
-#TODO Consider other methods to augment the training set. 
+# TODO Consider other methods to augment the training set.
 def add_items(items, aug_items, routes, img_path, mask_path, mask_postfix, mode, maxSkip):
     """ 
     Add More items to the list of the augmented dataset
@@ -201,6 +201,16 @@ def make_dataset(quality, mode, maxSkip=0, fine_coarse_mult=6, cv_split=0):
     return items, aug_items
 
 
+""" 
+Default HKUSTGZ dataset without uniform sampling.
+
+params:
+joint_transform: geometric image transformations
+transform: normalize transformation
+target_transform: 
+"""
+
+
 class HKUSTGZ(data.Dataset):
 
     def __init__(self, quality, mode, maxSkip=0, joint_transform=None, transform=None, target_transform=None, dump_images=False, cv_split=None, eval_mode=False, eval_scales=None, eval_flip=False):
@@ -215,7 +225,8 @@ class HKUSTGZ(data.Dataset):
         self.eval_flip = eval_flip
         self.eval_scales = None
         if eval_scales != None:
-            self.eval_scales = [float(scale) for scale in eval_scales.split(',')]
+            self.eval_scales = [float(scale)
+                                for scale in eval_scales.split(',')]
 
         if cv_split:
             self.cv_split = cv_split
@@ -229,11 +240,11 @@ class HKUSTGZ(data.Dataset):
             quality, mode, self.maxSkip, cv_split=self.cv_split)
         if len(self.imgs) == 0:
             raise RuntimeError('Found 0 images, please check the dataset.')
-        
+
         self.mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    
+
     # data augmentation for evaluation
-    def _eval_get_item(self, img, mask, scales, flip_bool):  
+    def _eval_get_item(self, img, mask, scales, flip_bool):
         return_imgs = []
         for flip in range(int(flip_bool) + 1):
             imgs = []
@@ -244,32 +255,32 @@ class HKUSTGZ(data.Dataset):
                 target_w, target_h = int(w * scale), int(h * scale)
                 resize_img = img.resize((target_w, target_h))
                 tensor_img = transforms.ToTensor()(resize_img)
-                final_tensor = transforms.Normalize(*self.mean_std)(tensor_img)  # params are tuple
+                final_tensor = transforms.Normalize(
+                    *self.mean_std)(tensor_img)  # params are tuple
                 imgs.append(tensor_img)
             return_imgs.append(imgs)
         return return_imgs, mask
-            
 
     def __getitem__(self, index):
         img_path, mask_path = self.imgs[index]
-        
+
         img, mask = Image.open(img_path).convert('RGB'), Image.open(mask_path)
         # basename: tail part of the path
         # splitext: split the file and extension names
         img_name = os.path.splitext(os.path.basename(img_path))[0]
-        
+
         mask = np.array(mask)  # Image.open gets image object, not array
         mask_copy = mask.copy()
         for k, v in id_to_trainid.items():
             mask_copy[mask == k] = v  # get array of trainID
-            
+
         if self.eval_mode:  # eval_mode: do img transform
             return [transforms.ToTensor()(img)], self._eval_get_item(img, mask_copy,
                                                                      self.eval_scales,
-                                                                     self.eval_flip), 
-            
+                                                                     self.eval_flip),
+
         mask = Image.fromarray(mask_copy.astype(np.uint8))
-        
+
         # Image transformations
         if self.joint_transform is not None:
             img, mask = self.joint_transform(img, mask)
@@ -277,7 +288,7 @@ class HKUSTGZ(data.Dataset):
             img = self.transform(img)
         if self.target_transform is not None:
             mask = self.target_transform(mask)
-            
+
         # debug
         if self.dump_images:
             outdir = '../../dump_imgs_{}'.format(self.mode)
@@ -287,14 +298,11 @@ class HKUSTGZ(data.Dataset):
             mask_img = colorize_mask(np.array(mask))
             img.save(out_img_fn)
             mask_img.save(out_msk_fn)
-        
+
         return img, mask, img_name
-        
+
     def __len__(self):
         return len(self.imgs)
 
 
-            
-        
-            
-                
+# TODO HKUSTGZUniform which uses video prediction model for dataset augmentation
