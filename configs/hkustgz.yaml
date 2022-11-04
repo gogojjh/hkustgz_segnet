@@ -1,5 +1,4 @@
 training:
-    trial_name: 'server01_1105' # name of this trail in wandb
     wandb_mode: 'disabled' # [disabled, online, offline]
     test_mode: True # debug mode for training
     apex: False # Nvidia Apex distributed data parallel
@@ -7,10 +6,11 @@ training:
     device: 'cuda'
     lr: 0.002
     max_epoch: 180
+    batch_size_per_gpu: 2
 
     model_save_dir: '/save_data/ckpt'
     model_load_dir: '/save_data/ckpt'
-    log_save_dir: '/save_data/logs'
+    log_save_dir: '/save_data/log'
 
 model:
     arch: 'WideResNet38' # [ResNeXt50, WideResNet38]  framework: DeepLabV3+

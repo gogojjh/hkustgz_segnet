@@ -10,6 +10,7 @@ import torch
 from apex import amp  # mixed-float training for speed-up
 
 from config import cfg
+from utils.misc import prep_experiment
 import datasets
 import loss
 import network
@@ -51,6 +52,9 @@ def main():
     """ 
     Load configs, set up wandb, dataloader, loss func, optimizer
     """
+
+    prep_experiment(configs, args)
+    
 
 
 if __name__ == 'main':
