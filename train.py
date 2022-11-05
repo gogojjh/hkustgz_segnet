@@ -42,7 +42,7 @@ if configs['training']['test_mode']:
     configs['training']['max_epoch'] = 2
 
 
-if configs['training']['apex']:
+if configs['training']['use_ddp']:
     torch.cuda.set_device(args.local_rank)
     print('Local rank: ', args.local_rank)
     # Initialize distributed communication.
@@ -55,6 +55,37 @@ def main():
     """
 
     prep_experiment(configs, args)
+    train_loader, val_loader, train_set = datasets.setup_loaders(configs, args)
+    criterion, criterion_val = loss.get_loss(configs, args)  # TODO
+    net = network.get_net(configs, args, criterion)
+    optim, scheduler = optimizer.get_optimizer(configs, args, net)
+
+    # Wrap network into ddp.
+    if configs['training']['use_ddp']:
+        net = network.wrap_net_in_ddp(net, args)
+    if configs['training']['snapshot']:
+        optimizer.load_weights(net, optim, configs['training']['snapshot'],
+                               configs['training']['restore_optimizer'])
+
+    torch.cuda.empty_cache()
+
+    # Main Loop
+    for epoch in range(configs['training']['start_epoch'], configs['training']['max_epoch']):
+        # Update epoch cfg
+        # Prepare for updating the configs at the beginning of each epoch.
+        cfg.immutable(False)
+        cfg.EPOCH = epoch  # Update
+        cfg.immutable(True)  # Set the configs to be immutable.
+
+        scheduler.step()  # Update lr.
+
+    def train(train_loader, net, optim, curr_epoch):
+        """ 
+        Runs the training loop per epoch.
+        """
+        net.train()
+        
+        
 
 
 if __name__ == 'main':

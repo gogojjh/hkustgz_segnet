@@ -2,6 +2,7 @@
 Dataset setup and loaders
 Construct different dataset with different data augmentation methods according to user params.
 """
+
 from datasets import hkustgz, cityscapes
 
 import torch
@@ -79,21 +80,6 @@ def setup_loaders(configs, args):
     else:
         raise Exception('Dataset {} is not supported.'.format(
             configs['dataset']['name']))
-    # num of gpu obtained from torch.cuda.device_count()
-    args.train_batch_size = configs['training']['batch_size_per_gpu'] * args.ngpu
-    if configs['training']['val_batch_size_per_gpu'] > 0:
-        args.val_batch_size = configs['training']['val_batch_size_per_gpu'] * args.ngpu
-    else:
-        args.val_batch_size = configs['training']['batch_size_per_gpu'] * args.ngpu
-
-    # Readjust batch size to mini-batch size for apex
-    if configs['training']['apex']:
-        args.train_batch_size = configs['training']['batch_size_per_gpu']
-        args.val_batch_size = configs['training']['val_batch_size_per_gpu']
-
-    args.num_workers = 4 * args.ngpu
-    if configs['training']['test_mode']:
-        args.num_workers = 1
 
     # Set up training data transform.
     train_joint_transform, train_input_transform, target_train_transform, val_input_transform, target_transform = setup_transform(
@@ -140,24 +126,24 @@ def setup_loaders(configs, args):
             configs['dataset']['name']))
 
     # Set dataloader
-    if configs['training']['apex'] and args.ngpu > 1:
-        # Use modifed DistributedSampler for apex.
-        from datasets.sampler import DistributedSampler
-        train_sampler = DistributedSampler(
-            train_set, pad=True, permutation=True, consecutive_sample=False)
-        val_sampler = DistributedSampler(
-            val_set, pad=False, permutation=False, consecutive_sample=False)
-    elif args.ngpu == 1:
-        train_sampler = None
-        val_sampler = None
-    else:
+    if args.ngpu > 1:
         # Use default DistributedSampler if apex is not used.
         train_sampler = torch.utils.data.distributed.DistributedSampler(
             train_set)
         val_sampler = torch.utils.data.distributed.DistributedSampler(val_set)
-    # If apex is not used, then shuffle.
-    train_loader = DataLoader(train_set, batch_size=args.train_batch_size,
+    elif args.ngpu == 1:
+        train_sampler = None
+        val_sampler = None
+    args.num_workers = 4 * args.ngpu
+    # DDP: shuffle = False, and set_epoch() in each epoch.
+    # drop_last: To deal with batch normalization.
+    train_loader = DataLoader(train_set, batch_size=configs['training']['batch_size'],
                               num_workers=args.num_workers, shuffle=(
                                   train_sampler is None),
                               drop_last=True, sampler=train_sampler
                               )
+    val_loader = DataLoader(val_set, batch_size=configs['training']['val_batch_size'],
+                            num_workers=args.num_workers // 2, shuffle=False,
+                            drop_last=False, sampler=val_sampler)
+    
+    return train_loader, val_loader, train_set

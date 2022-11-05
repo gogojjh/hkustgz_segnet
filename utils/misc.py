@@ -73,3 +73,24 @@ def prep_experiment(configs, args):
         save_log('log', args.exp_path, args.date_str, rank=args.local_rank)
         open(os.path.join(args.exp_path, args.date_str + '.txt'),
              'w').write(str(args) + '\n\n')
+
+
+class AverageMeter(object):
+    """ 
+    To calculate the statistics of training losses per epoch.
+    """
+    def __init__(self):
+        self.reset()
+        
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+        
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+    

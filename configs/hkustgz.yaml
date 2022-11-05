@@ -1,16 +1,29 @@
 training:
     wandb_mode: 'disabled' # [disabled, online, offline]
     test_mode: True # debug mode for training
+    use_ddp: False # Use DistributedDataParallel.
     apex: False # Nvidia Apex distributed data parallel
 
     device: 'cuda'
-    lr: 0.002
+    start_epoch: 0
     max_epoch: 180
-    batch_size_per_gpu: 2 # batch size for a single gpu
-    val_batch_size_per_gpu: 1 # batch size for a single gpu for validation
+    batch_size: 2 # batch size for a single gpu
+    val_batch_size: 1 # batch size for a single gpu for validation
+
+    optimizer: 
+        name: 'adam' # [adam, sgd]
+        lr: 0.002
+        weight_decay: 0.0001
+        momentum: 0.9
+        amsgrad: False
+
+    scheduler:
+        name: 'poly'
+        poly_exp: 1.0 # polynomial LR exponent
 
     model_save_dir: '/save_data/ckpt'
-    model_load_dir: '/save_data/ckpt'
+    snapshot: None # directory of pre-trained model
+    restore_optimizer: False # Restore the saved optimizer params if snapshot is True.
     log_save_dir: '/save_data/log'
 
 transform:
@@ -25,7 +38,7 @@ transform:
         gaussian_blur: True
 
 model:
-    arch: 'WideResNet38' # [ResNeXt50, WideResNet38]  framework: DeepLabV3+
+    arch: 'network.deepv3.DeepWV3Plus' # [DeepWV3Plus, DeepSRNX50V3PlusD (backbone: ResNeXt50)], deepv3: framework  
 
 dataset:
     name: hkustgz # [hkustgz, cityscapes]

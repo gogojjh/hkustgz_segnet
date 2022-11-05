@@ -1,4 +1,6 @@
 """
+Define a dict type of which the values can be accessed by keys and 
+immutability is given to each attribute.
 # Code adapted from:
 # https://github.com/facebookresearch/Detectron/blob/master/detectron/utils/collections.py
 

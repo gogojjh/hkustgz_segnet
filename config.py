@@ -4,7 +4,6 @@
 
 Get config params from args/yaml and pass them to the corresponding variables
 """
-import torch
 
 from utils.attr_dict import AttrDict
 
