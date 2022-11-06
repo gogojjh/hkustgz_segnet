@@ -11,7 +11,7 @@ import torch
 from apex import amp  # mixed-float training for speed-up
 
 from config import cfg
-from utils.misc import prep_experiment
+from utils.misc import prep_experiment, AverageMeter
 import datasets
 import loss
 import network
@@ -84,8 +84,20 @@ def main():
         Runs the training loop per epoch.
         """
         net.train()
-        
-        
+
+        train_main_loss = AverageMeter()
+        curr_iter = curr_epoch * len(train_loader)
+
+        for i, data in enumerate(train_loader):
+            inputs, gts, img_names = data
+
+            batch_pixel_size = inputs.size(0) * inputs.size(2) * inputs.size(3)
+
+            inputs, gts = inputs.cuda(), gts.cuda()
+
+            optim.zero_grad()
+
+            main_loss = net(inputs, gts=gts)
 
 
 if __name__ == 'main':
