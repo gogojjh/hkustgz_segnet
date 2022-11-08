@@ -14,7 +14,8 @@ def get_model(network, num_classes, criterion):
     """
     module = network[:network.rfind('.')]  # Get network framework (deepv3).
     model = network[network.rfind('.') + 1:]  # Get model type.
-    mod = importlib.import_module(module)  # Import user-defined module.
+    # Import user-defined module. (e.g., deepv3.py)
+    mod = importlib.import_module(module)
     net_func = getattr(mod, model)  # Get network attribute of this module.
     # Construct a net object.
     net = net_func(num_classes=num_classes, criterion=criterion)
