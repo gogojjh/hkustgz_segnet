@@ -145,5 +145,5 @@ def setup_loaders(configs, args):
     val_loader = DataLoader(val_set, batch_size=configs['training']['val_batch_size'],
                             num_workers=args.num_workers // 2, shuffle=False,
                             drop_last=False, sampler=val_sampler)
-    
+
     return train_loader, val_loader, train_set

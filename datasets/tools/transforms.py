@@ -108,7 +108,7 @@ class Compose(object):
     def __init__(self, transforms):
         self.transforms = transforms
 
-    def __call__(self, inputs):
+    def __call__(self, inputs): # overwrite '()'
         for t in self.transforms:
             inputs = t(inputs)
 

@@ -1,21 +1,43 @@
 # HKUSTGZ_SegNet
 
-This repo is to conduct semi-supervised semantic segmentation task for Semantic HKUSTGZ Dataset.
+This repo is to conduct semi-supervised semantic segmentation task for Semantic HKUSTGZ Dataset. The followings are usages of different folders:
 
-## Dataset
+## datasets
 
 -   Defines class definitions of different datasets (e.g., HKUSTGZ, Cityscapes).
 -   Contains utilizations of different pre-processing techniques which are put into the transforms folder.(e.g., data augmentation, uniform sampling).
+-   Dataloaders for different datasets are set in the [loader](datasets.loader). They define the data source, data format to be loaded, as well as the data augmentations for the loaded images.
 
-## Network
+## models
 
--   Contains different semantic segmentation backbones for testing.
+-   The list of available segmentation models are defined in the loader folder, e.g., [model_manager.py](models/model_manager.py).
 
-## Loss
+## Losses
 
--   List of losses are stored in SEG_LOSS_DICT in [loss_manager.py](loss/loss_manager.py)
+-   The list of losses is stored in `SEG_LOSS_DICT` in [loss_manager.py](loss/loss_manager.py).
+
+## Methods
+
+Available methods: [sdc]
 
 ## Runtime Acceleration
 
 -   DDP
 -   APEX (_TODO_)
+
+## Dataset Preparation
+
+```
+$DATA_ROOT
+├── cityscapes
+│   ├── coarse
+│   │   ├── image
+│   │   ├── instance
+│   │   └── label
+│   ├── train
+│   │   ├── image
+│   │   └── label
+│   ├── val
+│   │   ├── image
+│   │   └── label
+```

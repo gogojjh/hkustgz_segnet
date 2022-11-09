@@ -12,6 +12,8 @@ import torch.backends.cudnn as cudnn
 from utils.tools.average_meter import AverageMeter
 from utils.vis.seg_visualizer import SegVisualizer
 from loss.loss_manager import LossManager
+from segmentator.tools.module_runner import ModuleRunner
+from models.model_manager import ModelManager
 
 
 class SDCTrainer(object):
@@ -26,6 +28,5 @@ class SDCTrainer(object):
         self.val_losses = AverageMeter()
         self.seg_visualizer = SegVisualizer(configer)
         self.loss_manager = LossManager(configer)
-        
-        
-        
+        self.module_runner = ModuleRunner(configer)
+        self.model_manager = ModelManager(configer)
