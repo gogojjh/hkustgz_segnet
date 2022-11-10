@@ -78,6 +78,11 @@ class ModuleRunner(object):
         return DataParallelModel(net, gather_=self.configer.get('network', 'gathered'))
 
     def load_net(self, net):
+        """ 
+        - Load network to GPU or distributed GPUs.
+        - Load saved checkpoint if it exists.
+        -  
+        """
         net = self.to_device(net)
         net = self._make_parallel(net)
 
@@ -249,7 +254,7 @@ class ModuleRunner(object):
                 m.eval()
 
             if syncbn:
-                from lib.extensions import BatchNorm2d, BatchNorm1d
+                from extensions import BatchNorm2d, BatchNorm1d
                 if isinstance(m, BatchNorm2d) or isinstance(m, BatchNorm1d):
                     m.eval()
 

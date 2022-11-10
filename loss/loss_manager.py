@@ -29,7 +29,7 @@ class LossManager(object):
             Log.info('Use distributed loss.')
             return loss
 
-        if self.configer.get('network', 'loss_balance') and len(self.configer.get('gpu')) > 1: # use DP
+        if self.configer.get('network', 'loss_balance') and len(self.configer.get('gpu')) > 1:  # use DP
             Log.info('use DataParallelCriterion loss')
             from extensions.parallel.data_parallel import DataParallelCriterion
             loss = DataParallelCriterion(loss)

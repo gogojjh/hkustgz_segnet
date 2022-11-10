@@ -20,12 +20,12 @@ SEG_MODEL_DICT = {
 }
 
 
-
 class ModelManager(object):
     """ 
     Check availability of the model defined in the configs, 
     and return the model if it exists.
     """
+
     def __init__(self, configer):
         self.configer = configer
 

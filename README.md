@@ -20,9 +20,18 @@ This repo is to conduct semi-supervised semantic segmentation task for Semantic 
 
 Available methods: [sdc]
 
+### Important Paramas of Methods
+
+`contrast`: Use contrastive learning.
+`use_proto`: Use prototype networks.
+
+## Evaluators
+
+-   Evaluators are defined in [evaluators](segmentor/tools/evaluator/__init__.py).
+
 ## Runtime Acceleration
 
--   DDP
+-   DataParallel / DistributedDataParallel
 -   APEX (_TODO_)
 
 ## Dataset Preparation
