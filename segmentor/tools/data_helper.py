@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import os
 
-from __future__ import annotations
-
 import torch
 from typing import Any, List
 
@@ -95,10 +93,13 @@ class DataHelper:
     def _prepare_sequence(self, seq, force_list=False):
         # ':': define variable type
         #  '->': define type of returned value
-
+        """ 
+        seq: data dict of each img/seq, seq[0]: img 
+        Get image data from each image's data dict and load this image to GPU.
+        """
         def split_and_cuda(lst: 'List[List[Tensor, len=N]]', device_ids) -> 'List[List[Tensor], len=N]':
             results = []
-            for *items, d in zip(*lst, device_ids):
+            for *items, d in zip(*lst, device_ids):  # items: loaded data for each img
                 if len(items) == 1 and not force_list:
                     results.append(items[0].unsqueeze(0).cuda(d))
                 else:
@@ -121,7 +122,9 @@ class DataHelper:
             return self.trainer.module_runner.to_device(*seq, force_list=force_list)
 
     def prepare_data(self, data_dict, want_reverse=False):
-
+        """ 
+        Get image data from the data dict sent by dataloader, and send them to gpu
+        """
         input_keys, target_keys = self.input_keys(), self.target_keys()
 
         if self.conditions.use_ground_truth:
@@ -130,6 +133,7 @@ class DataHelper:
         Log.info_once('Input keys: {}'.format(input_keys))
         Log.info_once('Target keys: {}'.format(target_keys))
 
+        # inputs: data for each img/seq
         inputs = [data_dict[k] for k in input_keys]
         batch_size = len(inputs[0])
         targets = [data_dict[k] for k in target_keys]

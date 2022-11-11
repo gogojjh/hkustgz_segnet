@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#-*- coding:utf-8 -*-
+# -*- coding:utf-8 -*-
 # Author: Donny You (youansheng@gmail.com)
 # Utils to store the average and current value.
 
@@ -10,7 +10,10 @@ from __future__ import print_function
 
 
 class AverageMeter(object):
-    """ Computes ans stores the average and current value"""
+    """ 
+    Computes ans stores the average and current value
+    """
+
     def __init__(self):
         self.reset()
 
