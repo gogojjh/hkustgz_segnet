@@ -8,6 +8,7 @@ import time
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
+from tqdm import tqdm
 
 from utils.tools.logger import Logger as Log
 from utils.tools.average_meter import AverageMeter
@@ -134,11 +135,56 @@ class SDCTrainer(object):
         self.seg_net.eval()
         self.pixel_loss.eval() 
         start_time = time.time()
-        replicas = self.evaluator.prepare_validaton()
+        replicas = self.evaluator.prepare_validaton() # for DP 
         
-        
-        
-        
+        data_loader = self.val_loader if data_loader is None else data_loader
+        for j, data_dict in enumerate(data_loader):
+            if j % 10 == 0:
+                Log.info('{} images processed \n.'.format(j))
+            # Get image data from the data dict loaded by dataloader, and send them to gpu
+            (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
+
+            # ************* Start Validation ************* # 
+            with torch.no_grad():
+                # diverse_size: send individual input to the net instead of in batch size
+                if self.data_helper.conditions.diverse_size:
+                    if is_distributed():
+                        outputs = [self.seg_net(inputs[i]) for i in range(len(inputs))]
+                    else:
+                        outputs = nn.parallel.parallel_apply(replicas[:len(inputs)], inputs)
+                    
+                    for i in range(len(outputs)):
+                        loss = self.pixel_loss(outputs[i], targets[i]).unsqueeze(0)
+                        self.val_losses.update(loss.item(), 1)
+                        outputs_i = outputs[i]['seg'] # todo
+                        if isinstance(outputs_i, torch.Tensor):
+                            outputs_i = [outputs_i]
+                        self.evaluator.update_score(outputs, data_dict['meta'])
+                
+                else:
+                    outputs = self.seg_net(*inputs, is_eval=True)
+                    
+                    try: 
+                        loss = self.pixel_loss(outputs, targets)
+                    except AssertionError as e:
+                        print('Output Length: {}, Target Length:{}'.format(len(outputs), len(targets)))
+                        
+                    if not is_distributed():
+                        outputs = self.module_runner.gather(outputs)
+                    self.val_losses.update(loss.item(), batch_size)
+                    
+                    if isinstance(outputs, dict):
+                        self.evaluator.update_score(outputs['seg'], data_dict['meta'])
+                    else:
+                        self.evaluator.update_score(outputs, data_dict['meta'])
+            
+            self.evaluator.update_performance()
+            
+            self.configer.update()
+                    
+                        
+                    
+                    
         
         
         
