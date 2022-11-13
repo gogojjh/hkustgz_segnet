@@ -15,9 +15,9 @@ from __future__ import print_function
 
 import pdb
 import numpy as np
-import lib.utils.distributed as dist
+import utils.distributed as dist
 
-from lib.utils.tools.logger import Logger as Log
+from utils.tools.logger import Logger as Log
 
 class SimpleCounterRunningScore(object):
 

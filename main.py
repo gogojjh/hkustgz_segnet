@@ -118,24 +118,26 @@ if __name__ == "__main__":
     # Use benchmark mode for speed-up
     cudnn.enabled = True
     cudnn.benchmark = args.cudnn
-    
+
     # ***********  Set up configer and logger.  **********
-    # Update absolute data dir 
+    # Update absolute data dir
     configer = Configer(args_parser=args)
     data_dir = configer.get('data', 'data_dir')
     if isinstance(data_dir, str):
         data_dir = [data_dir]
     abs_data_dir = [os.path.expanduser(x) for x in data_dir]
     configer.update(['data', 'data_dir'], abs_data_dir)
-    
+
     # Get path of this script and add it to the configer's dict.
-    project_dir = os.path.dirname(os.path.realpath(__file__)) # Get file path of this script.
+    # Get file path of this script.
+    project_dir = os.path.dirname(os.path.realpath(__file__))
     configer.add(['project_dir'], project_dir)
 
     # Set log file name and update it in the configer's dict.
     if configer.get('logging,' 'log_to_file'):
         log_file = configer.get('logging', 'log_to_file')
-        new_log_file = '{}_{}'.format(log_file, time.strftime("%Y-%m-%d_%X", time.localtime()))
+        new_log_file = '{}_{}'.format(
+            log_file, time.strftime("%Y-%m-%d_%X", time.localtime()))
         configer.update(['logging', 'log_file'], new_log_file)
     else:
         configer.update(['logging', 'logfile_level'], None)
@@ -145,13 +147,28 @@ if __name__ == "__main__":
              log_file=configer.get('logging', 'log_file'),
              log_format=configer.get('logging', 'log_format'),
              rewrite=configer.get('logging', 'rewrite'))
-    
+
     Log.info('Batch Size: {}'.format(configer.get('train', 'batch_size')))
-    
-    # ***********  Set up method and model.  **********    
+
+    # ***********  Set up method and model.  **********
     model = None
     # Choose the corresponding trainer based on the method set in the config.
     if configer.get('method') == 'sdcnet':
         if configer.get('phase') == 'train':
-            from trainer.sdc_trainer import SDCTrainer
+            from segmentor.trainer.trainer import Trainer
+            model = Trainer(configer)
+        # todo: tester
+        # elif configer.get('phase') == 'test':
+    else:
+        Log.error('Method: {} is not valid.'.format(configer.get('task')))
+        exit(1)
+    
+    if configer.get('phase') == 'train':
+        model.train()
+    # todo: test()
+    # elif configer.get('phase').startwith('test') and configer.get('network', 'resume') is not None:
+        
+    else: 
+        Log.error('Phase: {} is not valid.'.format(configer.get('phase')))
+        exit(1)
     

@@ -1,18 +1,18 @@
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-## Created by: JingyiXie
-## Microsoft Research
-## yuyua@microsoft.com
-## Copyright (c) 2019
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Created by: JingyiXie
+# Microsoft Research
+# yuyua@microsoft.com
+# Copyright (c) 2019
 ##
-## This source code is licensed under the MIT-style license found in the
-## LICENSE file in the root directory of this source tree 
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# This source code is licensed under the MIT-style license found in the
+# LICENSE file in the root directory of this source tree
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 import os
 import torch
 import numpy as np
 import torch.nn.functional as F
-from lib.utils.tools.logger import Logger as Log
+from utils.tools.logger import Logger as Log
 
 ori_scales = {
     4: 1,
@@ -72,19 +72,20 @@ label_to_vector_mapping = {
         [-1, -1], [-1, 1], [1, 1], [1, -1]
     ] if not DTOffsetConfig.c4_align_axis else [
         [0, -1], [-1, 0], [0, 1], [1, 0]
-    ],    
+    ],
     8: [
         [0, -1], [-1, -1], [-1, 0], [-1, 1],
         [0, 1], [1, 1], [1, 0], [1, -1]
     ],
     16: [
-        [0, -2], [-1, -2], [-2, -2], [-2, -1], 
+        [0, -2], [-1, -2], [-2, -2], [-2, -1],
         [-2, 0], [-2, 1], [-2, 2], [-1, 2],
         [0, 2], [1, 2], [2, 2], [2, 1],
         [2, 0], [2, -1], [2, -2], [1, -2]
     ],
     32: [
-        [0, -4], [-1, -4], [-2, -4], [-3, -4], [-4, -4], [-4, -3], [-4, -2], [-4, -1],
+        [0, -4], [-1, -4], [-2, -4], [-3, -
+                                      4], [-4, -4], [-4, -3], [-4, -2], [-4, -1],
         [-4, 0], [-4, 1], [-4, 2], [-4, 3], [-4, 4], [-3, 4], [-2, 4], [-1, 4],
         [0, 4], [1, 4], [2, 4], [3, 4], [4, 4], [4, 3], [4, 2], [4, 1],
         [4, 0], [4, -1], [4, -2], [4, -3], [4, -4], [3, -4], [2, -4], [1, -4],
@@ -129,8 +130,10 @@ class Sobel:
         if ksize in cls._caches:
             return cls._caches[ksize]
 
-        sobel_x, sobel_y = (cls._generate_sobel_kernel((ksize, ksize), i) for i in (0, 1))
-        sobel_ker = torch.cat([sobel_y, sobel_x], dim=0).view(2, 1, ksize, ksize)
+        sobel_x, sobel_y = (cls._generate_sobel_kernel(
+            (ksize, ksize), i) for i in (0, 1))
+        sobel_ker = torch.cat([sobel_y, sobel_x], dim=0).view(
+            2, 1, ksize, ksize)
         cls._caches[ksize] = sobel_ker
         return sobel_ker
 
@@ -181,19 +184,20 @@ class DTOffsetHelper:
         depths = []
         _, h, w = bmap.size()
         for bmap_i in (1 - bmap).cpu().numpy():
-            depth_i = distance_transform_edt(bmap_i)            
+            depth_i = distance_transform_edt(bmap_i)
             depths.append(torch.from_numpy(depth_i).view(1, 1, h, w))
 
         depths = torch.cat(depths, dim=0).to(bmap.device)
-        offsets = F.conv2d(depths, Sobel.kernel().to(bmap.device), padding=Sobel.ksize // 2)
+        offsets = F.conv2d(depths, Sobel.kernel().to(
+            bmap.device), padding=Sobel.ksize // 2)
         angles = torch.atan2(offsets[:, 0], offsets[:, 1]) / np.pi * 180
         offset = DTOffsetHelper.angle_to_offset(angles, return_tensor=True)
         offset[(bmap == 1).unsqueeze(-1).repeat(1, 1, 1, 2)] = 0
         return offset
 
     @staticmethod
-    def distance_to_energy_label(distance_map, 
-                                 seg_label_map, 
+    def distance_to_energy_label(distance_map,
+                                 seg_label_map,
                                  return_tensor=False):
         if return_tensor:
             assert isinstance(distance_map, torch.Tensor)
@@ -203,7 +207,8 @@ class DTOffsetHelper:
             assert isinstance(seg_label_map, np.ndarray)
 
         if return_tensor:
-            energy_label_map = torch.zeros_like(seg_label_map).long().to(distance_map.device)
+            energy_label_map = torch.zeros_like(
+                seg_label_map).long().to(distance_map.device)
         else:
             energy_label_map = np.zeros(seg_label_map.shape, dtype=np.int)
 
@@ -213,7 +218,7 @@ class DTOffsetHelper:
         for i in range(DTOffsetConfig.num_energy_levels - 1):
             energy_label_map[keep_mask & (
                 distance_map >= i * energy_level_step) & (distance_map < (i + 1) * energy_level_step)] = i
-        
+
         energy_label_map[keep_mask & (
             distance_map >= DTOffsetConfig.max_distance)] = DTOffsetConfig.num_energy_levels - 1
 
@@ -227,7 +232,8 @@ class DTOffsetHelper:
 
         n, _, h, w = dir_map.shape
         offsets = DTOffsetHelper.label_to_vector(
-            torch.arange(DTOffsetConfig.num_classes).view(DTOffsetConfig.num_classes, 1, 1).cuda()
+            torch.arange(DTOffsetConfig.num_classes).view(
+                DTOffsetConfig.num_classes, 1, 1).cuda()
         ).float().unsqueeze(0)  # 1 x 8 x 2 x 1 x 1
         offsets_h = offsets[:, :, 0].repeat(n, 1, h, w)  # n x 8 x h x w
         offsets_w = offsets[:, :, 1].repeat(n, 1, h, w)  # n x 8 x h x w
@@ -247,7 +253,7 @@ class DTOffsetHelper:
         return new_angle_map
 
     @staticmethod
-    def label_to_vector(labelmap, 
+    def label_to_vector(labelmap,
                         num_classes=DTOffsetConfig.num_classes):
 
         assert isinstance(labelmap, torch.Tensor)
@@ -264,8 +270,8 @@ class DTOffsetHelper:
         return torch.stack([offset_h, offset_w], dim=-1).permute(0, 3, 1, 2).to(labelmap.device)
 
     @staticmethod
-    def distance_to_mask_label(distance_map, 
-                               seg_label_map, 
+    def distance_to_mask_label(distance_map,
+                               seg_label_map,
                                return_tensor=False):
 
         if return_tensor:
@@ -276,11 +282,13 @@ class DTOffsetHelper:
             assert isinstance(seg_label_map, np.ndarray)
 
         if return_tensor:
-            mask_label_map = torch.zeros_like(seg_label_map).long().to(distance_map.device)
+            mask_label_map = torch.zeros_like(
+                seg_label_map).long().to(distance_map.device)
         else:
             mask_label_map = np.zeros(seg_label_map.shape, dtype=np.int)
 
-        keep_mask = (distance_map <= DTOffsetConfig.max_distance) & (distance_map >= DTOffsetConfig.min_distance)
+        keep_mask = (distance_map <= DTOffsetConfig.max_distance) & (
+            distance_map >= DTOffsetConfig.min_distance)
         mask_label_map[keep_mask] = 1
         mask_label_map[seg_label_map == -1] = -1
 
@@ -312,8 +320,8 @@ class DTOffsetHelper:
         return new_angle_map, angle_index_map
 
     @staticmethod
-    def align_angle(angle_map, 
-                    num_classes=DTOffsetConfig.num_classes, 
+    def align_angle(angle_map,
+                    num_classes=DTOffsetConfig.num_classes,
                     return_tensor=False):
 
         if num_classes == 4 and not DTOffsetConfig.c4_align_axis:
@@ -326,8 +334,10 @@ class DTOffsetHelper:
 
         step = 360 / num_classes
         if return_tensor:
-            new_angle_map = torch.zeros(angle_map.shape).float().to(angle_map.device)
-            angle_index_map = torch.zeros(angle_map.shape).long().to(angle_map.device)
+            new_angle_map = torch.zeros(
+                angle_map.shape).float().to(angle_map.device)
+            angle_index_map = torch.zeros(
+                angle_map.shape).long().to(angle_map.device)
         else:
             new_angle_map = np.zeros(angle_map.shape, dtype=np.float)
             angle_index_map = np.zeros(angle_map.shape, dtype=np.int)
@@ -337,22 +347,23 @@ class DTOffsetHelper:
 
         for i in range(1, num_classes):
             middle = -180 + step * i
-            mask = (angle_map > (middle - step / 2)) & (angle_map <= (middle + step / 2))
+            mask = (angle_map > (middle - step / 2)
+                    ) & (angle_map <= (middle + step / 2))
             new_angle_map[mask] = middle
             angle_index_map[mask] = i
 
         return new_angle_map, angle_index_map
 
-
     @staticmethod
-    def angle_to_offset(angle_map, 
-                        distance_map=None, 
-                        num_classes=DTOffsetConfig.num_classes, 
-                        return_tensor=False, 
+    def angle_to_offset(angle_map,
+                        distance_map=None,
+                        num_classes=DTOffsetConfig.num_classes,
+                        return_tensor=False,
                         use_scale=False):
 
         if return_tensor:
-            assert isinstance(distance_map, torch.Tensor) or distance_map is None
+            assert isinstance(
+                distance_map, torch.Tensor) or distance_map is None
             assert isinstance(angle_map, torch.Tensor)
         else:
             assert isinstance(distance_map, np.ndarray) or distance_map is None
@@ -373,7 +384,8 @@ class DTOffsetHelper:
                 (distance_map < DTOffsetConfig.min_distance)
             )
         else:
-            no_offset_mask = torch.zeros(angle_map.shape, dtype=torch.uint8).to(angle_map.device)            
+            no_offset_mask = torch.zeros(
+                angle_map.shape, dtype=torch.uint8).to(angle_map.device)
 
         if return_tensor:
             offset_h = torch.zeros(angle_map.shape).long().to(angle_map.device)
@@ -392,12 +404,11 @@ class DTOffsetHelper:
         else:
             return np.stack([offset_h, offset_w], axis=-1)
 
-
     @staticmethod
-    def _vis_offset(_offset, 
-                    image_name=None, 
-                    image=None, 
-                    color=(0, 0, 255), 
+    def _vis_offset(_offset,
+                    image_name=None,
+                    image=None,
+                    color=(0, 0, 255),
                     only_points=False):
         import cv2
         import random
@@ -421,11 +432,11 @@ class DTOffsetHelper:
                         coord_map[i, j][::-1]), pt2=tuple(offset[i, j][::-1]), color=color, thickness=1)
         if image_name is None:
             image_name = '{}.png'.format(random.random())
-        cv2.imwrite('/msravcshare/v-jinxi/vis/{}.png'.format(image_name), image)         
+        cv2.imwrite('/msravcshare/v-jinxi/vis/{}.png'.format(image_name), image)
 
     @staticmethod
-    def angle_to_vector(angle_map, 
-                        num_classes=DTOffsetConfig.num_classes, 
+    def angle_to_vector(angle_map,
+                        num_classes=DTOffsetConfig.num_classes,
                         return_tensor=False):
 
         if return_tensor:
@@ -435,51 +446,57 @@ class DTOffsetHelper:
 
         if return_tensor:
             lib = torch
-            vector_map = torch.zeros((*angle_map.shape, 2), dtype=torch.float).to(angle_map.device)
-            deg2rad = lambda x: np.pi / 180.0 * x
+            vector_map = torch.zeros(
+                (*angle_map.shape, 2), dtype=torch.float).to(angle_map.device)
+
+            def deg2rad(x): return np.pi / 180.0 * x
         else:
             lib = np
             vector_map = np.zeros((*angle_map.shape, 2), dtype=np.float)
             deg2rad = np.deg2rad
 
         if num_classes is not None:
-            angle_map, _ = DTOffsetHelper.align_angle(angle_map, num_classes=num_classes, return_tensor=return_tensor)
+            angle_map, _ = DTOffsetHelper.align_angle(
+                angle_map, num_classes=num_classes, return_tensor=return_tensor)
 
         angle_map = deg2rad(angle_map)
-        
+
         vector_map[..., 0] = lib.sin(angle_map)
         vector_map[..., 1] = lib.cos(angle_map)
 
         return vector_map
 
     @staticmethod
-    def angle_to_direction_label(angle_map, 
-                                 seg_label_map=None, 
-                                 distance_map=None, 
-                                 num_classes=DTOffsetConfig.num_classes, 
-                                 extra_ignore_mask=None, 
+    def angle_to_direction_label(angle_map,
+                                 seg_label_map=None,
+                                 distance_map=None,
+                                 num_classes=DTOffsetConfig.num_classes,
+                                 extra_ignore_mask=None,
                                  return_tensor=False):
 
         if return_tensor:
             assert isinstance(angle_map, torch.Tensor)
-            assert isinstance(seg_label_map, torch.Tensor) or seg_label_map is None
+            assert isinstance(
+                seg_label_map, torch.Tensor) or seg_label_map is None
         else:
             assert isinstance(angle_map, np.ndarray)
-            assert isinstance(seg_label_map, np.ndarray) or seg_label_map is None
+            assert isinstance(
+                seg_label_map, np.ndarray) or seg_label_map is None
 
-        _, label_map = DTOffsetHelper.align_angle(angle_map, 
-                                                  num_classes=num_classes, 
+        _, label_map = DTOffsetHelper.align_angle(angle_map,
+                                                  num_classes=num_classes,
                                                   return_tensor=return_tensor)
         if distance_map is not None:
             label_map[distance_map > DTOffsetConfig.max_distance] = num_classes
         if seg_label_map is None:
             if return_tensor:
-                ignore_mask = torch.zeros(angle_map.shape, dtype=torch.uint8).to(angle_map.device)
+                ignore_mask = torch.zeros(
+                    angle_map.shape, dtype=torch.uint8).to(angle_map.device)
             else:
                 ignore_mask = np.zeros(angle_map.shape, dtype=np.bool)
         else:
             ignore_mask = seg_label_map == -1
-            
+
         if extra_ignore_mask is not None:
             ignore_mask = ignore_mask | extra_ignore_mask
         label_map[ignore_mask] = -1
@@ -487,8 +504,8 @@ class DTOffsetHelper:
         return label_map
 
     @staticmethod
-    def vector_to_label(vector_map, 
-                        num_classes=DTOffsetConfig.num_classes, 
+    def vector_to_label(vector_map,
+                        num_classes=DTOffsetConfig.num_classes,
                         return_tensor=False):
 
         if return_tensor:
@@ -497,16 +514,17 @@ class DTOffsetHelper:
             assert isinstance(vector_map, np.ndarray)
 
         if return_tensor:
-            rad2deg = lambda x: x * 180. / np.pi
+            def rad2deg(x): return x * 180. / np.pi
         else:
             rad2deg = np.rad2deg
 
         angle_map = np.arctan2(vector_map[..., 0], vector_map[..., 1])
         angle_map = rad2deg(angle_map)
 
-        return DTOffsetHelper.angle_to_direction_label(angle_map, 
-                                                       return_tensor=return_tensor, 
+        return DTOffsetHelper.angle_to_direction_label(angle_map,
+                                                       return_tensor=return_tensor,
                                                        num_classes=num_classes)
+
 
 if __name__ == '__main__':
     angle = torch.tensor([[0., 45., 90., 180., -180.]])
@@ -515,16 +533,20 @@ if __name__ == '__main__':
     distance_map = torch.tensor([[1., 2., 3., 255., 4.]])
     seg_map = torch.tensor([[-1, 0, 0, 0, 0]])
     print(angle)
-    print(DTOffsetHelper.angle_to_direction_label(angle, return_tensor=True, distance_map=distance_map, seg_label_map=seg_map))
-    print(DTOffsetHelper.angle_to_offset(angle, return_tensor=True, distance_map=distance_map))
-    print(DTOffsetHelper.distance_to_mask_label(distance_map, seg_map, return_tensor=True))
+    print(DTOffsetHelper.angle_to_direction_label(
+        angle, return_tensor=True, distance_map=distance_map, seg_label_map=seg_map))
+    print(DTOffsetHelper.angle_to_offset(
+        angle, return_tensor=True, distance_map=distance_map))
+    print(DTOffsetHelper.distance_to_mask_label(
+        distance_map, seg_map, return_tensor=True))
     vector = DTOffsetHelper.angle_to_vector(angle, return_tensor=True)
     print(vector)
     print(DTOffsetHelper.vector_to_label(vector, return_tensor=True))
     angle = np.array([0., 45., 90., 180., -180.])
     distance_map = np.array([1., 2., 3., 255., 4.])
     print(angle)
-    print(DTOffsetHelper.angle_to_direction_label(angle, return_tensor=False, distance_map=distance_map))    
+    print(DTOffsetHelper.angle_to_direction_label(
+        angle, return_tensor=False, distance_map=distance_map))
     vector = (DTOffsetHelper.angle_to_vector(angle, return_tensor=False))
     print(vector)
     print(DTOffsetHelper.vector_to_label(vector, return_tensor=False))

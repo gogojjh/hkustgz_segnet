@@ -1,8 +1,8 @@
 import torch
 from torch.nn.parallel._functions import Scatter as OrigScatter
 
-from lib.extensions.parallel.data_container import DataContainer
-from lib.extensions.parallel._functions import Scatter
+from extensions.parallel.data_container import DataContainer
+from extensions.parallel._functions import Scatter
 
 
 def scatter(inputs, target_gpus, dim=0):

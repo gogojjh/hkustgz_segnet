@@ -1,12 +1,12 @@
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-## Created by: Hang Zhang
-## ECE Department, Rutgers University
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Created by: Hang Zhang
+# ECE Department, Rutgers University
 ## Email: zhang.hang@rutgers.edu
-## Copyright (c) 2017
+# Copyright (c) 2017
 ##
-## This source code is licensed under the MIT-style license found in the
-## LICENSE file in the root directory of this source tree
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# This source code is licensed under the MIT-style license found in the
+# LICENSE file in the root directory of this source tree
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 """Encoding Data Parallel"""
 import functools
@@ -20,7 +20,7 @@ from torch.nn.parallel.data_parallel import DataParallel
 from torch.nn.parallel.parallel_apply import get_a_var
 from torch.nn.parallel.scatter_gather import gather
 
-from lib.extensions.parallel.scatter_gather import scatter_kwargs
+from extensions.parallel.scatter_gather import scatter_kwargs
 
 torch_ver = torch.__version__[:3]
 
@@ -66,8 +66,10 @@ class DataParallelModel(DataParallel):
         >>> net = DataParallelModel(model, device_ids=[0, 1, 2])
         >>> y = net(x)
     """
+
     def __init__(self, module, device_ids=None, output_device=None, dim=0, gather_=True):
-        super(DataParallelModel, self).__init__(module, device_ids, output_device, dim)
+        super(DataParallelModel, self).__init__(
+            module, device_ids, output_device, dim)
         self.gather_ = gather_
 
     def gather(self, outputs, output_device):
@@ -101,8 +103,10 @@ class DataParallelCriterion(DataParallel):
         >>> y = net(x)
         >>> loss = criterion(y, target)
     """
+
     def __init__(self, module, device_ids=None, output_device=None, dim=0):
-        super(DataParallelCriterion, self).__init__(module, device_ids, output_device, dim)
+        super(DataParallelCriterion, self).__init__(
+            module, device_ids, output_device, dim)
 
     def scatter(self, inputs, kwargs, device_ids):
         return scatter_kwargs(inputs, kwargs, device_ids, dim=self.dim)
@@ -173,7 +177,8 @@ def _criterion_parallel_apply(modules, inputs, targets, kwargs_tup=None, devices
         for thread in threads:
             thread.join()
     else:
-        _worker(0, modules[0], inputs[0], targets[0], kwargs_tup[0], devices[0])
+        _worker(0, modules[0], inputs[0], targets[0],
+                kwargs_tup[0], devices[0])
 
     outputs = []
     for i in range(len(inputs)):

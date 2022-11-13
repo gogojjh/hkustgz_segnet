@@ -204,7 +204,8 @@ class Trainer(object):
         
     def __train(self):
         """ 
-        Training Function of Every Epoch
+        Training Function of Every Epoch.
+        Validation is called in this function when requirements are met.
         """
         self.seg_net.train()
         self.pixel_loss.train()
@@ -236,8 +237,85 @@ class Trainer(object):
             
             # Use embedding after warm-up.
             with_embed = True if self.configer.get('iters') >= self.contrast_warmup_iters else False
+            if self.with_contrast is True:
+                outputs = self.seg_net(*inputs)
+            else:
+                raise ValueError('Not a valid method.')
+
+            self.foward_time.update(time.time() - forward_start_time)
             
-    
+            loss_start_time = time.time()
+            if is_distributed():
+                import torch.distributed as dist
+                def reduce_tensor(inp):
+                    """
+                    Reduce the loss from all processes so that 
+                    process with rank 0 has the averaged results.
+                    """
+                    world_size = get_world_size()
+                    if world_size < 2:
+                        return inp
+                    with torch.no_grad():
+                        reduced_inp = inp
+                        dist.reduce(reduced_inp, dst=0)
+                    return reduced_inp
+                
+                loss = self.pixel_loss(outputs, targets, with_embed=with_embed)
+                backward_loss = loss
+                display_loss = reduce_tensor(backward_loss) / get_world_size()
+            else: 
+                backward_loss = display_loss = self.pixel_loss(outputs, targets)
+                
+            self.train_losses.update(display_loss.item(), batch_size)
+            self.loss_time.update(time.time() - loss_start_time)
+            
+            backward_start_time = time.time()
+            self.optimizer.zero_grad() # Reset gradient.
+            self.backward_time.update(time.time() - backward_start_time)
+            
+            # Update training params.
+            self.batch_time.update(time.time() - start_time)
+            start_time = time.time()
+            self.configer.plus_one('iters')
+            
+            # Print the log info and reset the states for the next iter.
+            if self.configer.get('iters') % self.configer.get('solver', 'display_iter') == 0 and (not is_distributed() or get_rank() == 0):
+                Log.info('Train Epoch: {0}\tTrain Iteration: {1}\t'
+                         'Time: {batch_time.sum:.3f}s / {2}iters, ({batch_time.avg:.3f)}\t)'
+                         'Forward Time: {forward_time.sum:.3f}s / {2}iters, ({forward_time.avg:.3f})\t'
+                         'Backward Time: {backward_time.sum:.3f}s / {2}iters, ({backward_time.avg:.3f})\t'
+                         'Loss Time: {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
+                         'Data Load Time: {data_time.sum:.3f}s / {2}iters, ({data_time.avg:.3f})\n'
+                         'Learning Rate = {3}\tLoss = {loss.val:.8f} (avg = {loss.avg:.8f})'.format(
+                             self.configer.get('epoch'), self.configer.get('iters'),
+                             self.configer.get('solver', 'display_iters'),
+                             self.module_runner.get_lr(self.optimizer), batch_time=self.batch_time,
+                             forward_time=self.foward_time, backward_time=self.backward_time,
+                             loss_time=self.loss_time,
+                             data_time=self.data_time, loss=self.train_losses))
+                # Reset the statistics calculators for next iter.
+                self.batch_time.reset()
+                self.foward_time.reset()
+                self.backward_time.reset()
+                self.loss_time.reset()
+                self.data_time.reset()
+                self.train_losses.reset()
+            
+            # Save checkpoints for swa.
+            if 'swa' in self.configer.get('lr', 'lr_policy') and \
+                self.configer.get('iters') > normal_max_iters and \
+                (self.configer.get('iters') - normal_max_iters % 
+                 swa_step_max_iters == 0 or \
+                     self.configer.get('iters') == self.configer.get('solver', 'max_iters')):
+                self.optimizer.update_swa()
+            # Check if it exceeds the max iter value.
+            if self.configer.get('iters') == self.configer.get('solver', 'max_iters'):
+                break
+            # Check for validation.
+            if self.configer.get('ters') % self.configer.get('solver', 'test_interval') == 0:
+                self.__val()
+                    
+        self.configer.plus_one('epoch')
         
     def train(self):
         """ 
@@ -254,8 +332,17 @@ class Trainer(object):
             if self.configer.get('network', 'resume_train'): # val mode, but using train set
                 self.__val(data_loader=self.data_loader.get_valloader(dataset='train'))
                 return
-        
-        while self.configer.get('iters') < self.configer.get('solver', 'max_iters'):
+        #! Use max_iter or max_epoch to end the training.
+        while self.configer.get('epoch') < self.configer.get('solver', 'max_epoch'):
             self.__train()
         
+        # Use swa to average the model.
+        if 'swa' in self.configer.get('lr', 'lr_policy'):
+            self.optimizer.swap_swa_sgd()
+            self.optimizer.bn_update(self.train_loader, self.seg_net)
+            
+        self.__val(data_loader=self.data_loader.get_valloader(dataset='val'))
         
+
+if __name__ == '__main__':
+    pass
