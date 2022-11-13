@@ -23,7 +23,7 @@ from segmentor.tools.evaluator import get_evaluator
 from utils.distributed import get_world_size, get_rank, is_distributed
 
 
-class SDCTrainer(object):
+class Trainer(object):
     def __init__(self, configer):
         self.configer = configer
         self.batch_time = AverageMeter()
@@ -79,11 +79,14 @@ class SDCTrainer(object):
         
         # ************* Use contrastive learning or not. ************* # 
         self.with_contrast = True if self.configer.exists('contrast') else False
-        # ************* Use contrastive learning or not. ************* # 
-        self.use_proto = True if self.configer.exists('prototype') else False
+        # Iter for warm-up before using embeddings in contrastive learning.
+        if self.configer.exists('contrast', 'warmup_iters'):
+            self.contrast_warmup_iters = self.configer.get('contrast', 'warmup_iters')
+        else:
+            self.contrast_warmup_iters = 0 
+
+        Log.info('with_contrast: {}, warmup_iters: {}'.format(self.with_contrast, self.contrast_warmup_iters))
         
-        Log.info('with_contrast: {}, use_proto: {}'.format(self.with_contrast, self.use_proto))
-            
     def _get_parameters(self):
         """ 
         Different lrs for backbone and non-backbone params.
@@ -126,8 +129,6 @@ class SDCTrainer(object):
         
         return groups
                 
-    
-        
     def __val(self, data_loader=None):
         """ 
         Validation during the training phase.
@@ -177,25 +178,84 @@ class SDCTrainer(object):
                         self.evaluator.update_score(outputs['seg'], data_dict['meta'])
                     else:
                         self.evaluator.update_score(outputs, data_dict['meta'])
-            
-            self.evaluator.update_performance()
-            
-            self.configer.update()
-                    
                         
-                    
-                    
+            self.batch_time.update(time.time() - start_time)
+            start_time = time.time()
+            
+        self.evaluator.update_performance()
         
+        self.configer.update(['val_loss'], self.val_losses.avg)
+        self.module_runner.save_net(self.seg_net, save_mode='performance', experiment=None)
+        self.module_runner.save_net(self.seg_net, save_mode='val_loss', experiment=None)
+        cudnn.benchmark = True
         
+        if not is_distributed() or get_rank() == 0:
+            Log.info(
+                'Sum and Average of Val Time: {batch_time.sum:.3f}s, ({batch_time.avg:.3f}s)\t'
+                'Val Loss: {loss.avg:.8f}\n'.format(batch_time=self.batch_time, loss=self.val_losses)
+            )
+            self.evaluator.print_scores()
+            
+        self.batch_time.reset()
+        self.val_losses.reset()
+        self.evaluator.reset()
+        self.seg_net.train()
+        self.pixel_loss.train()
         
+    def __train(self):
+        """ 
+        Training Function of Every Epoch
+        """
+        self.seg_net.train()
+        self.pixel_loss.train()
+        start_time = time.time()
         
+        if "swa" in self.configer.get('lr', 'lr_policy'):
+            normal_max_iters = int(self.configer.get('solver', 'max_iters') * 0.75)
+            swa_step_max_iters = (self.configer.get('solver', 'max_iters') - normal_max_iters) // 5 + 1
+            
+        if hasattr(self.train_loader.sampler, 'set_epoch'):
+            self.train_loader.sampler.set_epoch(self.configer.get('epoch'))
+        
+        for i, data_dict in enumerate(self.train_loader):
+            if self.configer.get('lr', 'metric') == 'iters':
+                self.scheduler.step(self.configer.get('iters'))
+            else:
+                self.scheduler.step(self.configer.get('epoch'))
+                
+            if self.configer.get('lr', 'is_warm'):
+                self.module_runner.warm_lr(
+                    self.configer.get('iters'),
+                    self.scheduler, self.optimizer, 
+                )
+            # Papare the data dict into the wanted form.
+            (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
+            self.data_time.update(time.time() - start_time)
+            
+            forward_start_time = time.time()
+            
+            # Use embedding after warm-up.
+            with_embed = True if self.configer.get('iters') >= self.contrast_warmup_iters else False
+            
     
         
     def train(self):
+        """ 
+        Check the conditions before entering the training phase.
+        """
         # cudnn.benchmark = True
         # self.__val()
+        
+        # Check resumption of training or validation.
         if self.configer.get('network', 'resume') is not None:
             if self.configer.get('network', 'resume_val'):
-                
+                self.__val(data_loader=self.data_loader.get_valloader(dataset='val'))
+                return
+            if self.configer.get('network', 'resume_train'): # val mode, but using train set
+                self.__val(data_loader=self.data_loader.get_valloader(dataset='train'))
+                return
+        
+        while self.configer.get('iters') < self.configer.get('solver', 'max_iters'):
+            self.__train()
         
         
