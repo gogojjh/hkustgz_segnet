@@ -9,13 +9,13 @@ ASSET_ROOT=${DATA_ROOT}
 
 DATA_DIR="${DATA_ROOT}/Cityscapes"
 SAVE_DIR="${SCRATCH_ROOT}/seg_results/cityscapes"
-BACKBONE="deepbase_resnet101_dilated8"
+BACKBONE="wide_resnet38_dilated8"
 
 CONFIGS="configs/cityscapes/sdc.json"
 CONFIGS_TEST="configs/cityscapes/R_101_D_8_TEST.json"
 
-MODEL_NAME="deeplab_v3_contrast"
-LOSS_TYPE="contrast_auxce_loss"
+MODEL_NAME="deepv3_deepwv3plus"
+LOSS_TYPE="relax_loss"
 CHECKPOINTS_ROOT="${SCRATCH_ROOT}/Cityscapes/"
 CHECKPOINTS_NAME="${MODEL_NAME}_${BACKBONE}_"$2
 LOG_FILE="${SCRATCH_ROOT}/logs/Cityscapes/${CHECKPOINTS_NAME}.log"

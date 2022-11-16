@@ -6,7 +6,7 @@
       "input_mode": "BGR",
       "num_classes": 19,
       "label_list": [7, 8, 11, 12, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33],
-      "data_dir": "/msravcshare/dataset/cityscapes",
+      "data_dir": "/data/CityScapes",
       "workers": 8
     },
    "train": {
@@ -30,7 +30,7 @@
     "test": {
       "batch_size": 8,
       "mode": "ss_test",
-      "out_dir": "/msravcshare/dataset/seg_result/cityscapes",
+      "out_dir": "/save_data/seg_result/cityscapes",
       "data_transformer": {
         "size_mode": "fix_size",
         "input_size": [2048, 1024],
@@ -71,7 +71,7 @@
     },
     "checkpoints": {
       "checkpoints_name": "sdc_cityscapes_seg",
-      "checkpoints_dir": "./checkpoints/cityscapes",
+      "checkpoints_dir": "/save_data/sdc_net/pretrained_model",
       "save_iters": 1000
     },
     "network":{
@@ -79,7 +79,7 @@
       "model_name": "deepv3_deepwv3plus", // SEG_MODEL_DICT to select model
       "bn_type": "torchsyncbn",
       "stride": 8,
-      "resume": 
+      "resume": "/save_data/sdc_net/pretrained_model/cityscapes_best.pth" // imagenet + mapillary + cityscapes
     },
     "logging": {
       "logfile_level": "info",
