@@ -15,9 +15,12 @@ from __future__ import print_function
 from utils.distributed import is_distributed
 
 from utils.tools.logger import Logger as Log
+from loss.sdc_loss import ImgWtLossSoftNLL
 
 
-SEG_LOSS_DICT = {}
+SEG_LOSS_DICT = {
+    'relax_loss': ImgWtLossSoftNLL  # sdc loss
+}
 
 
 class LossManager(object):

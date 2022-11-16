@@ -91,7 +91,8 @@ class DataLoader(object):
         train_batch_size is the total of all gpus.
         """
         if self.configer.exists('data', 'loader') and (self.configer.get('train', 'loader') in ['hkustgz', 'cityscapes', 'mapillary']):
-            Log.info('Use HKUSTGZLoader for training.')
+            Log.info('Use {} DataLoader for training.'.format(
+                self.configer.get('train', 'loader')))
             klass = DefaultLoader  # Initializate it afterwards.
         loader, sampler = self.get_dataloader_sampler(klass, 'train', 'train')
         trainloader = data.DataLoader(

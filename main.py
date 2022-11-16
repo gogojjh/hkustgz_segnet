@@ -153,7 +153,7 @@ if __name__ == "__main__":
     # ***********  Set up method and model.  **********
     model = None
     # Choose the corresponding trainer based on the method set in the config.
-    if configer.get('method') == 'sdcnet':
+    if configer.get('method') == 'sdc':
         if configer.get('phase') == 'train':
             from segmentor.trainer.trainer import Trainer
             model = Trainer(configer)

@@ -19,9 +19,8 @@ from utils.tools.logger import Logger as Log
 
 
 class BackboneSelector(object):
-
     def __init__(self, configer):
-        backbone = self.configer.get('network', 'backbone')
+        self.configer = configer
 
     def get_backbone(self, **params):
         backbone = self.configer.get('network', 'backbone')
@@ -29,6 +28,7 @@ class BackboneSelector(object):
         model = None
         if ('resnet' in backbone or 'resnext' in backbone or 'resnest' in backbone) and 'senet' not in backbone:
             model = ResNetBackbone(self.configer)(**params)
+
         else:
             Log.error('Backbone: {} is invalid.'.format(backbone))
             exit(1)

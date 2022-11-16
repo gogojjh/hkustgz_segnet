@@ -13,10 +13,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from nets.sdc.deepv3 import DeepWV3Plus as DeepWV3Plus
+
 from utils.tools.logger import Logger as Log
 
 
 SEG_MODEL_DICT = {
+    # sdc
+    'deepv3_deepwv3plus': DeepWV3Plus,
 }
 
 

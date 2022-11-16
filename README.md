@@ -18,7 +18,7 @@ This repo is to conduct semi-supervised semantic segmentation task for Semantic 
 
 ## Methods
 
-Available methods: [sdc]
+Available methods: [sdc, ifr]
 
 ### Important Paramas of Methods
 
