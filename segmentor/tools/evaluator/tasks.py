@@ -8,10 +8,10 @@ import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 from collections import Counter
 
-from metrics import running_score as rslib
-from metrics import F1_running_score as fscore_rslib
-from utils.tools.logger import Logger as Log
-from utils.helpers.offset_helper import DTOffsetConfig, DTOffsetHelper
+from lib.metrics import running_score as rslib
+from lib.metrics import F1_running_score as fscore_rslib
+from lib.utils.tools.logger import Logger as Log
+from lib.utils.helpers.offset_helper import DTOffsetConfig, DTOffsetHelper
 from .base import _BaseEvaluator
 
 

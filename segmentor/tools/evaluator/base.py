@@ -5,10 +5,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 
-from utils.tools.logger import Logger as Log
-from metrics import running_score as rslib
-from metrics import F1_running_score as fscore_rslib
-from utils.distributed import get_world_size, get_rank, is_distributed
+from lib.utils.tools.logger import Logger as Log
+from lib.metrics import running_score as rslib
+from lib.metrics import F1_running_score as fscore_rslib
+from lib.utils.distributed import get_world_size, get_rank, is_distributed
 
 
 class _BaseEvaluator:

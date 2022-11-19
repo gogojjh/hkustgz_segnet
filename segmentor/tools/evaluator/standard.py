@@ -9,10 +9,9 @@ import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 from collections import Counter
 
-from utils.tools.logger import Logger as Log
+from lib.utils.tools.logger import Logger as Log
 from .base import _BaseEvaluator
 from . import tasks
-
 
 def _parse_output_spec(spec):
     """
@@ -66,8 +65,7 @@ class StandardEvaluator(_BaseEvaluator):
 
         self.running_scores = {}
         for task in tasks.task_mapping.values():
-            rss, main_key, metric = task.running_score(
-                self.output_indices, self.configer)
+            rss, main_key, metric = task.running_score(self.output_indices, self.configer)
             if rss is None:
                 continue
             self.running_scores.update(rss)
@@ -77,7 +75,7 @@ class StandardEvaluator(_BaseEvaluator):
     def update_score(self, outputs, metas):
         if isinstance(outputs, torch.Tensor):
             outputs = [outputs]
-
+            
         for i in range(len(outputs[0])):
 
             ori_img_size = metas[i]['ori_img_size']

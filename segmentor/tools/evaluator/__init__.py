@@ -1,6 +1,6 @@
 import os
 
-from utils.tools.logger import Logger as Log
+from lib.utils.tools.logger import Logger as Log
 from . import standard
 
 evaluators = {
