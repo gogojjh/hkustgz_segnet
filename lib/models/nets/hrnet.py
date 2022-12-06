@@ -1,12 +1,12 @@
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-## Created by: RainbowSecret
-## Microsoft Research
-## yuyua@microsoft.com
-## Copyright (c) 2018
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Created by: RainbowSecret
+# Microsoft Research
+# yuyua@microsoft.com
+# Copyright (c) 2018
 ##
-## This source code is licensed under the MIT-style license found in the
-## LICENSE file in the root directory of this source tree 
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# This source code is licensed under the MIT-style license found in the
+# LICENSE file in the root directory of this source tree
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 import os
 import pdb
@@ -16,9 +16,70 @@ import torch.nn.functional as F
 
 from lib.models.backbones.backbone_selector import BackboneSelector
 from lib.models.tools.module_helper import ModuleHelper
-from lib.models.modules.projection import ProjectionHead
 from lib.utils.tools.logger import Logger as Log
 from lib.models.modules.hanet_attention import HANet_Conv
+from lib.models.modules.contrast import ProjectionHead
+from timm.models.layers import trunc_normal_
+
+
+class HRNet_W48_Prob_Contrast_Proto(nn.Module):
+    """
+    deep high-resolution representation learning for human pose estimation, CVPR2019
+    """
+
+    def __init__(self, configer):
+        super(HRNet_W48_Prob_Contrast_Proto, self).__init__()
+        self.configer = configer
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        # prototype config
+        self.use_prototype = self.configer.get('protoseg', 'use_prototype')
+        self.update_prototype = self.configer.get(
+            'protoseg', 'update_prototype')
+        self.pretrain_prototype = self.configer.get(
+            'protoseg', 'pretrain_prototype')
+        self.backbone = BackboneSelector(configer).get_backbone()
+
+        in_channels = 720
+        self.cls_head = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels,
+                      kernel_size=3, stride=1, padding=1),
+            ModuleHelper.BNReLU(
+                in_channels, bn_type=self.configer.get('network', 'bn_type')),
+            nn.Drop2(0.10)
+        )
+
+        self.prototypes = nn.Parameter(torch.zeros(
+            self.num_classes, self.num_prototype, in_channels), requires_grad=True)  # ! learnable prototypes
+        self.proj_head = ProjectionHead(in_channels, in_channels)
+        self.proj_dim = self.configer.get('prob_contrast', 'proj_dim')
+        self.feat_norm = nn.LayerNorm(in_channels)  # normalize each row
+        self.mask_norm = nn.LayerNorm(self.num_classes)
+
+        # initialize the prototypes as multivariate Gaussian
+        trunc_normal_(self.prototypes, std=0.2)
+
+    def prototype_learning(self, _c, out_seg, gt_seg, masks):
+        """ 
+        Prototype selection and update
+        """
+
+        return
+
+    def forward(self, x_, gt_semantic_seg=None, pretrain_prototype=False):
+        x = self.backbone(x_)
+        _, _, h, w = x[0].size()
+
+        feat1 = x[0]
+        feat2 = F.interpolate(x[1], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat3 = F.interpolate(x[2], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat4 = F.interpolate(x[3], size=(
+            h, w), mode="bilinear", align_corners=True)
+
+        feats = torch.cat([feat1, feat2, feat3, feat4], 1)
+        c = self.cls_head(feats)
 
 
 class HRNet_W48(nn.Module):
@@ -35,10 +96,13 @@ class HRNet_W48(nn.Module):
         # extra added layers
         in_channels = 720  # 48 + 96 + 192 + 384
         self.cls_head = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(in_channels, bn_type=self.configer.get('network', 'bn_type')),
+            nn.Conv2d(in_channels, in_channels,
+                      kernel_size=3, stride=1, padding=1),
+            ModuleHelper.BNReLU(
+                in_channels, bn_type=self.configer.get('network', 'bn_type')),
             nn.Dropout2d(0.10),
-            nn.Conv2d(in_channels, self.num_classes, kernel_size=1, stride=1, padding=0, bias=False)
+            nn.Conv2d(in_channels, self.num_classes, kernel_size=1,
+                      stride=1, padding=0, bias=False)
         )
 
     def forward(self, x_):
@@ -46,13 +110,17 @@ class HRNet_W48(nn.Module):
         _, _, h, w = x[0].size()
 
         feat1 = x[0]
-        feat2 = F.interpolate(x[1], size=(h, w), mode="bilinear", align_corners=True)
-        feat3 = F.interpolate(x[2], size=(h, w), mode="bilinear", align_corners=True)
-        feat4 = F.interpolate(x[3], size=(h, w), mode="bilinear", align_corners=True)
+        feat2 = F.interpolate(x[1], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat3 = F.interpolate(x[2], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat4 = F.interpolate(x[3], size=(
+            h, w), mode="bilinear", align_corners=True)
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
         out = self.cls_head(feats)
-        out = F.interpolate(out, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
+        out = F.interpolate(out, size=(x_.size(2), x_.size(3)),
+                            mode="bilinear", align_corners=True)
         return out
 
 
@@ -71,22 +139,29 @@ class HRNet_W48_CONTRAST(nn.Module):
         # extra added layers
         in_channels = 720  # 48 + 96 + 192 + 384
         self.cls_head = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(in_channels, bn_type=self.configer.get('network', 'bn_type')),
+            nn.Conv2d(in_channels, in_channels,
+                      kernel_size=3, stride=1, padding=1),
+            ModuleHelper.BNReLU(
+                in_channels, bn_type=self.configer.get('network', 'bn_type')),
             nn.Dropout2d(0.10),
-            nn.Conv2d(in_channels, self.num_classes, kernel_size=1, stride=1, padding=0, bias=False)
+            nn.Conv2d(in_channels, self.num_classes, kernel_size=1,
+                      stride=1, padding=0, bias=False)
         )
 
-        self.proj_head = ProjectionHead(dim_in=in_channels, proj_dim=self.proj_dim)
+        self.proj_head = ProjectionHead(
+            dim_in=in_channels, proj_dim=self.proj_dim)
 
     def forward(self, x_, with_embed=False, is_eval=False):
         x = self.backbone(x_)
         _, _, h, w = x[0].size()
 
         feat1 = x[0]
-        feat2 = F.interpolate(x[1], size=(h, w), mode="bilinear", align_corners=True)
-        feat3 = F.interpolate(x[2], size=(h, w), mode="bilinear", align_corners=True)
-        feat4 = F.interpolate(x[3], size=(h, w), mode="bilinear", align_corners=True)
+        feat2 = F.interpolate(x[1], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat3 = F.interpolate(x[2], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat4 = F.interpolate(x[3], size=(
+            h, w), mode="bilinear", align_corners=True)
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
         out = self.cls_head(feats)
@@ -106,7 +181,8 @@ class HRNet_W48_OCR_CONTRAST(nn.Module):
         in_channels = 720
         self.conv3x3 = nn.Sequential(
             nn.Conv2d(in_channels, 512, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(512, bn_type=self.configer.get('network', 'bn_type')),
+            ModuleHelper.BNReLU(
+                512, bn_type=self.configer.get('network', 'bn_type')),
         )
         from lib.models.modules.spatial_ocr_block import SpatialGather_Module
         self.ocr_gather_head = SpatialGather_Module(self.num_classes)
@@ -117,23 +193,31 @@ class HRNet_W48_OCR_CONTRAST(nn.Module):
                                                  scale=1,
                                                  dropout=0.05,
                                                  bn_type=self.configer.get('network', 'bn_type'))
-        self.cls_head = nn.Conv2d(512, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+        self.cls_head = nn.Conv2d(
+            512, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
         self.aux_head = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(in_channels, bn_type=self.configer.get('network', 'bn_type')),
-            nn.Conv2d(in_channels, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+            nn.Conv2d(in_channels, in_channels,
+                      kernel_size=3, stride=1, padding=1),
+            ModuleHelper.BNReLU(
+                in_channels, bn_type=self.configer.get('network', 'bn_type')),
+            nn.Conv2d(in_channels, self.num_classes, kernel_size=1,
+                      stride=1, padding=0, bias=True)
         )
 
-        self.proj_head = ProjectionHead(dim_in=in_channels, proj_dim=self.proj_dim)
+        self.proj_head = ProjectionHead(
+            dim_in=in_channels, proj_dim=self.proj_dim)
 
     def forward(self, x_, with_embed=False, is_eval=False):
         x = self.backbone(x_)
         _, _, h, w = x[0].size()
 
         feat1 = x[0]
-        feat2 = F.interpolate(x[1], size=(h, w), mode="bilinear", align_corners=True)
-        feat3 = F.interpolate(x[2], size=(h, w), mode="bilinear", align_corners=True)
-        feat4 = F.interpolate(x[3], size=(h, w), mode="bilinear", align_corners=True)
+        feat2 = F.interpolate(x[1], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat3 = F.interpolate(x[2], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat4 = F.interpolate(x[3], size=(
+            h, w), mode="bilinear", align_corners=True)
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
         out_aux = self.aux_head(feats)
@@ -162,13 +246,19 @@ class HRNet_W48_MEM(nn.Module):
 
         self.encoder_q = HRNet_W48_CONTRAST(configer)
 
-        self.register_buffer("segment_queue", torch.randn(num_classes, self.r, dim))
-        self.segment_queue = nn.functional.normalize(self.segment_queue, p=2, dim=2)
-        self.register_buffer("segment_queue_ptr", torch.zeros(num_classes, dtype=torch.long))
+        self.register_buffer(
+            "segment_queue", torch.randn(num_classes, self.r, dim))
+        self.segment_queue = nn.functional.normalize(
+            self.segment_queue, p=2, dim=2)
+        self.register_buffer("segment_queue_ptr", torch.zeros(
+            num_classes, dtype=torch.long))
 
-        self.register_buffer("pixel_queue", torch.randn(num_classes, self.r, dim))
-        self.pixel_queue = nn.functional.normalize(self.pixel_queue, p=2, dim=2)
-        self.register_buffer("pixel_queue_ptr", torch.zeros(num_classes, dtype=torch.long))
+        self.register_buffer(
+            "pixel_queue", torch.randn(num_classes, self.r, dim))
+        self.pixel_queue = nn.functional.normalize(
+            self.pixel_queue, p=2, dim=2)
+        self.register_buffer("pixel_queue_ptr", torch.zeros(
+            num_classes, dtype=torch.long))
 
     @torch.no_grad()
     def _momentum_update_key_encoder(self):
@@ -198,7 +288,8 @@ class HRNet_W48_OCR(nn.Module):
         in_channels = 720
         self.conv3x3 = nn.Sequential(
             nn.Conv2d(in_channels, 512, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(512, bn_type=self.configer.get('network', 'bn_type')),
+            ModuleHelper.BNReLU(
+                512, bn_type=self.configer.get('network', 'bn_type')),
         )
         from lib.models.modules.spatial_ocr_block import SpatialGather_Module
         self.ocr_gather_head = SpatialGather_Module(self.num_classes)
@@ -209,11 +300,15 @@ class HRNet_W48_OCR(nn.Module):
                                                  scale=1,
                                                  dropout=0.05,
                                                  bn_type=self.configer.get('network', 'bn_type'))
-        self.cls_head = nn.Conv2d(512, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+        self.cls_head = nn.Conv2d(
+            512, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
         self.aux_head = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(in_channels, bn_type=self.configer.get('network', 'bn_type')),
-            nn.Conv2d(in_channels, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+            nn.Conv2d(in_channels, in_channels,
+                      kernel_size=3, stride=1, padding=1),
+            ModuleHelper.BNReLU(
+                in_channels, bn_type=self.configer.get('network', 'bn_type')),
+            nn.Conv2d(in_channels, self.num_classes, kernel_size=1,
+                      stride=1, padding=0, bias=True)
         )
 
     def forward(self, x_):
@@ -221,9 +316,12 @@ class HRNet_W48_OCR(nn.Module):
         _, _, h, w = x[0].size()
 
         feat1 = x[0]
-        feat2 = F.interpolate(x[1], size=(h, w), mode="bilinear", align_corners=True)
-        feat3 = F.interpolate(x[2], size=(h, w), mode="bilinear", align_corners=True)
-        feat4 = F.interpolate(x[3], size=(h, w), mode="bilinear", align_corners=True)
+        feat2 = F.interpolate(x[1], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat3 = F.interpolate(x[2], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat4 = F.interpolate(x[3], size=(
+            h, w), mode="bilinear", align_corners=True)
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
         out_aux = self.aux_head(feats)
@@ -235,8 +333,10 @@ class HRNet_W48_OCR(nn.Module):
 
         out = self.cls_head(feats)
 
-        out_aux = F.interpolate(out_aux, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
-        out = F.interpolate(out, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
+        out_aux = F.interpolate(out_aux, size=(
+            x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
+        out = F.interpolate(out, size=(x_.size(2), x_.size(3)),
+                            mode="bilinear", align_corners=True)
         return out_aux, out
 
 
@@ -255,7 +355,8 @@ class HRNet_W48_OCR_B(nn.Module):
         in_channels = 720  # 48 + 96 + 192 + 384
         self.conv3x3 = nn.Sequential(
             nn.Conv2d(in_channels, 256, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(256, bn_type=self.configer.get('network', 'bn_type')),
+            ModuleHelper.BNReLU(
+                256, bn_type=self.configer.get('network', 'bn_type')),
         )
         from lib.models.modules.spatial_ocr_block import SpatialGather_Module
         self.ocr_gather_head = SpatialGather_Module(self.num_classes)
@@ -267,11 +368,14 @@ class HRNet_W48_OCR_B(nn.Module):
                                                  dropout=0.05,
                                                  bn_type=self.configer.get('network', 'bn_type'))
 
-        self.cls_head = nn.Conv2d(256, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+        self.cls_head = nn.Conv2d(
+            256, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
         self.aux_head = nn.Sequential(
             nn.Conv2d(in_channels, 256, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(256, bn_type=self.configer.get('network', 'bn_type')),
-            nn.Conv2d(256, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+            ModuleHelper.BNReLU(
+                256, bn_type=self.configer.get('network', 'bn_type')),
+            nn.Conv2d(256, self.num_classes, kernel_size=1,
+                      stride=1, padding=0, bias=True)
         )
 
     def forward(self, x_):
@@ -279,9 +383,12 @@ class HRNet_W48_OCR_B(nn.Module):
         _, _, h, w = x[0].size()
 
         feat1 = x[0]
-        feat2 = F.interpolate(x[1], size=(h, w), mode="bilinear", align_corners=True)
-        feat3 = F.interpolate(x[2], size=(h, w), mode="bilinear", align_corners=True)
-        feat4 = F.interpolate(x[3], size=(h, w), mode="bilinear", align_corners=True)
+        feat2 = F.interpolate(x[1], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat3 = F.interpolate(x[2], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat4 = F.interpolate(x[3], size=(
+            h, w), mode="bilinear", align_corners=True)
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
         out_aux = self.aux_head(feats)
@@ -293,8 +400,10 @@ class HRNet_W48_OCR_B(nn.Module):
 
         out = self.cls_head(feats)
 
-        out_aux = F.interpolate(out_aux, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
-        out = F.interpolate(out, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
+        out_aux = F.interpolate(out_aux, size=(
+            x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
+        out = F.interpolate(out, size=(x_.size(2), x_.size(3)),
+                            mode="bilinear", align_corners=True)
         return out_aux, out
 
 
@@ -313,7 +422,8 @@ class HRNet_W48_OCR_B_HA(nn.Module):
         in_channels = 720  # 48 + 96 + 192 + 384
         self.conv3x3 = nn.Sequential(
             nn.Conv2d(in_channels, 256, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(256, bn_type=self.configer.get('network', 'bn_type')),
+            ModuleHelper.BNReLU(
+                256, bn_type=self.configer.get('network', 'bn_type')),
         )
         from lib.models.modules.spatial_ocr_block import SpatialGather_Module
         self.ocr_gather_head = SpatialGather_Module(self.num_classes)
@@ -324,17 +434,24 @@ class HRNet_W48_OCR_B_HA(nn.Module):
                                                  scale=1,
                                                  dropout=0.05,
                                                  bn_type=self.configer.get('network', 'bn_type'))
-        self.cls_head = nn.Conv2d(256, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+        self.cls_head = nn.Conv2d(
+            256, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
         self.aux_head = nn.Sequential(
             nn.Conv2d(in_channels, 256, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(256, bn_type=self.configer.get('network', 'bn_type')),
-            nn.Conv2d(256, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+            ModuleHelper.BNReLU(
+                256, bn_type=self.configer.get('network', 'bn_type')),
+            nn.Conv2d(256, self.num_classes, kernel_size=1,
+                      stride=1, padding=0, bias=True)
         )
 
-        self.ha1 = HANet_Conv(384, 384, bn_type=self.configer.get('network', 'bn_type'))
-        self.ha2 = HANet_Conv(192, 192, bn_type=self.configer.get('network', 'bn_type'))
-        self.ha3 = HANet_Conv(96, 96, bn_type=self.configer.get('network', 'bn_type'))
-        self.ha4 = HANet_Conv(48, 48, bn_type=self.configer.get('network', 'bn_type'))
+        self.ha1 = HANet_Conv(
+            384, 384, bn_type=self.configer.get('network', 'bn_type'))
+        self.ha2 = HANet_Conv(
+            192, 192, bn_type=self.configer.get('network', 'bn_type'))
+        self.ha3 = HANet_Conv(
+            96, 96, bn_type=self.configer.get('network', 'bn_type'))
+        self.ha4 = HANet_Conv(
+            48, 48, bn_type=self.configer.get('network', 'bn_type'))
 
     def forward(self, x_):
         x = self.backbone(x_)
@@ -346,9 +463,12 @@ class HRNet_W48_OCR_B_HA(nn.Module):
         x[3] = x[3] + self.ha1(x[3])
 
         feat1 = x[0]
-        feat2 = F.interpolate(x[1], size=(h, w), mode="bilinear", align_corners=True)
-        feat3 = F.interpolate(x[2], size=(h, w), mode="bilinear", align_corners=True)
-        feat4 = F.interpolate(x[3], size=(h, w), mode="bilinear", align_corners=True)
+        feat2 = F.interpolate(x[1], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat3 = F.interpolate(x[2], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat4 = F.interpolate(x[3], size=(
+            h, w), mode="bilinear", align_corners=True)
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
         out_aux = self.aux_head(feats)
@@ -360,6 +480,8 @@ class HRNet_W48_OCR_B_HA(nn.Module):
 
         out = self.cls_head(feats)
 
-        out_aux = F.interpolate(out_aux, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
-        out = F.interpolate(out, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
+        out_aux = F.interpolate(out_aux, size=(
+            x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
+        out = F.interpolate(out, size=(x_.size(2), x_.size(3)),
+                            mode="bilinear", align_corners=True)
         return out_aux, out
