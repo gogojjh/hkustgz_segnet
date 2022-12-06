@@ -18,8 +18,10 @@ from lib.models.backbones.backbone_selector import BackboneSelector
 from lib.models.tools.module_helper import ModuleHelper
 from lib.utils.tools.logger import Logger as Log
 from lib.models.modules.hanet_attention import HANet_Conv
-from lib.models.modules.contrast import ProjectionHead
+from lib.models.modules.contrast import momentum_update, l2_normalize, ProjectionHead
+from lib.models.modules.prob_embedding import UncertaintyHead, PredictionHead
 from timm.models.layers import trunc_normal_
+from einops import rearrange, repeat
 
 
 class HRNet_W48_Prob_Contrast_Proto(nn.Module):
@@ -38,7 +40,9 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             'protoseg', 'update_prototype')
         self.pretrain_prototype = self.configer.get(
             'protoseg', 'pretrain_prototype')
+
         self.backbone = BackboneSelector(configer).get_backbone()
+        self.uncertainty_head =
 
         in_channels = 720
         self.cls_head = nn.Sequential(
@@ -49,8 +53,11 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             nn.Drop2(0.10)
         )
 
+        self.uncertainty_head = UncertaintyHead(
+            in_channels=in_channels)  # predict variance of each gaussian
+
         self.prototypes = nn.Parameter(torch.zeros(
-            self.num_classes, self.num_prototype, in_channels), requires_grad=True)  # ! learnable prototypes
+            self.num_classes, self.num_prototype, in_channels), requires_grad=False)
         self.proj_head = ProjectionHead(in_channels, in_channels)
         self.proj_dim = self.configer.get('prob_contrast', 'proj_dim')
         self.feat_norm = nn.LayerNorm(in_channels)  # normalize each row
@@ -63,6 +70,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         """ 
         Prototype selection and update
         """
+        pred_seg = torch.max(out_seg, 1)[1]
 
         return
 
@@ -80,6 +88,16 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
         c = self.cls_head(feats)
+
+        c = self.proj_head(c)
+        _c = rearrange(c, 'b c h w -> (b h w) c')
+        _c = self.feat_norm(_c)
+        _c = l2_normalize(_c)
+
+        self.prototypes.data.copy_(l2_normalize(self.prototypes)) # set value to prototypes
+        
+        
+        
 
 
 class HRNet_W48(nn.Module):

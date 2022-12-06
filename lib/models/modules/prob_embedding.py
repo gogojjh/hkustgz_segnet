@@ -12,14 +12,14 @@ def conv3x3(in_planes, out_planes, stride=1):
 
 
 class UncertaintyHead(nn.Module):
-    def __init__(self, bn_type=None, in_features=512):
+    def __init__(self, in_channels=512):
         super(UncertaintyHead, self).__init__()
 
-        self.fc1 = nn.Linear(in_features, in_features)
-        self.bn1 = nn.BatchNorm1d(in_features, affine=True)
+        self.fc1 = nn.Linear(in_channels, in_channels)
+        self.bn1 = nn.BatchNorm1d(in_channels, affine=True)
         self.relu = nn.ReLU(inplace=True)
-        self.fc2 = nn.Linear(in_features, in_features)
-        self.bn2 = nn.BatchNorm1d(in_features, affine=True)
+        self.fc2 = nn.Linear(in_channels, in_channels)
+        self.bn2 = nn.BatchNorm1d(in_channels, affine=True)
 
     def forward(self, x):  # [N, C, H, W]
         x = x.view(x.size(0), -1)  # [N, C, -1]
