@@ -40,9 +40,10 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             'protoseg', 'update_prototype')
         self.pretrain_prototype = self.configer.get(
             'protoseg', 'pretrain_prototype')
+        # similarity measure between features and prototypes
+        self.sim_measure = self.configer.get('protoseg', 'similarity_measure')
 
         self.backbone = BackboneSelector(configer).get_backbone()
-        self.uncertainty_head =
 
         in_channels = 720
         self.cls_head = nn.Sequential(
@@ -89,15 +90,36 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
         c = self.cls_head(feats)
 
-        c = self.proj_head(c)
+        c = self.proj_head(c)  # features in the logit space
         _c = rearrange(c, 'b c h w -> (b h w) c')
         _c = self.feat_norm(_c)
         _c = l2_normalize(_c)
 
-        self.prototypes.data.copy_(l2_normalize(self.prototypes)) # set value to prototypes
-        
-        
-        
+        self.prototypes.data.copy_(l2_normalize(
+            self.prototypes))  # set value of prototypes
+
+        # n: h*w, d: dim, m:num_prototype in each class
+        #! batch product (toward d dimension) -> cosine simialrity between fea and prototypes
+        masks = torch.einsum('nd,kmd->nmk', _c, self.prototypes)
+
+        #! similarity measure between features and prototypes
+        if self.sim_measure == "wasserstein":
+            masks =
+
+        # return the largest value along specific axis
+        out_seg = torch.amax(masks, dim=1)
+        # normalize along the k-th class dimension
+        out_seg = self.mask_norm(out_seg)
+        out_seg = rearrange(out_seg, "(b h w) k -> b k h w",
+                            b=feats.shape[0], h=feats.shape[2])
+
+        # estimate uncertainty of each pixel embedding
+        self.uncertainty_head(c)
+
+        if pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
+            gt_seg = F.interpolate(gt_semantic_seg.float(), size=feats.size()[
+                                   2:], mode="nearest").view(-1)
+            self.prototype_learning()
 
 
 class HRNet_W48(nn.Module):

@@ -22,12 +22,12 @@ class UncertaintyHead(nn.Module):
         self.bn2 = nn.BatchNorm1d(in_channels, affine=True)
 
     def forward(self, x):  # [N, C, H, W]
-        x = x.view(x.size(0), -1)  # [N, C, -1]
+        x = x.view(x.size(0), -1)  # [N, C*H*W]
         x = self.fc1(x)
         X = self.bn1(x)
         x = self.relu(x)
         x = self.fc2(x)
-        x = self.bn2(x)
+        x = self.bn2(x) # [N, C*H*W]
 
         return x
 
