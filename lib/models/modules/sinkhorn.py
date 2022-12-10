@@ -80,7 +80,7 @@ def distributed_greenkhorn(out, sinkhorn_iterations=100, epsilon=0.05):
 
     L = L.t()
 
-    indexs = torch.argmax(L, dim=1)
+    indexs = torch.argmax(L, dim=1) #! which protoype in this class to select
     G = F.gumbel_softmax(L, tau=0.5, hard=True)
 
     return L, indexs

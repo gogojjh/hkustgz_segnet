@@ -13,6 +13,7 @@ import pdb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 from lib.models.backbones.backbone_selector import BackboneSelector
 from lib.models.tools.module_helper import ModuleHelper
@@ -20,6 +21,7 @@ from lib.utils.tools.logger import Logger as Log
 from lib.models.modules.hanet_attention import HANet_Conv
 from lib.models.modules.contrast import momentum_update, l2_normalize, ProjectionHead
 from lib.models.modules.prob_embedding import UncertaintyHead, PredictionHead
+from lib.models.modules.sinkhorn import distributed_sinkhorn
 from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
 
@@ -42,6 +44,10 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             'protoseg', 'pretrain_prototype')
         # similarity measure between features and prototypes
         self.sim_measure = self.configer.get('protoseg', 'similarity_measure')
+        self.use_probability = self.configer.get('protoseg', 'use_probability')
+        # multi_proxy = True: sum of M prototypes
+        # multi_proxy = False: each proto corresponds to a pixel
+        self.multi_proxy = self.configer.get('protoseg', 'multi_proxy')
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
@@ -57,22 +63,91 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         self.uncertainty_head = UncertaintyHead(
             in_channels=in_channels)  # predict variance of each gaussian
 
+        # [cls_num, proto_num, channel/k]
         self.prototypes = nn.Parameter(torch.zeros(
             self.num_classes, self.num_prototype, in_channels), requires_grad=False)
+        if self.use_probability:
+            self.proto_var = nn.Parameter(torch.ones(
+                self.num_classes, self.num_prototype, in_channels), requires_grad=True)
+        else:
+            trunc_normal_(self.prototypes, std=0.02)
+
         self.proj_head = ProjectionHead(in_channels, in_channels)
         self.proj_dim = self.configer.get('prob_contrast', 'proj_dim')
         self.feat_norm = nn.LayerNorm(in_channels)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
 
-        # initialize the prototypes as multivariate Gaussian
-        trunc_normal_(self.prototypes, std=0.2)
+    def similarity_compute(self, x, x_var=None):
+        """ 
+        Similarity between pixel embeddings and prototypes
 
-    def prototype_learning(self, _c, out_seg, gt_seg, masks):
+        x: batch-wise pixel embeddings [(b h w) c]
+        sigma: var of x [(b h w) c]
+        prototypes: [cls_num, proto_num, channel/c]
+        c: similarity [] 
+        gt_seg: [b*h*w]?
+        """
+        #! similarity measure between features and prototypes
+        if self.use_probability and self.sim_measure == "mls":
+            pt_num = x.shape[0]
+            # [num_class, num_prototype, b*h*w, c]
+            x_tile = x.unsqueeze(0).expand(
+                self.num_classes, self.num_prototype, pt_num, x.shape[-1])
+            x_var_tile = x_var.unsqueeze(0).expand(
+                self.num_classes, self.num_prototype, pt_num, x.shape[-1])
+
+            # [num_class, num_prototype, b*h*w, c]
+            proto_mean = self.prototypes.expand(
+                self.num_classes, self.num_prototype, pt_num, self.prototypes.shape[-1])
+            proto_var = self.proto_var.expand(
+                self.num_classes, self.num_prototype, pt_num, self.prototypes.shape[-1])
+
+            square_term = torch.square(
+                x_tile - proto_mean) / (x_var_tile + proto_var) + torch.log(x_var_tile + proto_var)
+            # [num_class, num_prototype, b*h*w]
+            sim_mat = - torch.sum(square_term, dim=2) / \
+                2 - x_tile.shape[-1] * np.log(2 * np.pi) / 2
+            sim_mat = sim_mat.permute(2, 0, 1)
+
+        elif self.use_probability is False and self.sim_measure == "cosine":
+            # l2-normalization for cosine similarity
+            x = self.feat_norm(x)
+            x = l2_normalize(x)
+            self.prototypes.data.copy_(l2_normalize(self.prototypes))
+
+            # batch product (toward d dimension) -> cosine simialrity between fea and prototypes
+            # n: h*w, k: num_class, m: num_prototype
+            sim_mat = torch.einsum('nd,kmd->nmk', x, self.prototypes)
+
+        return sim_mat
+
+    def prototype_learning(self, sim_mat, gt_seg):
         """ 
         Prototype selection and update
-        """
-        pred_seg = torch.max(out_seg, 1)[1]
+        Non-uniform matching flow using optimal transport.
+        min(tr(M * T_t) + lamda * tr(T * log(T) - 1 * 1_T)_t)
+        M = 1 - C, M: cost matrx, C: similarity matrix
+        T: optimal transport plan
 
+        sim_mat: [b*h*w, num_cls, num_proto]
+        gt_seg: [b*h*w]
+        """
+        # largest score inside a class, # [num_class, b*h*w]
+        sim_mat = torch.amax(sim_mat, dim=1)
+        pred_seg = torch.max(sim_mat, dim=0)[1]  # [b*h*w]
+        proto_activate = torch.ones_like(sim_mat)
+        mask = (gt_seg == pred_seg.view(-1))  # [b*h*w]
+
+        #! pixel-to-prototype online clustering
+        if not self.multi_proxy:
+            for i in range(self.num_classes):
+                init_q = sim_mat[..., i]  # [b*h*w, num_proto]
+                # select the right preidctions inside i-th class
+                init_q = init_q[gt_seg == i, ...]  # [n, num_proto]
+                if init_q.shape[0] == 0:
+                    continue
+
+                q, indexs = distributed_sinkhorn(init_q)
         return
 
     def forward(self, x_, gt_semantic_seg=None, pretrain_prototype=False):
@@ -90,36 +165,20 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
         c = self.cls_head(feats)
 
-        c = self.proj_head(c)  # features in the logit space
+        c = self.proj_head(c)
         _c = rearrange(c, 'b c h w -> (b h w) c')
-        _c = self.feat_norm(_c)
-        _c = l2_normalize(_c)
 
-        self.prototypes.data.copy_(l2_normalize(
-            self.prototypes))  # set value of prototypes
+        x_var = None
+        if self.use_probability:
+            x_var = self.uncertainty_head(_c)  # (b h w) c
 
-        # n: h*w, d: dim, m:num_prototype in each class
-        #! batch product (toward d dimension) -> cosine simialrity between fea and prototypes
-        masks = torch.einsum('nd,kmd->nmk', _c, self.prototypes)
-
-        #! similarity measure between features and prototypes
-        if self.sim_measure == "wasserstein":
-            masks =
-
-        # return the largest value along specific axis
-        out_seg = torch.amax(masks, dim=1)
-        # normalize along the k-th class dimension
-        out_seg = self.mask_norm(out_seg)
-        out_seg = rearrange(out_seg, "(b h w) k -> b k h w",
-                            b=feats.shape[0], h=feats.shape[2])
-
-        # estimate uncertainty of each pixel embedding
-        self.uncertainty_head(c)
+        sim_mat = self.similarity_compute(
+            x, x_var)  # [b*h*w, num_cls, num_proto]
 
         if pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
             gt_seg = F.interpolate(gt_semantic_seg.float(), size=feats.size()[
-                                   2:], mode="nearest").view(-1)
-            self.prototype_learning()
+                                   2:], mode="nearest").view(-1)  # [b*h*w]?
+            self.prototype_learning(sim_mat, gt_seg)
 
 
 class HRNet_W48(nn.Module):
