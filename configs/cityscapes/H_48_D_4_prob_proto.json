@@ -146,6 +146,9 @@
 		"warmup_iters": 0,
 		"similarity_measure": "mls",
 		"use_probability": true,
-    "multi_proxy": False
+    	"multi_proxy": false,
+		"sinkhorn_epsilon": 0.05,
+		"sinkhorn_iterations": 3
 	}
+
 }

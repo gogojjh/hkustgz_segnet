@@ -16,43 +16,12 @@ from lib.utils.tools.logger import Logger as Log
 from lib.loss.loss_helper import FSCELoss, FSAuxCELoss
 
 
-class MLSLoss(nn.Module, ABC):
-    """ 
-    Mutual Likelihood Loss from "probabilistic face embeddings"
-    """
-
-    def __init__(self, configer):
-        super(MLSLoss, self).__init__()
-
-        self.configer = configer
-
-    def _negative_mls_loss(self, mu, sigma):
-        xx = torch.mul(mu, mu).sum(dim=1, keepdim=True)
-        yy = torch.mul(mu.T, mu.T).sum(dim=0, keepdim=True)
-        xy = torch.mm(mu, mu.T)
-        mu_diff = xx + yy - 2 * xy
-        sigma_sum = torch.mean(sigma, dim=1, keepdim=True) + \
-            torch.sum(sigma.T, dim=0, keepdim=True)
-        mls_score = mu_diff / (1e-8 + sigma_sum) + \
-            mu.size(1) * torch.log(sigma_sum)
-
-        return mls_score
-
-    def forward(self, mu, log_sigma, labels=None):
-        mu = F.normalize(mu)
-        non_diag_mask = (1 - torch.eye(mu.size(0))).int().cuda()
-        sigma = torch.exp(log_sigma)
-        mls_loss = self._negative_mls_loss(mu, sigma)
-        lable_mask = torch.eq(labels.unsqueeze(1), labels.unsqueeze(0)).int()
-        positive_mask = non_diag_mask * lable_mask > 0
-        positive_loss = mls_loss[positive_mask].mean()
-
-        return positive_loss
-
-
+# todo: class-wise contrastive loss
+# todo "Probabilistic Representations for Video Contrastive Learning"
+# todo: video loss
 class ProbPPCLoss(nn.Module, ABC):
     """ 
-    Pixel-wise probabilistic contrastive loss
+    Pixel-wise probabilistic contrastive loss (instanse-wise contrastive loss)
     Probability masure: mutual likelihood loss
     """
 
@@ -65,6 +34,41 @@ class ProbPPCLoss(nn.Module, ABC):
         if self.configer.exists('loss', 'params') and 'ce_ignore_index' in self.configer.get('loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
+
+    def forward(self, contrast_logits, contrast_target):
+        prob_ppc_loss = F.cross_entropy(
+            contrast_logits, contrast_target.long(), ignore_index=self.ignore_label)
+
+        return prob_ppc_loss
+
+
+class ProbPPDLoss(nn.Module, ABC):
+    """ 
+    Minimize intra-class compactness using distance between probabilistic distributions (MLS Distance).
+
+    minij
+    """
+
+    def __init__(self, configer):
+        super(ProbPPDLoss, self).__init__()
+
+        self.configer = configer
+
+        self.ignore_label = -1
+        if self.configer.exists('loss', 'params') and 'ce_ignore_index' in self.configer.get('loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+
+    def forward(self, contrast_logits, contrast_target):
+        contrast_logits = contrast_logits[contrast_target !=
+                                          self.ignore_label, :]
+        contrast_target = contrast_target[contrast_target != self.ignore_label]
+
+        logits = torch.gather(contrast_logits, 1,
+                              contrast_target[:, None].long())
+        prob_ppd_loss = - logits.mean()
+
+        return prob_ppd_loss
 
 
 class PixelProbContrastLoss(nn.Module, ABC):
@@ -79,38 +83,13 @@ class PixelProbContrastLoss(nn.Module, ABC):
         self.configer = configer
         self.temperature = self.configer.get('prob_contrast', 'temperature')
 
-        self.ignore_label = -1
-        if self.configer.exists('loss', 'params') and 'ignore_index' in self.configer.get('loss', 'params'):
-            self.ignore_label = self.configer.get('loss', 'params')
-        Log.info('ignore_index: {}'.format())
+        ignore_index = -1
+        if self.configer.exists('loss', 'params') and 'ce_ignore_index' in self.configer.get('loss', 'params'):
+            ignore_index = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+        Log.info('ignore_index: {}'.format(ignore_index))
 
-        self.seg_criterion = FSCELoss(configer=configer)  # seg loss
-        self.prob_ppc_loss =
-
-    def _prob_contrastive(self, x, y, queue=None):
-        """ 
-        x: feature
-        y: label
-        queue: stored representative samples of each class
-        """
-        fea_num, n_view = x.shape[0], x.shape[1]
+        self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
+        self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
 
     def forward(self, feats, labels=None, predict=None):
-        if labels.shape[-1] != feats.shape[-1]:
-            labels = labels.unsqueeze(1).float().clone()
-            labels = torch.nn.functiontional.interpolate(labels,
-                                                         (feats.shape[2],
-                                                          feats.shape[3]),
-                                                         mode='nearest')
-            labels.squeeze(1).long()
-            Log.info('Upsampling labels since labels are less than features.')
-        assert labels.shape[-1] == feats.shape[-1], 'labels: {}, feats: {}'.format(
-            labels.shape, feats.shape)
-
-        batch_size = feats.shape[0]
-
-        labels = labels.contiguous().view(batch_size, -1)
-        predict = predict.contiguous().view(batch_size, -1)
-        feats = feats.permute(0, 2, 3, 1)
-        feats = feats.contiguous().view(
-            feats.shape[0], -1, feats.shape[-1])  # [N, H*W, C]

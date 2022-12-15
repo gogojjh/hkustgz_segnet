@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import torch.distributed as dist
 
 from lib.models.backbones.backbone_selector import BackboneSelector
 from lib.models.tools.module_helper import ModuleHelper
@@ -85,10 +86,9 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         sigma: var of x [(b h w) c]
         prototypes: [cls_num, proto_num, channel/c]
         c: similarity [] 
-        gt_seg: [b*h*w]?
+        gt_seg: [b*h*w]
         """
-        #! similarity measure between features and prototypes
-        if self.use_probability and self.sim_measure == "mls":
+        if self.use_probability and self.sim_measure == "mls":  # mls larger -> similar
             pt_num = x.shape[0]
             # [num_class, num_prototype, b*h*w, c]
             x_tile = x.unsqueeze(0).expand(
@@ -121,10 +121,19 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
         return sim_mat
 
-    def prototype_learning(self, sim_mat, gt_seg):
+    def prototype_learning(self, sim_mat, gt_seg, _c, x_var):
         """ 
         Prototype selection and update
-        Non-uniform matching flow using optimal transport.
+        _c: (normalized) feature embedding
+        x_var: variance of each feature embedding
+
+        multi_proxy is False: 
+        each pixel corresponds to one prototype:
+        "Rethinking Semantic Segmentation: A Prototype View"
+
+        multi_proxy is True:
+        each pixel corresponds to a mix to multiple protoyptes
+        "Prototype selection and update"
         min(tr(M * T_t) + lamda * tr(T * log(T) - 1 * 1_T)_t)
         M = 1 - C, M: cost matrx, C: similarity matrix
         T: optimal transport plan
@@ -135,10 +144,13 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         # largest score inside a class, # [num_class, b*h*w]
         sim_mat = torch.amax(sim_mat, dim=1)
         pred_seg = torch.max(sim_mat, dim=0)[1]  # [b*h*w]
-        proto_activate = torch.ones_like(sim_mat)
-        mask = (gt_seg == pred_seg.view(-1))  # [b*h*w]
+        mask = (gt_seg == pred_seg.view(-1))  # [b*h*w] bool
 
         #! pixel-to-prototype online clustering
+        protos = self.prototypes.data.clone()
+        proto_var = self.proto_var.data.clone()
+        # to store predictions of proto in each class
+        proto_target = gt_seg.clone().float()
         if not self.multi_proxy:
             for i in range(self.num_classes):
                 init_q = sim_mat[..., i]  # [b*h*w, num_proto]
@@ -147,8 +159,50 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
                 if init_q.shape[0] == 0:
                     continue
 
-                q, indexs = distributed_sinkhorn(init_q)
-        return
+                q, indexs = distributed_sinkhorn(init_q)  # q: mapping mat
+
+                m_k = mask[gt_seg == i]
+
+                c_k = _c[gt_seg == i, ...]  # [n, embed_dim]
+
+                var_k = x_var[gt_seg == i, ...]
+
+                m_k_tile = repeat(m_k, 'n -> n tile',
+                                  tile=self.num_prototype)  # [n, num_proto], bool
+
+                # ! select the prototypes of the correctly predicted pixels in i-th class
+                m_q = q * m_k_tile  # [n, num_proto]
+
+                # the prototypes that are being selected calcualted by sum
+                n = torch.sum(m_q, dim=0)  # [num_proto]
+                # select the feature embed and var of the correctly predicted pixels in i-th class
+                c_k_tile = repeat(m_k, 'n -> n tile',
+                                  tile=c_k.shape[-1])  # [n, embed_dim]
+
+                c_q = c_k * c_k_tile  # [n, embed_dim]
+
+                var_q = var_k * c_k_tile  # [n, embed_dim]
+                if self.update_prototype is True and torch.sum(n) > 0:
+                    if self.use_probability:
+                        # [embed_dim]
+                        var_hat = 1 / (torch.mean((1/var_q), dim=0))
+                        var_hat_tile = repeat(
+                            var_hat, 'd -> tile d', tile=var_q.shape[0])  # [n, fea_dim]
+                        mean_gamma = torch.mean(
+                            (var_hat_tile / var_q * c_k_tile), dim=0)  # [fea_dim]
+                        protos[i, n != 0, :] = mean_gamma
+                        proto_var[i, n != 0, :] = var_hat
+
+                    elif self.use_probability is False:
+                        return
+
+                proto_target[gt_seg == i] = indexs.float() + \
+                    (self.num_prototype * i)
+
+            self.prototypes = nn.Parameter(
+                l2_normalize(protos), requires_grad=False)
+
+        return proto_target
 
     def forward(self, x_, gt_semantic_seg=None, pretrain_prototype=False):
         x = self.backbone(x_)
@@ -175,10 +229,154 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         sim_mat = self.similarity_compute(
             x, x_var)  # [b*h*w, num_cls, num_proto]
 
+        # select the class-wise largest value
+        out_seg = torch.amax(sim_mat, dim=1)
+
         if pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
             gt_seg = F.interpolate(gt_semantic_seg.float(), size=feats.size()[
                                    2:], mode="nearest").view(-1)  # [b*h*w]?
-            self.prototype_learning(sim_mat, gt_seg)
+            contrast_target = self.prototype_learning(
+                sim_mat, gt_seg, _c, x_var)  # prototype selection
+            return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
+
+        return out_seg
+
+
+class HRNet_W48_Proto(nn.Module):
+    """
+    deep high-resolution representation learning for human pose estimation, CVPR2019
+    """
+
+    def __init__(self, configer):
+        super(HRNet_W48_Proto, self).__init__()
+        self.configer = configer
+        self.gamma = self.configer.get('protoseg', 'gamma')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        self.use_prototype = self.configer.get('protoseg', 'use_prototype')
+        self.update_prototype = self.configer.get(
+            'protoseg', 'update_prototype')
+        self.pretrain_prototype = self.configer.get(
+            'protoseg', 'pretrain_prototype')
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.backbone = BackboneSelector(configer).get_backbone()
+
+        in_channels = 720
+        self.cls_head = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels,
+                      kernel_size=3, stride=1, padding=1),
+            ModuleHelper.BNReLU(
+                in_channels, bn_type=self.configer.get('network', 'bn_type')),
+            nn.Dropout2d(0.10)
+        )
+
+        self.prototypes = nn.Parameter(torch.zeros(self.num_classes, self.num_prototype, in_channels),
+                                       requires_grad=True)
+
+        self.proj_head = ProjectionHead(in_channels, in_channels)
+        self.feat_norm = nn.LayerNorm(in_channels)
+        self.mask_norm = nn.LayerNorm(self.num_classes)
+
+        trunc_normal_(self.prototypes, std=0.02)
+
+    def prototype_learning(self, _c, out_seg, gt_seg, masks):
+        pred_seg = torch.max(out_seg, 1)[1]
+        mask = (gt_seg == pred_seg.view(-1))
+
+        cosine_similarity = torch.mm(
+            _c, self.prototypes.view(-1, self.prototypes.shape[-1]).t())
+
+        proto_logits = cosine_similarity
+        proto_target = gt_seg.clone().float()
+
+        #! clustering for each class and momentum update of prototypes
+        protos = self.prototypes.data.clone()
+        for k in range(self.num_classes):
+            init_q = masks[..., k]
+            init_q = init_q[gt_seg == k, ...]
+            if init_q.shape[0] == 0:
+                continue
+
+            q, indexs = distributed_sinkhorn(init_q)
+
+            m_k = mask[gt_seg == k]
+
+            c_k = _c[gt_seg == k, ...]
+
+            m_k_tile = repeat(m_k, 'n -> n tile', tile=self.num_prototype)
+
+            m_q = q * m_k_tile  # n x self.num_prototype
+
+            c_k_tile = repeat(m_k, 'n -> n tile', tile=c_k.shape[-1])
+
+            c_q = c_k * c_k_tile  # n x embedding_dim
+
+            # self.num_prototype x embedding_dim, @: mat product
+            f = m_q.transpose(0, 1) @ c_q
+
+            n = torch.sum(m_q, dim=0)
+
+            if torch.sum(n) > 0 and self.update_prototype is True:
+                f = F.normalize(f, p=2, dim=-1)
+
+                new_value = momentum_update(old_value=protos[k, n != 0, :], new_value=f[n != 0, :],
+                                            momentum=self.gamma, debug=False)
+                protos[k, n != 0, :] = new_value
+
+            proto_target[gt_seg == k] = indexs.float() + \
+                (self.num_prototype * k)
+
+        self.prototypes = nn.Parameter(l2_normalize(protos),
+                                       requires_grad=False)
+
+        if dist.is_available() and dist.is_initialized():  # distributed learning
+            protos = self.prototypes.data.clone()
+            dist.all_reduce(protos.div_(dist.get_world_size()))
+            self.prototypes = nn.Parameter(protos, requires_grad=False)
+
+        return proto_logits, proto_target
+
+    def forward(self, x_, gt_semantic_seg=None, pretrain_prototype=False):
+        x = self.backbone(x_)
+        _, _, h, w = x[0].size()
+
+        feat1 = x[0]
+        feat2 = F.interpolate(x[1], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat3 = F.interpolate(x[2], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat4 = F.interpolate(x[3], size=(
+            h, w), mode="bilinear", align_corners=True)
+
+        feats = torch.cat([feat1, feat2, feat3, feat4], 1)
+        c = self.cls_head(feats)
+
+        c = self.proj_head(c)
+        _c = rearrange(c, 'b c h w -> (b h w) c')
+        _c = self.feat_norm(_c)  # ! along channel dimension
+        _c = l2_normalize(_c)  # ! along num_class dimension
+
+        #! channel-wise normalize the prototypes because of cosine simialrity
+        self.prototypes.data.copy_(l2_normalize(self.prototypes))
+
+        # n: h*w, k: num_class, m: num_prototype
+        # unnormalized cosine similarity
+        masks = torch.einsum(
+            'nd,kmd->nmk', _c, self.prototypes)  # similarity_mat
+
+        out_seg = torch.amax(masks, dim=1)
+        # normalized cosine similarity
+        out_seg = self.mask_norm(out_seg)
+        out_seg = rearrange(out_seg, "(b h w) k -> b k h w",
+                            b=feats.shape[0], h=feats.shape[2])
+
+        if pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
+            gt_seg = F.interpolate(gt_semantic_seg.float(), size=feats.size()[
+                                   2:], mode='nearest').view(-1)
+            contrast_logits, contrast_target = self.prototype_learning(
+                _c, out_seg, gt_seg, masks)
+            return {'seg': out_seg, 'logits': contrast_logits, 'target': contrast_target}
+
+        return out_seg
 
 
 class HRNet_W48(nn.Module):
