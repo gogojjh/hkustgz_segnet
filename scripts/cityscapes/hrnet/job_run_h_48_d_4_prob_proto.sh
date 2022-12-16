@@ -1,4 +1,5 @@
 #!/bin/bash
+
 #BSUB -n 16
 #BSUB -W 48:00
 #BSUB -R "rusage[mem=4000,ngpus_excl_p=4,scratch=5000]"
@@ -9,17 +10,17 @@
 #BSUB -oo logs/
 
 # activate env
-source ../../../../pytorch-1.7.1/bin/activate
+# source ../../../../pytorch-1.7.1/bin/activate
 
 # copy data
 # rsync -aP /cluster/work/cvl/tiazhou/data/CityscapesZIP/openseg.tar ${TMPDIR}/
 # mkdir ${TMPDIR}/Cityscapes
 # tar -xf ${TMPDIR}/openseg.tar -C ${TMPDIR}/Cityscapes
 
-TMPDIR = "/data"
+TMPDIR = "/data/test_cityscapes/cityscapes"
 
 # copy assets
-rsync -aP /save_data/hrnetv2_w48_imagenet_pretrained.pth ${TMPDIR}/hrnetv2_w48_imagenet_pretrained.pth
+# rsync -aP /save_data/hrnetv2_w48_imagenet_pretrained.pth ${TMPDIR}/hrnetv2_w48_imagenet_pretrained.pth
 
 # define scratch dir
 SCRATCH_DIR="/save_data"

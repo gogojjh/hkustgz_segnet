@@ -1,12 +1,12 @@
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-## Created by: DonnyYou, RainbowSecret, JingyiXie, JianyuanGuo
-## Microsoft Research
-## yuyua@microsoft.com
-## Copyright (c) 2019
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Created by: DonnyYou, RainbowSecret, JingyiXie, JianyuanGuo
+# Microsoft Research
+# yuyua@microsoft.com
+# Copyright (c) 2019
 ##
-## This source code is licensed under the MIT-style license found in the
-## LICENSE file in the root directory of this source tree 
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# This source code is licensed under the MIT-style license found in the
+# LICENSE file in the root directory of this source tree
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 from __future__ import absolute_import
@@ -19,6 +19,8 @@ from lib.loss.loss_helper import SegFixLoss
 from lib.loss.rmi_loss import RMILoss
 from lib.loss.loss_contrast import ContrastAuxCELoss, ContrastCELoss
 from lib.loss.loss_contrast_mem import ContrastCELoss as MemContrastCELoss
+from lib.loss.loss_proto import PixelPrototypeCELoss
+from lib.loss.loss_prob_proto import PixelProbContrastLoss
 
 from lib.utils.tools.logger import Logger as Log
 from lib.utils.distributed import is_distributed
@@ -38,8 +40,9 @@ SEG_LOSS_DICT = {
     'fs_ce_lovasz_loss': FSCELOVASZLoss,
     'ms_fs_aux_rmi_loss': MSFSAuxRMILoss,
     'fs_auxce_dsn_loss': FSAuxCELossDSN,
-    'mem_contrast_ce_loss': MemContrastCELoss
-}
+    'mem_contrast_ce_loss': MemContrastCELoss,
+    'pixel_prototype_ce_loss': PixelPrototypeCELoss,
+    'pixel_prob_prototype_ce_loss': PixelProbContrastLoss}
 
 
 class LossManager(object):
@@ -50,7 +53,7 @@ class LossManager(object):
         if is_distributed():
             Log.info('use distributed loss')
             return loss
-            
+
         if self.configer.get('network', 'loss_balance') and len(self.configer.get('gpu')) > 1:
             Log.info('use DataParallelCriterion loss')
             from lib.extensions.parallel.data_parallel import DataParallelCriterion
@@ -59,12 +62,11 @@ class LossManager(object):
         return loss
 
     def get_seg_loss(self, loss_type=None):
-        key = self.configer.get('loss', 'loss_type') if loss_type is None else loss_type
+        key = self.configer.get(
+            'loss', 'loss_type') if loss_type is None else loss_type
         if key not in SEG_LOSS_DICT:
             Log.error('Loss: {} not valid!'.format(key))
             exit(1)
         Log.info('use loss: {}.'.format(key))
         loss = SEG_LOSS_DICT[key](self.configer)
         return self._parallel(loss)
-
-

@@ -6,7 +6,7 @@
       "input_mode": "BGR",
       "num_classes": 19,
       "label_list": [7, 8, 11, 12, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33],
-      "data_dir": "/msravcshare/dataset/cityscapes",
+      "data_dir": "/data/test_cityscapes/cityscapes",
       "workers": 8
     },
    "train": {
@@ -78,7 +78,7 @@
       "backbone": "deepbase_resnet101_dilated8",
       "multi_grid": [1, 1, 1],
       "model_name": "base_ocnet",
-      "bn_type": "torchsyncbn",
+      "bn_type": "torchbn",
       "stride": 8,
       "factors": [[8, 8]],
       "loss_weights": {

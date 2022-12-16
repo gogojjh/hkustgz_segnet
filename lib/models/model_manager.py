@@ -1,22 +1,22 @@
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-## Microsoft Research
-## Author: RainbowSecret, LangHuang, JingyiXie, JianyuanGuo
-## Copyright (c) 2019
-## yuyua@microsoft.com
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Microsoft Research
+# Author: RainbowSecret, LangHuang, JingyiXie, JianyuanGuo
+# Copyright (c) 2019
+# yuyua@microsoft.com
 ##
-## This source code is licensed under the MIT-style license found in the
-## LICENSE file in the root directory of this source tree 
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# This source code is licensed under the MIT-style license found in the
+# LICENSE file in the root directory of this source tree
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Our approaches including FCN baseline, HRNet, OCNet, ISA, OCR
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# FCN baseline 
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# FCN baseline
 from lib.models.nets.fcnet import FcnNet
 
 # OCR
@@ -25,7 +25,7 @@ from lib.models.nets.ideal_ocrnet import IdealSpatialOCRNet, IdealSpatialOCRNetB
 
 # HRNet
 from lib.models.nets.hrnet import HRNet_W48, HRNet_W48_CONTRAST
-from lib.models.nets.hrnet import HRNet_W48_OCR, HRNet_W48_OCR_B, HRNet_W48_OCR_B_HA, HRNet_W48_OCR_CONTRAST, HRNet_W48_MEM
+from lib.models.nets.hrnet import HRNet_W48_OCR, HRNet_W48_OCR_B, HRNet_W48_OCR_B_HA, HRNet_W48_OCR_CONTRAST, HRNet_W48_MEM, HRNet_W48_Proto, HRNet_W48_Prob_Contrast_Proto
 
 # OCNet
 from lib.models.nets.ocnet import BaseOCNet, AspOCNet
@@ -56,10 +56,10 @@ SEG_MODEL_DICT = {
     # OCR series
     'spatial_ocrnet': SpatialOCRNet,
     'spatial_asp_ocrnet': ASPOCRNet,
-    # OCR series with ground-truth   
+    # OCR series with ground-truth
     'ideal_spatial_ocrnet': IdealSpatialOCRNet,
     'ideal_spatial_ocrnet_b': IdealSpatialOCRNetB,
-    'ideal_spatial_ocrnet_c': IdealSpatialOCRNetC, 
+    'ideal_spatial_ocrnet_c': IdealSpatialOCRNetC,
     'ideal_gather_ocrnet': IdealGatherOCRNet,
     'ideal_distribute_ocrnet': IdealDistributeOCRNet,
     # HRNet series
@@ -69,7 +69,7 @@ SEG_MODEL_DICT = {
     # CE2P series
     'ce2p_asp_ocrnet': CE2P_ASPOCR,
     'ce2p_ocrnet': CE2P_OCRNet,
-    'ce2p_ideal_ocrnet': CE2P_IdealOCRNet, 
+    'ce2p_ideal_ocrnet': CE2P_IdealOCRNet,
     # baseline series
     'fcnet': FcnNet,
     'hrnet_w48_contrast': HRNet_W48_CONTRAST,
@@ -79,6 +79,8 @@ SEG_MODEL_DICT = {
     'deeplab_v3_contrast': DeepLabV3Contrast,
     'ms_ocr': MscaleOCR,
     'hrnet_w48_ocr_b_ha': HRNet_W48_OCR_B_HA,
+    'hrnet_w48_proto': HRNet_W48_Proto,
+    'hr_w48_prob_proto': HRNet_W48_Prob_Contrast_Proto
 }
 
 

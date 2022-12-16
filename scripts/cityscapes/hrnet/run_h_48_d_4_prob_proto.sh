@@ -11,11 +11,11 @@ DATA_DIR="${DATA_ROOT}/Cityscapes"
 SAVE_DIR="${SCRATCH_ROOT}/Cityscapes/seg_results/"
 BACKBONE="hrnet48"
 
-CONFIGS="configs/cityscapes/H_48_D_4_proto.json"
+CONFIGS="configs/cityscapes/H_48_D_4_prob_proto.json"
 CONFIGS_TEST="configs/cityscapes/H_48_D_4_TEST.json"
 
-MODEL_NAME="hrnet_w48_proto"
-LOSS_TYPE="pixel_prototype_ce_loss"
+MODEL_NAME="hr_w48_prob_proto"
+LOSS_TYPE="pixel_prob_prototype_ce_loss"
 CHECKPOINTS_ROOT="${SCRATCH_ROOT}/Cityscapes"
 CHECKPOINTS_NAME="${MODEL_NAME}_lr1x_"$2
 LOG_FILE="${SCRATCH_ROOT}/logs/Cityscapes/${CHECKPOINTS_NAME}.log"
@@ -28,7 +28,7 @@ BATCH_SIZE=8
 BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
-  python -u main.py --configs ${CONFIGS} \
+  python -u -m debugpy --listen 9248 --wait-for-client main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
                        --gathered n \
@@ -36,15 +36,15 @@ if [ "$1"x == "train"x ]; then
                        --log_to_file n \
                        --backbone ${BACKBONE} \
                        --model_name ${MODEL_NAME} \
-                       --gpu 0 1 2 3 \
+                       --gpu 0 \
                        --data_dir ${DATA_DIR} \
                        --loss_type ${LOSS_TYPE} \
                        --max_iters ${MAX_ITERS} \
                        --checkpoints_root ${CHECKPOINTS_ROOT} \
                        --checkpoints_name ${CHECKPOINTS_NAME} \
-                       --pretrained ${PRETRAINED_MODEL} \
+                      #  --pretrained ${PRETRAINED_MODEL} \
                        --train_batch_size ${BATCH_SIZE} \
-                       --distributed \
+                      #  --distributed \
                        --base_lr ${BASE_LR} \
                        2>&1 | tee ${LOG_FILE}
 

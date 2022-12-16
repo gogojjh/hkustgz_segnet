@@ -25,6 +25,9 @@ RUN pip install -U autopep8
 # tools
 RUN pip install wandb
 RUN pip install --ignore-installed ruamel.yaml
+# mmcv
+RUN pip install -U openmim
+RUN install mmcv
 
 RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install libgtk2.0-dev -y && rm -rf /var/lib/apt/lists/*
 

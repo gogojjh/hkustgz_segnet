@@ -81,7 +81,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
         super(PixelProbContrastLoss, self).__init__()
 
         self.configer = configer
-        self.temperature = self.configer.get('prob_contrast', 'temperature')
+        # self.temperature = self.configer.get('prob_contrast', 'temperature')
 
         ignore_index = -1
         if self.configer.exists('loss', 'params') and 'ce_ignore_index' in self.configer.get('loss', 'params'):
@@ -92,4 +92,34 @@ class PixelProbContrastLoss(nn.Module, ABC):
         self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
         self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
 
-    def forward(self, feats, labels=None, predict=None):
+        self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
+        self.prob_ppd_criterion = ProbPPDLoss(configer=configer)
+
+    def forward(self, preds, target):
+        h, w = target.size(1), target.size(2)
+
+        if isinstance(preds, dict):
+            assert 'seg' in preds
+            assert 'logits' in preds
+            assert 'target' in preds
+
+            seg = preds['seg']
+            contrast_logits = preds['logits']
+            contrast_target = preds['target']
+            prob_ppc_loss = self.prob_ppc_criterion(
+                contrast_logits, contrast_target)
+            prob_ppd_loss = self.prob_ppd_criterion(
+                contrast_logits, contrast_target)
+
+            pred = F.interpolate(input=seg, size=(
+                h, w), mode='bilinear', align_corners=True)
+            seg_loss = self.seg_criterion(pred, target)
+
+            return seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
+
+        seg = preds
+        pred = F.interpolate(input=seg, size=(
+            h, w), mode='bilinear', align_corners=True)
+        seg_loss = self.seg_criterion(pred, target)
+
+        return seg_loss

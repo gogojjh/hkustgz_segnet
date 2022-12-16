@@ -1,12 +1,12 @@
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-## Created by: JingyiXie, LangHuang, DonnyYou, RainbowSecret
-## Microsoft Research
-## yuyua@microsoft.com
-## Copyright (c) 2019
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Created by: JingyiXie, LangHuang, DonnyYou, RainbowSecret
+# Microsoft Research
+# yuyua@microsoft.com
+# Copyright (c) 2019
 ##
-## This source code is licensed under the MIT-style license found in the
-## LICENSE file in the root directory of this source tree 
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# This source code is licensed under the MIT-style license found in the
+# LICENSE file in the root directory of this source tree
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 from __future__ import absolute_import
@@ -31,7 +31,8 @@ class DefaultLoader(data.Dataset):
         self.aug_transform = aug_transform
         self.img_transform = img_transform
         self.label_transform = label_transform
-        self.img_list, self.label_list, self.name_list = self.__list_dirs(root_dir, dataset)
+        self.img_list, self.label_list, self.name_list = self.__list_dirs(
+            root_dir, dataset)
         size_mode = self.configer.get(dataset, 'data_transformer')['size_mode']
         self.is_stack = size_mode != 'diverse_size'
 
@@ -42,7 +43,8 @@ class DefaultLoader(data.Dataset):
 
     def __getitem__(self, index):
         img = ImageHelper.read_image(self.img_list[index],
-                                     tool=self.configer.get('data', 'image_tool'),
+                                     tool=self.configer.get(
+                                         'data', 'image_tool'),
                                      mode=self.configer.get('data', 'input_mode'))
         # Log.info('{}'.format(self.img_list[index]))
         img_size = ImageHelper.get_size(img)
@@ -77,7 +79,8 @@ class DefaultLoader(data.Dataset):
             img=DataContainer(img, stack=self.is_stack),
             labelmap=DataContainer(labelmap, stack=self.is_stack),
             meta=DataContainer(meta, stack=False, cpu_only=True),
-            name=DataContainer(self.name_list[index], stack=False, cpu_only=True),
+            name=DataContainer(
+                self.name_list[index], stack=False, cpu_only=True),
         )
 
     def _reduce_zero_label(self, labelmap):
@@ -87,7 +90,8 @@ class DefaultLoader(data.Dataset):
         labelmap = np.array(labelmap)
         encoded_labelmap = labelmap - 1
         if self.configer.get('data', 'image_tool') == 'pil':
-            encoded_labelmap = ImageHelper.np2img(encoded_labelmap.astype(np.uint8))
+            encoded_labelmap = ImageHelper.np2img(
+                encoded_labelmap.astype(np.uint8))
 
         return encoded_labelmap
 
@@ -95,13 +99,15 @@ class DefaultLoader(data.Dataset):
         labelmap = np.array(labelmap)
 
         shape = labelmap.shape
-        encoded_labelmap = np.ones(shape=(shape[0], shape[1]), dtype=np.float32) * 255
+        encoded_labelmap = np.ones(
+            shape=(shape[0], shape[1]), dtype=np.float32) * 255
         for i in range(len(self.configer.get('data', 'label_list'))):
             class_id = self.configer.get('data', 'label_list')[i]
             encoded_labelmap[labelmap == class_id] = i
 
         if self.configer.get('data', 'image_tool') == 'pil':
-            encoded_labelmap = ImageHelper.np2img(encoded_labelmap.astype(np.uint8))
+            encoded_labelmap = ImageHelper.np2img(
+                encoded_labelmap.astype(np.uint8))
 
         return encoded_labelmap
 
@@ -132,10 +138,14 @@ class DefaultLoader(data.Dataset):
         for file_name in files:
             image_name = '.'.join(file_name.split('.')[:-1])
             img_path = os.path.join(image_dir, '{}'.format(file_name))
-            label_path = os.path.join(label_dir, image_name + '.png')
+            # label_path = os.path.join(label_dir, image_name + '.png')
+            label_name = image_name.replace(
+                'leftImg8bit', 'gtFine_labelIds') + '.png'
+            label_path = os.path.join(label_dir, label_name)
             # Log.info('{} {} {}'.format(image_name, img_path, label_path))
             if not os.path.exists(label_path) or not os.path.exists(img_path):
-                Log.error('Label Path: {} {} not exists.'.format(label_path, img_path))
+                Log.error('Label Path: {} {} not exists.'.format(
+                    label_path, img_path))
                 continue
 
             img_list.append(img_path)
@@ -150,10 +160,10 @@ class DefaultLoader(data.Dataset):
             # we only use trainval set for training if set include_val
             if self.configer.get('dataset') == 'pascal_voc':
                 image_dir = os.path.join(root_dir, 'trainval/image')
-                label_dir = os.path.join(root_dir, 'trainval/label') 
+                label_dir = os.path.join(root_dir, 'trainval/label')
                 img_list.clear()
                 label_list.clear()
-                name_list.clear()              
+                name_list.clear()
 
             if self.configer.exists('data', 'label_edge2void'):
                 label_dir = os.path.join(root_dir, 'val/label_edge_void')
@@ -172,7 +182,8 @@ class DefaultLoader(data.Dataset):
                 img_path = os.path.join(image_dir, '{}'.format(file_name))
                 label_path = os.path.join(label_dir, image_name + '.png')
                 if not os.path.exists(label_path) or not os.path.exists(img_path):
-                    Log.error('Label Path: {} {} not exists.'.format(label_path, img_path))
+                    Log.error('Label Path: {} {} not exists.'.format(
+                        label_path, img_path))
                     continue
 
                 img_list.append(img_path)
@@ -186,7 +197,8 @@ class DefaultLoader(data.Dataset):
 
             for file_name in os.listdir(label_dir):
                 image_name = '.'.join(file_name.split('.')[:-1])
-                img_path = os.path.join(image_dir, '{}.{}'.format(image_name, img_extension))
+                img_path = os.path.join(
+                    image_dir, '{}.{}'.format(image_name, img_extension))
                 label_path = os.path.join(label_dir, file_name)
                 if not os.path.exists(label_path) or not os.path.exists(img_path):
                     Log.error('Label Path: {} not exists.'.format(label_path))
@@ -195,7 +207,7 @@ class DefaultLoader(data.Dataset):
                 img_list.append(img_path)
                 label_list.append(label_path)
                 name_list.append(image_name)
-                
+
         if dataset == 'train' and self.configer.get('data', 'include_atr'):
             Log.info("Use ATR dataset for training.")
             image_dir = os.path.join(root_dir, 'atr/image')
@@ -203,7 +215,8 @@ class DefaultLoader(data.Dataset):
 
             for file_name in os.listdir(label_dir):
                 image_name = '.'.join(file_name.split('.')[:-1])
-                img_path = os.path.join(image_dir, '{}.{}'.format(image_name, img_extension))
+                img_path = os.path.join(
+                    image_dir, '{}.{}'.format(image_name, img_extension))
                 label_path = os.path.join(label_dir, file_name)
                 if not os.path.exists(label_path) or not os.path.exists(img_path):
                     Log.error('Label Path: {} not exists.'.format(label_path))
@@ -224,7 +237,8 @@ class DefaultLoader(data.Dataset):
 
             for file_name in os.listdir(label_dir):
                 image_name = '.'.join(file_name.split('.')[:-1])
-                img_path = os.path.join(image_dir, '{}.{}'.format(image_name, img_extension))
+                img_path = os.path.join(
+                    image_dir, '{}.{}'.format(image_name, img_extension))
                 label_path = os.path.join(label_dir, file_name)
                 if not os.path.exists(label_path) or not os.path.exists(img_path):
                     Log.error('Label Path: {} not exists.'.format(label_path))
@@ -245,7 +259,8 @@ class DefaultLoader(data.Dataset):
 
             for file_name in os.listdir(label_dir):
                 image_name = '.'.join(file_name.split('.')[:-1])
-                img_path = os.path.join(image_dir, '{}.{}'.format(image_name, "jpg"))
+                img_path = os.path.join(
+                    image_dir, '{}.{}'.format(image_name, "jpg"))
                 label_path = os.path.join(label_dir, file_name)
                 if not os.path.exists(label_path) or not os.path.exists(img_path):
                     Log.error('Label Path: {} not exists.'.format(label_path))
@@ -262,7 +277,8 @@ class CSDataTestLoader(data.Dataset):
     def __init__(self, root_dir, dataset=None, img_transform=None, configer=None):
         self.configer = configer
         self.img_transform = img_transform
-        self.img_list, self.name_list, self.subfolder_list = self.__list_dirs(root_dir, dataset)
+        self.img_list, self.name_list, self.subfolder_list = self.__list_dirs(
+            root_dir, dataset)
 
         size_mode = self.configer.get(dataset, 'data_transformer')['size_mode']
         self.is_stack = (size_mode != 'diverse_size')
@@ -272,7 +288,8 @@ class CSDataTestLoader(data.Dataset):
 
     def __getitem__(self, index):
         img = ImageHelper.read_image(self.img_list[index],
-                                     tool=self.configer.get('data', 'image_tool'),
+                                     tool=self.configer.get(
+                                         'data', 'image_tool'),
                                      mode=self.configer.get('data', 'input_mode'))
         img_size = ImageHelper.get_size(img)
         if self.img_transform is not None:
@@ -284,8 +301,10 @@ class CSDataTestLoader(data.Dataset):
         return dict(
             img=DataContainer(img, stack=self.is_stack),
             meta=DataContainer(meta, stack=False, cpu_only=True),
-            name=DataContainer(self.name_list[index], stack=False, cpu_only=True),
-            subfolder=DataContainer(self.subfolder_list[index], stack=False, cpu_only=True),
+            name=DataContainer(
+                self.name_list[index], stack=False, cpu_only=True),
+            subfolder=DataContainer(
+                self.subfolder_list[index], stack=False, cpu_only=True),
         )
 
     def __list_dirs(self, root_dir, dataset):
@@ -303,13 +322,14 @@ class CSDataTestLoader(data.Dataset):
                     image_name = file_name.split('.')[0]
                     img_path = os.path.join(sub_image_dir, file_name)
                     if not os.path.exists(img_path):
-                        Log.error('Image Path: {} not exists.'.format(img_path))
+                        Log.error(
+                            'Image Path: {} not exists.'.format(img_path))
                         continue
                     img_list.append(img_path)
                     name_list.append(image_name)
                     subfolder_list.append(item)
         else:
-             for file_name in os.listdir(image_dir):
+            for file_name in os.listdir(image_dir):
                 image_name = file_name.split('.')[0]
                 img_path = os.path.join(image_dir, file_name)
                 if not os.path.exists(img_path):
@@ -320,6 +340,7 @@ class CSDataTestLoader(data.Dataset):
                 subfolder_list.append('')
 
         return img_list, name_list, subfolder_list
+
 
 if __name__ == "__main__":
     # Test cityscapes loader.

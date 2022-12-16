@@ -52,13 +52,13 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
-        in_channels = 720
+        in_channels = self.configer.get('protoseg', 'proj_dim')
         self.cls_head = nn.Sequential(
             nn.Conv2d(in_channels, in_channels,
                       kernel_size=3, stride=1, padding=1),
             ModuleHelper.BNReLU(
                 in_channels, bn_type=self.configer.get('network', 'bn_type')),
-            nn.Drop2(0.10)
+            nn.Dropout2d(0.10)
         )
 
         self.uncertainty_head = UncertaintyHead(
@@ -74,7 +74,6 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             trunc_normal_(self.prototypes, std=0.02)
 
         self.proj_head = ProjectionHead(in_channels, in_channels)
-        self.proj_dim = self.configer.get('prob_contrast', 'proj_dim')
         self.feat_norm = nn.LayerNorm(in_channels)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
 
