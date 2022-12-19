@@ -214,7 +214,7 @@ if __name__ == "__main__":
             from segmentor.tester_offset import Tester
             model = Tester(configer)
     else:
-        Log.error('Method: {} is not valid.'.format(configer.get('task')))
+        Log.error('Method: {} is nott valid.'.format(configer.get('task')))
         exit(1)
 
     if configer.get('phase') == 'train':

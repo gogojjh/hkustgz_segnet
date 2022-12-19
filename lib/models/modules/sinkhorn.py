@@ -3,9 +3,9 @@ import torch.nn.functional as F
 import ot
 
 
-def distributed_sinkhorn(out, sinkhorn_iterations=3, epsilon=0.05):
+def distributed_sinkhorn(out, sinkhorn_iterations=3, epsilon=100):
     """ 
-    out: similarity matrix
+    out: similarity matrix [n num_proto]
 
     return: L (mappping matrix)
     """

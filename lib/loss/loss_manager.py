@@ -42,7 +42,8 @@ SEG_LOSS_DICT = {
     'fs_auxce_dsn_loss': FSAuxCELossDSN,
     'mem_contrast_ce_loss': MemContrastCELoss,
     'pixel_prototype_ce_loss': PixelPrototypeCELoss,
-    'pixel_prob_prototype_ce_loss': PixelProbContrastLoss}
+    'pixel_prob_prototype_ce_loss': PixelProbContrastLoss
+}
 
 
 class LossManager(object):

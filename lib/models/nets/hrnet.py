@@ -21,7 +21,7 @@ from lib.models.tools.module_helper import ModuleHelper
 from lib.utils.tools.logger import Logger as Log
 from lib.models.modules.hanet_attention import HANet_Conv
 from lib.models.modules.contrast import momentum_update, l2_normalize, ProjectionHead
-from lib.models.modules.prob_embedding import UncertaintyHead, PredictionHead
+from lib.models.modules.uncertainty_head import UncertaintyHead
 from lib.models.modules.sinkhorn import distributed_sinkhorn
 from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
@@ -52,7 +52,8 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
-        in_channels = self.configer.get('protoseg', 'proj_dim')
+        in_channels = 720
+        self.proj_dim = self.configer.get('protoseg', 'proj_dim')
         self.cls_head = nn.Sequential(
             nn.Conv2d(in_channels, in_channels,
                       kernel_size=3, stride=1, padding=1),
@@ -62,19 +63,19 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         )
 
         self.uncertainty_head = UncertaintyHead(
-            in_channels=in_channels)  # predict variance of each gaussian
+            in_channels=self.proj_dim)  # predict variance of each gaussian
 
         # [cls_num, proto_num, channel/k]
         self.prototypes = nn.Parameter(torch.zeros(
-            self.num_classes, self.num_prototype, in_channels), requires_grad=False)
+            self.num_classes, self.num_prototype, self.proj_dim), requires_grad=True)
         if self.use_probability:
             self.proto_var = nn.Parameter(torch.ones(
-                self.num_classes, self.num_prototype, in_channels), requires_grad=True)
+                self.num_classes, self.num_prototype, self.proj_dim), requires_grad=True)
         else:
             trunc_normal_(self.prototypes, std=0.02)
 
-        self.proj_head = ProjectionHead(in_channels, in_channels)
-        self.feat_norm = nn.LayerNorm(in_channels)  # normalize each row
+        self.proj_head = ProjectionHead(in_channels, self.proj_dim)
+        self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
 
     def similarity_compute(self, x, x_var=None):
@@ -82,38 +83,29 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         Similarity between pixel embeddings and prototypes
 
         x: batch-wise pixel embeddings [(b h w) c]
-        sigma: var of x [(b h w) c]
+        x_var: var of x [(b h w) c]
         prototypes: [cls_num, proto_num, channel/c]
         c: similarity [] 
         gt_seg: [b*h*w]
         """
         if self.use_probability and self.sim_measure == "mls":  # mls larger -> similar
-            pt_num = x.shape[0]
-            # [num_class, num_prototype, b*h*w, c]
-            x_tile = x.unsqueeze(0).expand(
-                self.num_classes, self.num_prototype, pt_num, x.shape[-1])
-            x_var_tile = x_var.unsqueeze(0).expand(
-                self.num_classes, self.num_prototype, pt_num, x.shape[-1])
+            proto_mean = self.prototypes.clone().detach()
+            proto_var = self.proto_var.clone().detach()
+            proto_mean = rearrange(
+                proto_mean, 'c m k -> c m 1 k')  # [c m 1 k]
+            # [c m 1 k] - [n k]=[c m n k]
+            mean_diff = torch.square((proto_mean - x))  # [c m n k]
+            proto_var = rearrange(
+                proto_var, 'c m k -> c m 1 k')  # [c m 1 k]
+            var_sum = x_var + proto_var  # [c m 1 k]
 
-            # [num_class, num_prototype, b*h*w, c]
-            proto_mean = self.prototypes.expand(
-                self.num_classes, self.num_prototype, pt_num, self.prototypes.shape[-1])
-            proto_var = self.proto_var.expand(
-                self.num_classes, self.num_prototype, pt_num, self.prototypes.shape[-1])
+            sim_mat = mean_diff / var_sum + torch.log(var_sum)
+            sim_mat = - 0.5 * torch.mean(sim_mat, dim=-1)
+            #! sim_mat larger -> similar
 
-            square_term = torch.square(
-                x_tile - proto_mean) / (x_var_tile + proto_var) + torch.log(x_var_tile + proto_var)
-            # [num_class, num_prototype, b*h*w]
-            sim_mat = - torch.sum(square_term, dim=2) / \
-                2 - x_tile.shape[-1] * np.log(2 * np.pi) / 2
             sim_mat = sim_mat.permute(2, 0, 1)
 
         elif self.use_probability is False and self.sim_measure == "cosine":
-            # l2-normalization for cosine similarity
-            x = self.feat_norm(x)
-            x = l2_normalize(x)
-            self.prototypes.data.copy_(l2_normalize(self.prototypes))
-
             # batch product (toward d dimension) -> cosine simialrity between fea and prototypes
             # n: h*w, k: num_class, m: num_prototype
             sim_mat = torch.einsum('nd,kmd->nmk', x, self.prototypes)
@@ -123,14 +115,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
     def prototype_learning(self, sim_mat, gt_seg, _c, x_var):
         """ 
         Prototype selection and update
-        _c: (normalized) feature embedding
-        x_var: variance of each feature embedding
-
-        multi_proxy is False: 
-        each pixel corresponds to one prototype:
-        "Rethinking Semantic Segmentation: A Prototype View"
-
-        multi_proxy is True:
+        _c: (normalized) feature embin_channels
         each pixel corresponds to a mix to multiple protoyptes
         "Prototype selection and update"
         min(tr(M * T_t) + lamda * tr(T * log(T) - 1 * 1_T)_t)
@@ -140,16 +125,17 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         sim_mat: [b*h*w, num_cls, num_proto]
         gt_seg: [b*h*w]
         """
-        # largest score inside a class, # [num_class, b*h*w]
-        sim_mat = torch.amax(sim_mat, dim=1)
-        pred_seg = torch.max(sim_mat, dim=0)[1]  # [b*h*w]
-        mask = (gt_seg == pred_seg.view(-1))  # [b*h*w] bool
+        # largest score inside a class, # [n m]
+        cls_score = torch.amax(sim_mat, dim=2)
+        pred_seg = torch.amax(cls_score, dim=1)  # [b*h*w]
+        mask = (gt_seg == pred_seg)  # [b*h*w] bool
 
         #! pixel-to-prototype online clustering
         protos = self.prototypes.data.clone()
         proto_var = self.proto_var.data.clone()
         # to store predictions of proto in each class
         proto_target = gt_seg.clone().float()
+        sim_mat = sim_mat.permute(0, 2, 1)  # [n m c]
         if not self.multi_proxy:
             for i in range(self.num_classes):
                 init_q = sim_mat[..., i]  # [b*h*w, num_proto]
@@ -158,7 +144,8 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
                 if init_q.shape[0] == 0:
                     continue
 
-                q, indexs = distributed_sinkhorn(init_q)  # q: mapping mat
+                q, indexs = distributed_sinkhorn(init_q, epsilon=self.configer.get(
+                    'protoseg', 'sinkhorn_epsilon'))  # q: mapping mat [n, num_proto] indexs: ind of largest proto in this cls[n]
 
                 m_k = mask[gt_seg == i]
 
@@ -178,17 +165,15 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
                 c_k_tile = repeat(m_k, 'n -> n tile',
                                   tile=c_k.shape[-1])  # [n, embed_dim]
 
-                c_q = c_k * c_k_tile  # [n, embed_dim]
-
                 var_q = var_k * c_k_tile  # [n, embed_dim]
                 if self.update_prototype is True and torch.sum(n) > 0:
                     if self.use_probability:
                         # [embed_dim]
-                        var_hat = 1 / (torch.mean((1/var_q), dim=0))
+                        var_hat = 1 / (torch.sum((1/var_q), dim=0))
                         var_hat_tile = repeat(
                             var_hat, 'd -> tile d', tile=var_q.shape[0])  # [n, fea_dim]
-                        mean_gamma = torch.mean(
-                            (var_hat_tile / var_q * c_k_tile), dim=0)  # [fea_dim]
+                        mean_gamma = torch.sum(
+                            (var_hat_tile * c_k_tile) / var_q, dim=0)  # [fea_dim]
                         protos[i, n != 0, :] = mean_gamma
                         proto_var[i, n != 0, :] = var_hat
 
@@ -199,13 +184,13 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
                     (self.num_prototype * i)
 
             self.prototypes = nn.Parameter(
-                l2_normalize(protos), requires_grad=False)
+                l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
 
-        return proto_target
+        return proto_target  # [n]
 
     def forward(self, x_, gt_semantic_seg=None, pretrain_prototype=False):
         x = self.backbone(x_)
-        _, _, h, w = x[0].size()
+        _, _, h, w = x[0].size()  # 128, 256
 
         feat1 = x[0]
         feat2 = F.interpolate(x[1], size=(
@@ -216,27 +201,39 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             h, w), mode="bilinear", align_corners=True)
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
-        c = self.cls_head(feats)
+        c = self.cls_head(feats)  # 720
+        # del feats
 
-        c = self.proj_head(c)
-        _c = rearrange(c, 'b c h w -> (b h w) c')
+        c = self.proj_head(c)  # 256
+        gt_size = c.size()[2:]
+        c = rearrange(c, 'b c h w -> (b h w) c')
+        c = self.feat_norm(c)  # ! along channel dimension
+        c = l2_normalize(c)  # ! l2_norm along num_class dimension
+
+        self.prototypes.data.copy_(l2_normalize(self.prototypes))
 
         x_var = None
         if self.use_probability:
-            x_var = self.uncertainty_head(_c)  # (b h w) c
-
+            x_var = self.uncertainty_head(c)  # ! (b h w) c, log(sigma^2)
+            x_var = torch.exp(x_var)  # ! variance x_var should > 0!
+        #! log-likelihood
         sim_mat = self.similarity_compute(
-            x, x_var)  # [b*h*w, num_cls, num_proto]
+            c, x_var)  # [b*h*w, num_cls, num_proto]
 
-        # select the class-wise largest value
-        out_seg = torch.amax(sim_mat, dim=1)
+        # select the  largest proto in each cls
+        out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
+        # normalize along the num_cls dimension
+        out_seg = self.mask_norm(out_seg)
+        out_seg = rearrange(out_seg, '(b h w) c -> b c h w',
+                            b=feats.shape[0], h=feats.shape[2])
 
         if pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
-            gt_seg = F.interpolate(gt_semantic_seg.float(), size=feats.size()[
-                                   2:], mode="nearest").view(-1)  # [b*h*w]?
+            gt_seg = F.interpolate(gt_semantic_seg.float(
+            ), size=gt_size, mode="nearest").view(-1)  # [b*h*w]?
             contrast_target = self.prototype_learning(
-                sim_mat, gt_seg, _c, x_var)  # prototype selection
-            return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
+                sim_mat, gt_seg, c, x_var)  # prototype selection [n]
+            contrast_logits = rearrange(sim_mat, 'n c m -> n (c m)')
+            return {'seg': out_seg, 'logits': contrast_logits, 'target': contrast_target}
 
         return out_seg
 
@@ -283,6 +280,8 @@ class HRNet_W48_Proto(nn.Module):
 
         cosine_similarity = torch.mm(
             _c, self.prototypes.view(-1, self.prototypes.shape[-1]).t())
+        # [c m k] -> [(c m) k] -> [k (c m)]
+        # n k * k (c m)] = [n (c m)]
 
         proto_logits = cosine_similarity
         proto_target = gt_seg.clone().float()
@@ -360,9 +359,9 @@ class HRNet_W48_Proto(nn.Module):
         # n: h*w, k: num_class, m: num_prototype
         # unnormalized cosine similarity
         masks = torch.einsum(
-            'nd,kmd->nmk', _c, self.prototypes)  # similarity_mat
+            'nd,kmd->nmk', _c, self.prototypes)  # similarity_mat [n num_proto num_cls]
 
-        out_seg = torch.amax(masks, dim=1)
+        out_seg = torch.amax(masks, dim=1)  # [n num_cls]
         # normalized cosine similarity
         out_seg = self.mask_norm(out_seg)
         out_seg = rearrange(out_seg, "(b h w) k -> b k h w",
@@ -463,6 +462,7 @@ class HRNet_W48_CONTRAST(nn.Module):
         out = self.cls_head(feats)
 
         emb = self.proj_head(feats)
+        # out: for segmentation evaluation?, emb: for loss calculation
         return {'seg': out, 'embed': emb}
 
 

@@ -36,7 +36,8 @@ from segmentor.tools.optim_scheduler import OptimScheduler
 from segmentor.tools.data_helper import DataHelper
 from segmentor.tools.evaluator import get_evaluator
 from lib.utils.distributed import get_world_size, get_rank, is_distributed
-from mmcv.cnn import get_model_complexity_info
+# from mmcv.cnn import get_model_complexity_info
+from ptflops import get_model_complexity_info
 
 
 class Trainer(object):
@@ -84,7 +85,8 @@ class Trainer(object):
                   'You may need to check if all ops are supported and verify that the '
                   'flops computation is correct.')
         except:
-            pass
+            Log.info('Failed in getting model complexity info.')
+            # pass
 
         self.seg_net = self.module_runner.load_net(self.seg_net)
 
@@ -234,6 +236,8 @@ class Trainer(object):
                     display_loss = reduce_tensor(
                         backward_loss) / get_world_size()
             else:
+                if self.configer.get('')
+
                 backward_loss = display_loss = self.pixel_loss(
                     outputs, targets)
 
@@ -264,7 +268,9 @@ class Trainer(object):
                          'Backward Time {backward_time.sum:.3f}s / {2}iters, ({backward_time.avg:.3f})\t'
                          'Loss Time {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
                          'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
-                         'Learning rate = {3}\tLoss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'.format(
+                         'Learning rate = {3}\tLoss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
+                         'ProbPPCLoss = {}'
+                         .format(
                              self.configer.get(
                                  'epoch'), self.configer.get('iters'),
                              self.configer.get('solver', 'display_iter'),

@@ -10,7 +10,7 @@
 		"workers": 8
 	},
 	"train": {
-		"batch_size": 16,
+		"batch_size": 1,
 		"data_transformer": {
 			"size_mode": "fix_size",
 			"input_size": [1024, 512],
@@ -95,8 +95,8 @@
 		"rewrite": true
 	},
 	"lr": {
-		"base_lr": 0.01,
-		"var_lr": 0.0001,
+		"base_lr": 0.003,
+		"var_lr": 5e-5,
 		"metric": "iters",
 		"lr_policy": "lambda_poly",
 		"step": {
@@ -139,7 +139,7 @@
 		"gamma": 0.999,
 		"loss_ppc_weight": 0.01,
 		"loss_ppd_weight": 0.001,
-		"num_prototype": 10,
+		"num_prototype": 3,
 		"pretrain_prototype": false,
 		"use_rmi": false,
 		"use_prototype": true,
@@ -148,10 +148,10 @@
 		"similarity_measure": "mls",
 		"use_probability": true,
 		"multi_proxy": false,
-		"sinkhorn_epsilon": 0.05,
+		"sinkhorn_epsilon": 100,
 		"sinkhorn_iterations": 3,
 		"prob_ppc_weight": 0.01,
 		"prob_ppd_weight": 0.001,
-		"proj_dim": 256
+		"proj_dim": 64
 	}
 }

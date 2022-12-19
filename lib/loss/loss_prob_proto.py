@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from lib.utils.tools.logger import Logger as Log
-from lib.loss.loss_helper import FSCELoss, FSAuxCELoss
+from lib.loss.loss_helper import FSCELoss
 
 
 # todo: class-wise contrastive loss
@@ -94,18 +94,21 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
         self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
         self.prob_ppd_criterion = ProbPPDLoss(configer=configer)
+        self.seg_criterion = FSCELoss(configer=configer)
 
     def forward(self, preds, target):
         h, w = target.size(1), target.size(2)
 
-        if isinstance(preds, dict):
+        # todo bug: fix preds[0] to preds
+        if isinstance(preds[0], dict):
+            preds = preds[0]
             assert 'seg' in preds
             assert 'logits' in preds
             assert 'target' in preds
 
-            seg = preds['seg']
+            seg = preds['seg']  # [b c h w]
             contrast_logits = preds['logits']
-            contrast_target = preds['target']
+            contrast_target = preds['target']  # prototype selection [n]
             prob_ppc_loss = self.prob_ppc_criterion(
                 contrast_logits, contrast_target)
             prob_ppd_loss = self.prob_ppd_criterion(
@@ -115,7 +118,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 h, w), mode='bilinear', align_corners=True)
             seg_loss = self.seg_criterion(pred, target)
 
-            return seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
+            return seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss, seg_loss, prob_ppc_loss, prob_ppd_loss
 
         seg = preds
         pred = F.interpolate(input=seg, size=(
