@@ -2,14 +2,46 @@ import torch
 import torch.nn.functional as F
 import ot
 
+# from lib.utils.tools.logger import Logger as Log
 
-def distributed_sinkhorn(out, sinkhorn_iterations=3, epsilon=100):
-    """ 
+
+def sinkhorn(M, r=1.0, c=1.0, lamda=0.005, epsilon=1e-8):
+    """
+    M: similarity matrix (mls/cosine larger -> similar),
+    corresponding cost matrix is -M.
+    """
+    M = torch.exp(M / lamda).t()
+    n, m = M.shape  # [num_proto, pt_num]
+    sum_M = torch.sum(M)
+    M /= sum_M  # normalize the cost matrix
+    v = torch.ones(m).cuda()
+    i = 0
+    u = torch.ones(n).cuda()
+    uprev = u * 2
+
+    while torch.max(torch.abs(u - uprev)) > epsilon:
+        uprev = u
+        u = r / torch.matmul(M, v)  # v: [m]
+        v = c / torch.matmul(M.t(), u)  # u: [n]
+        i += 1
+    # Log.info('sinkhorn iter: {}'.format(i))s
+    M = torch.diag(u) @ M @ torch.diag(v)
+
+    M = M.t()
+    indexes = torch.argmax(M, dim=1)
+    M = F.gumbel_softmax(M, tau=0.5, hard=True)
+
+    return M, indexes
+
+
+def distributed_sinkhorn(out, sinkhorn_iterations=10, epsilon=0.05):
+    """
     out: similarity matrix [n num_proto]
+    thres: convergence parameter
 
     return: L (mappping matrix)
     """
-    L = torch.exp(out / epsilon).t()  # K x B
+    L = torch.exp(out / epsilon).t()  # K x B [num_proto, pt_num]
     B = L.shape[1]  # num of points in a batch
     K = L.shape[0]  # num_prototype
 
@@ -20,15 +52,16 @@ def distributed_sinkhorn(out, sinkhorn_iterations=3, epsilon=100):
     # to compute L (cost matrix) while updating mu and gamma
     for _ in range(sinkhorn_iterations):
         # to keep mat element equal to 0/1
-        L /= torch.sum(L, dim=1, keepdim=True)
+        L /= torch.sum(L, dim=1, keepdim=True)  # scale the row
         L /= K
 
-        L /= torch.sum(L, dim=0, keepdim=True)
+        L /= torch.sum(L, dim=0, keepdim=True)  # scale the column
         L /= B
 
     L *= B
     L = L.t()
 
+    # select index of largest proto in this cls
     indexs = torch.argmax(L, dim=1)
     # L = torch.nn.functional.one_hot(indexs, num_classes=L.shape[1]).float()
     # use gumbel_softmax to replace argmax in backpropagation
@@ -37,27 +70,6 @@ def distributed_sinkhorn(out, sinkhorn_iterations=3, epsilon=100):
     L = F.gumbel_softmax(L, tau=0.5, hard=True)
 
     return L, indexs
-
-
-def sinkhorn(M, max_iter=3, lamda=0.05, mu_s=1, mu_t=1, thres=1e-1):
-    """ 
-    M: cost matrix, ivnerse of similarity matrix
-    """
-    K = torch.exp(-M / lamda)
-    t = 0
-    beta = 1.0
-
-    for _ in range(max_iter):
-        alfa1 = alfa
-        alfa = mu_s / (K * beta)
-        beta = mu_t / (K.t() * alfa)
-
-        # check for threshold requirement
-        delta_alfa = (alfa - alfa1).sum(-1).mean()
-        if delta_alfa.item() < thres:
-            break
-
-        t += 1
 
 
 def distributed_greenkhorn(out, sinkhorn_iterations=100, epsilon=0.05):
@@ -120,4 +132,6 @@ def distributed_greenkhorn(out, sinkhorn_iterations=100, epsilon=0.05):
 if __name__ == "__main__":
     out = torch.randn(1000, 1000).cuda()
     result1 = distributed_sinkhorn(out)
-    result2 = ot.sinkhorn()
+    a = torch.ones((out.shape[0])).cuda()
+    b = torch.ones((out.shape[0])).cuda()
+    result2 = ot.sinkhorn(a=a, b=b, M=out, reg=100)

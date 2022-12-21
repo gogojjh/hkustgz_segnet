@@ -28,7 +28,7 @@ BATCH_SIZE=1
 BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
-  python -u -m debugpy --listen 5883 --wait-for-client main.py --configs ${CONFIGS} \
+  python -u -m debugpy --listen 5887 --wait-for-client main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
                        --gathered n \
@@ -36,7 +36,7 @@ if [ "$1"x == "train"x ]; then
                        --log_to_file n \
                        --backbone ${BACKBONE} \
                        --model_name ${MODEL_NAME} \
-                       --gpu 0 1 2 3 \
+                       --gpu 0 \
                        --data_dir ${DATA_DIR} \
                        --loss_type ${LOSS_TYPE} \
                        --max_iters ${MAX_ITERS} \

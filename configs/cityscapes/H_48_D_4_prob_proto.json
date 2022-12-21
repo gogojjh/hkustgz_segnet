@@ -123,7 +123,7 @@
 		}
 	},
 	"loss": {
-		"loss_type": "fs_auxce_loss",
+		"loss_type": "pixel_prob_prototype_ce_loss",
 		"params": {
 			"ce_weight": [
 				0.8373, 0.918, 0.866, 1.0345, 1.0166, 0.9969, 0.9754, 1.0489, 0.8786, 1.0023,
@@ -139,7 +139,7 @@
 		"gamma": 0.999,
 		"loss_ppc_weight": 0.01,
 		"loss_ppd_weight": 0.001,
-		"num_prototype": 3,
+		"num_prototype": 5,
 		"pretrain_prototype": false,
 		"use_rmi": false,
 		"use_prototype": true,
@@ -148,10 +148,16 @@
 		"similarity_measure": "mls",
 		"use_probability": true,
 		"multi_proxy": false,
-		"sinkhorn_epsilon": 100,
-		"sinkhorn_iterations": 3,
-		"prob_ppc_weight": 0.01,
+		"sinkhorn_epsilon": 0.05,
+		"sinkhorn_iterations": 5,
 		"prob_ppd_weight": 0.001,
-		"proj_dim": 64
+		"proj_dim": 128
+	},
+	"rampdownscheduler":{
+		"begin_epoch": 0,
+		"max_epoch": 200,
+		"max_value": 0.05,
+		"min_value": 0,
+		"ramp_mult": -5.0
 	}
 }

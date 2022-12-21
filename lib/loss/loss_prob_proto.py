@@ -14,6 +14,7 @@ import torch.nn.functional as F
 
 from lib.utils.tools.logger import Logger as Log
 from lib.loss.loss_helper import FSCELoss
+from lib.utils.tools.rampscheduler import RampdownScheduler
 
 
 # todo: class-wise contrastive loss
@@ -89,19 +90,32 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 'ce_ignore_index']
         Log.info('ignore_index: {}'.format(ignore_index))
 
-        self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
         self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
 
         self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
         self.prob_ppd_criterion = ProbPPDLoss(configer=configer)
         self.seg_criterion = FSCELoss(configer=configer)
 
+        # initialize scheudler for uncer_loss_weight
+        self.rampdown_scheduler = RampdownScheduler(
+            begin_epoch=self.configer.get('rampdownscheduler', 'begin_epoch'),
+            max_epoch=self.configer.get('rampdownscheduler', 'max_epoch'),
+            current_epoch=self.configer.get('epoch'),
+            max_value=self.configer.get('rampdownscheduler', 'max_value'),
+            min_value=self.configer.get('rampdownscheduler', 'min_value'),
+            ramp_mult=self.configer.get('rampdownscheduler', 'ramp_mult'),
+            configer=configer)
+
+    def get_uncer_loss_weight(self):
+        uncer_loss_weight = self.rampdown_scheduler.value
+
+        return uncer_loss_weight
+
     def forward(self, preds, target):
         h, w = target.size(1), target.size(2)
 
         # todo bug: fix preds[0] to preds
-        if isinstance(preds[0], dict):
-            preds = preds[0]
+        if isinstance(preds, dict):
             assert 'seg' in preds
             assert 'logits' in preds
             assert 'target' in preds
@@ -118,7 +132,10 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 h, w), mode='bilinear', align_corners=True)
             seg_loss = self.seg_criterion(pred, target)
 
-            return seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss, seg_loss, prob_ppc_loss, prob_ppd_loss
+            prob_ppc_weight = self.get_uncer_loss_weight()
+
+            return {'loss': seg_loss + prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss,
+                    'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(

@@ -236,10 +236,14 @@ class Trainer(object):
                     display_loss = reduce_tensor(
                         backward_loss) / get_world_size()
             else:
-                if self.configer.get('')
-
-                backward_loss = display_loss = self.pixel_loss(
+                # backward_loss = display_loss = self.pixel_loss(
+                #     outputs, targets)
+                loss_tuple = self.pixel_loss(
                     outputs, targets)
+                backward_loss = display_loss = loss_tuple['loss']
+                seg_loss = loss_tuple['seg_loss']
+                prob_ppc_loss = loss_tuple['prob_ppc_loss']
+                prob_ppd_loss = loss_tuple['prob_ppd_loss']
 
             self.train_losses.update(display_loss.item(), batch_size)
             self.loss_time.update(time.time() - loss_start_time)
@@ -269,14 +273,15 @@ class Trainer(object):
                          'Loss Time {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
                          'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
                          'Learning rate = {3}\tLoss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                         'ProbPPCLoss = {}'
+                         'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f}, prob_ppd_loss={prob_ppd_loss:.5f}'
                          .format(
                              self.configer.get(
                                  'epoch'), self.configer.get('iters'),
                              self.configer.get('solver', 'display_iter'),
                              self.module_runner.get_lr(self.optimizer), batch_time=self.batch_time,
                              foward_time=self.foward_time, backward_time=self.backward_time, loss_time=self.loss_time,
-                             data_time=self.data_time, loss=self.train_losses))
+                             data_time=self.data_time, loss=self.train_losses,
+                             seg_loss=seg_loss, prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss))
                 self.batch_time.reset()
                 self.foward_time.reset()
                 self.backward_time.reset()

@@ -40,7 +40,7 @@ Available methods: [sdc, ifr]
 
 ```
 $DATA_ROOT
-├── cityscapes
+├── hkustgz
 │   ├── coarse
 │   │   ├── image
 │   │   ├── instance
