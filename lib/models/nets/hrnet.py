@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import torch.distributed as dist
+import ot
 
 from lib.models.backbones.backbone_selector import BackboneSelector
 from lib.models.tools.module_helper import ModuleHelper
@@ -22,7 +23,7 @@ from lib.utils.tools.logger import Logger as Log
 from lib.models.modules.hanet_attention import HANet_Conv
 from lib.models.modules.contrast import momentum_update, l2_normalize, ProjectionHead
 from lib.models.modules.uncertainty_head import UncertaintyHead
-from lib.models.modules.sinkhorn import distributed_sinkhorn, sinkhorn
+from lib.models.modules.sinkhorn import distributed_sinkhorn, distributed_greenkhorn
 from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
 
@@ -62,8 +63,8 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             nn.Dropout2d(0.10)
         )
 
-        self.uncertainty_head = UncertaintyHead(
-            in_channels=self.proj_dim)  # predict variance of each gaussian
+        self.uncertainty_head = UncertaintyHead(in_feat=self.configer.get(
+            'protoseg', 'proj_dim'), out_feat=self.configer.get('protoseg', 'proj_dim'))  # predict variance of each gaussian
 
         # [cls_num, proto_num, channel/k]
         self.prototypes = nn.Parameter(torch.zeros(
@@ -144,7 +145,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
                 if init_q.shape[0] == 0:
                     continue
 
-                q, indexs = distributed_sinkhorn(init_q, sinkhorn_iterations=self.configer.get('protoseg')('sinkhorn_iterations'), epsilon=self.configer.get(
+                q, indexs = distributed_sinkhorn(init_q, sinkhorn_iterations=self.configer.get('protoseg', 'sinkhorn_iterations'), epsilon=self.configer.get(
                     'protoseg', 'sinkhorn_epsilon'))  # q: mapping mat [n, num_proto] indexs: ind of largest proto in this cls[n]
 
                 m_k = mask[gt_seg == i]  # ! the correctly predicted ones
@@ -185,9 +186,9 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
                     elif self.use_probability is False:
                         return
-
-                proto_target[gt_seg == i] = indexs.float() + \
-                    (self.num_prototype * i)
+                # each class has a target id between [0, num_proto]
+                proto_target[gt_seg == i] = indexs.float(
+                ) + (self.num_prototype * i)  # n samples -> n*m labels
 
             self.prototypes = nn.Parameter(
                 l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
@@ -212,6 +213,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         # del feats
 
         c = self.proj_head(c)  # 256
+
         gt_size = c.size()[2:]
         c = rearrange(c, 'b c h w -> (b h w) c')
         c = self.feat_norm(c)  # ! along channel dimension
@@ -221,11 +223,17 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
         x_var = None
         if self.use_probability:
-            x_var = self.uncertainty_head(c)  # ! (b h w) c, log(sigma^2)
+            c = rearrange(c, '(b h w) c -> b c h w',
+                          h=gt_size[0], w=gt_size[1])
+            x_var = self.uncertainty_head(c)  # ! b c h w, log(sigma^2)
             x_var = torch.exp(x_var)  # ! variance x_var should > 0!
+            c = rearrange(c, 'b c h w -> (b h w) c')
+            x_var = rearrange(x_var, 'b c h w -> (b h w) c')
+
         #! log-likelihood
         sim_mat = self.similarity_compute(
             c, x_var)  # [b*h*w, num_cls, num_proto]
+        sim_mat = torch.exp(sim_mat)  # ! likelihood
 
         # select the  largest proto in each cls
         out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
@@ -242,7 +250,8 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             ), size=gt_size, mode="nearest").view(-1)  # [b*h*w]?
             contrast_target = self.prototype_learning(
                 sim_mat, gt_seg, c, x_var)  # prototype selection [n]
-            contrast_logits = rearrange(sim_mat, 'n c m -> n (c m)')
+            contrast_logits = rearrange(
+                sim_mat, 'n c m -> n (c m)')  # log-likelihood
             return {'seg': out_seg, 'logits': contrast_logits, 'target': contrast_target}
 
         return out_seg

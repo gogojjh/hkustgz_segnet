@@ -28,7 +28,7 @@ BATCH_SIZE=1
 BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
-  python -u -m debugpy --listen 5887 --wait-for-client main.py --configs ${CONFIGS} \
+  python -u -m debugpy --listen 5889 --wait-for-client main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
                        --gathered n \

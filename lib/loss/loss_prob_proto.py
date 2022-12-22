@@ -46,8 +46,6 @@ class ProbPPCLoss(nn.Module, ABC):
 class ProbPPDLoss(nn.Module, ABC):
     """ 
     Minimize intra-class compactness using distance between probabilistic distributions (MLS Distance).
-
-    minij
     """
 
     def __init__(self, configer):
@@ -67,7 +65,8 @@ class ProbPPDLoss(nn.Module, ABC):
 
         logits = torch.gather(contrast_logits, 1,
                               contrast_target[:, None].long())
-        prob_ppd_loss = - logits.mean()
+        # exp(-log_likelihood)
+        prob_ppd_loss = (1 - logits).pow(2).mean()
 
         return prob_ppd_loss
 
