@@ -32,7 +32,9 @@ class ProbPPCLoss(nn.Module, ABC):
         self.configer = configer
 
         self.ignore_label = -1
-        if self.configer.exists('loss', 'params') and 'ce_ignore_index' in self.configer.get('loss', 'params'):
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
@@ -54,7 +56,9 @@ class ProbPPDLoss(nn.Module, ABC):
         self.configer = configer
 
         self.ignore_label = -1
-        if self.configer.exists('loss', 'params') and 'ce_ignore_index' in self.configer.get('loss', 'params'):
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
@@ -66,7 +70,7 @@ class ProbPPDLoss(nn.Module, ABC):
         logits = torch.gather(contrast_logits, 1,
                               contrast_target[:, None].long())
         # exp(-log_likelihood)
-        prob_ppd_loss = (1 - logits).pow(2).mean()
+        prob_ppd_loss = torch.mean(torch.exp(-logits))  # torch.exp(negative MLS)
 
         return prob_ppd_loss
 
@@ -84,12 +88,15 @@ class PixelProbContrastLoss(nn.Module, ABC):
         # self.temperature = self.configer.get('prob_contrast', 'temperature')
 
         ignore_index = -1
-        if self.configer.exists('loss', 'params') and 'ce_ignore_index' in self.configer.get('loss', 'params'):
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
             ignore_index = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
         Log.info('ignore_index: {}'.format(ignore_index))
 
         self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
+        self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
 
         self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
         self.prob_ppd_criterion = ProbPPDLoss(configer=configer)
@@ -131,9 +138,9 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 h, w), mode='bilinear', align_corners=True)
             seg_loss = self.seg_criterion(pred, target)
 
-            prob_ppc_weight = self.get_uncer_loss_weight()
+            # prob_ppc_weight = self.get_uncer_loss_weight()
 
-            return {'loss': seg_loss + prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss,
+            return {'loss': seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss,
                     'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
 
         seg = preds

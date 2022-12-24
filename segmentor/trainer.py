@@ -24,6 +24,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
 import torch.backends.cudnn as cudnn
+import wandb
 
 from lib.utils.tools.average_meter import AverageMeter
 from lib.datasets.data_loader import DataLoader
@@ -232,7 +233,10 @@ class Trainer(object):
 
                 with torch.cuda.amp.autocast():
                     loss = self.pixel_loss(outputs, targets)
-                    backward_loss = loss
+                    backward_loss = loss['loss']
+                    seg_loss = reduce_tensor(loss['seg_loss']) / get_world_size()
+                    prob_ppc_loss = reduce_tensor(loss['prob_ppc_loss']) / get_world_size()
+                    prob_ppd_loss = reduce_tensor(loss['prob_ppd_loss']) / get_world_size()
                     display_loss = reduce_tensor(
                         backward_loss) / get_world_size()
             else:
@@ -250,6 +254,8 @@ class Trainer(object):
 
             backward_start_time = time.time()
 
+            wandb.log({"pixel loss": backward_loss})
+
             # backward_loss.backward()
             # self.optimizer.step()
             scaler.scale(backward_loss).backward()
@@ -266,22 +272,24 @@ class Trainer(object):
             # Print the log info & reset the states.
             if self.configer.get('iters') % self.configer.get('solver', 'display_iter') == 0 and \
                     (not is_distributed() or get_rank() == 0):
-                Log.info('Train Epoch: {0}\tTrain Iteration: {1}\t'
-                         'Time {batch_time.sum:.3f}s / {2}iters, ({batch_time.avg:.3f})\t'
-                         'Forward Time {foward_time.sum:.3f}s / {2}iters, ({foward_time.avg:.3f})\t'
-                         'Backward Time {backward_time.sum:.3f}s / {2}iters, ({backward_time.avg:.3f})\t'
-                         'Loss Time {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
-                         'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
-                         'Learning rate = {3}\tLoss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                         'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f}, prob_ppd_loss={prob_ppd_loss:.5f}'
-                         .format(
-                             self.configer.get(
-                                 'epoch'), self.configer.get('iters'),
-                             self.configer.get('solver', 'display_iter'),
-                             self.module_runner.get_lr(self.optimizer), batch_time=self.batch_time,
-                             foward_time=self.foward_time, backward_time=self.backward_time, loss_time=self.loss_time,
-                             data_time=self.data_time, loss=self.train_losses,
-                             seg_loss=seg_loss, prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss))
+                Log.info(
+                    'Train Epoch: {0}\tTrain Iteration: {1}\t'
+                    'Time {batch_time.sum:.3f}s / {2}iters, ({batch_time.avg:.3f})\t'
+                    'Forward Time {foward_time.sum:.3f}s / {2}iters, ({foward_time.avg:.3f})\t'
+                    'Backward Time {backward_time.sum:.3f}s / {2}iters, ({backward_time.avg:.3f})\t'
+                    'Loss Time {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
+                    'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
+                    'Learning rate = {3}\tLoss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
+                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f}, prob_ppd_loss={prob_ppd_loss:.5f}'.
+                    format(
+                        self.configer.get('epoch'),
+                        self.configer.get('iters'),
+                        self.configer.get('solver', 'display_iter'),
+                        self.module_runner.get_lr(self.optimizer),
+                        batch_time=self.batch_time, foward_time=self.foward_time,
+                        backward_time=self.backward_time, loss_time=self.loss_time,
+                        data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
+                        prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss))
                 self.batch_time.reset()
                 self.foward_time.reset()
                 self.backward_time.reset()
@@ -323,8 +331,8 @@ class Trainer(object):
                 Log.info('{} images processed\n'.format(j))
 
             if self.configer.get('dataset') == 'lip':
-                (inputs, targets, inputs_rev, targets_rev), batch_size = self.data_helper.prepare_data(data_dict,
-                                                                                                       want_reverse=True)
+                (inputs, targets, inputs_rev, targets_rev), batch_size = self.data_helper.prepare_data(
+                    data_dict, want_reverse=True)
             else:
                 (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
 

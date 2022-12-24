@@ -8,9 +8,11 @@ import os
 import random
 import time
 import pdb
+from datetime import date
 
 import torch
 import torch.backends.cudnn as cudnn
+import wandb
 
 from lib.utils.tools.logger import Logger as Log
 from lib.utils.tools.configer import Configer
@@ -68,7 +70,8 @@ if __name__ == "__main__":
 
     # ***********  Params for checkpoint.  **********
     parser.add_argument('--checkpoints_root', default=None, type=str,
-                        dest='checkpoints:checkpoints_root', help='The root dir of model save path.')
+                        dest='checkpoints:checkpoints_root',
+                        help='The root dir of model save path.')
     parser.add_argument('--checkpoints_name', default=None, type=str,
                         dest='checkpoints:checkpoints_name', help='The name of checkpoint model.')
     parser.add_argument('--save_iters', default=None, type=int,
@@ -93,10 +96,12 @@ if __name__ == "__main__":
                         dest='network:resume_strict', help='Fully match keys or not.')
     parser.add_argument('--resume_continue', type=str2bool, nargs='?', default=False,
                         dest='network:resume_continue', help='Whether to continue training.')
-    parser.add_argument('--resume_eval_train', type=str2bool, nargs='?', default=True,
-                        dest='network:resume_train', help='Whether to validate the training set  during resume.')
-    parser.add_argument('--resume_eval_val', type=str2bool, nargs='?', default=True,
-                        dest='network:resume_val', help='Whether to validate the val set during resume.')
+    parser.add_argument(
+        '--resume_eval_train', type=str2bool, nargs='?', default=True, dest='network:resume_train',
+        help='Whether to validate the training set  during resume.')
+    parser.add_argument(
+        '--resume_eval_val', type=str2bool, nargs='?', default=True, dest='network:resume_val',
+        help='Whether to validate the val set during resume.')
     parser.add_argument('--gathered', type=str2bool, nargs='?', default=True,
                         dest='network:gathered', help='Whether to gather the output of model.')
     parser.add_argument('--loss_balance', type=str2bool, nargs='?', default=False,
@@ -217,10 +222,20 @@ if __name__ == "__main__":
         Log.error('Method: {} is not valid.'.format(configer.get('task')))
         exit(1)
 
+    wb_proj_name = configer.get('checkpoints', 'checkpoints_name')
+    today = date.today()
+    wb_name = today.strftime("%d/%m/%Y")
+    wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
+               name=wb_name, mode=configer.get('wandb', 'mode'),
+               settings=wandb.Settings(start_method='fork'))
+    wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
+
     if configer.get('phase') == 'train':
         model.train()
+        wandb.finish()
     elif configer.get('phase').startswith('test') and configer.get('network', 'resume') is not None:
         model.test()
+        wandb.finish()
     else:
         Log.error('Phase: {} is not valid.'.format(configer.get('phase')))
         exit(1)

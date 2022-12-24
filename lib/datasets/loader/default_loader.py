@@ -128,20 +128,30 @@ class DefaultLoader(data.Dataset):
 
         # support the argument to pass the file list used for training/testing
         file_list_txt = os.environ.get('use_file_list')
+        files = []
         if file_list_txt is None:
-            files = sorted(os.listdir(image_dir))
+            # files = sorted(os.listdir(image_dir))
+            seq_list = os.listdir(image_dir)
+            for seq in seq_list:
+                seq_dir = os.path.join(image_dir, seq)
+                for f in os.listdir(seq_dir):
+                    files.append(f)
+
+            files = sorted(files)
+
         else:
             Log.info("Using file list {} for training".format(file_list_txt))
             with open(os.path.join(root_dir, dataset, 'file_list', file_list_txt)) as f:
                 files = [x.strip() for x in f]
 
         for file_name in files:
+            seq_name = file_name.split('_')[0]
             image_name = '.'.join(file_name.split('.')[:-1])
-            img_path = os.path.join(image_dir, '{}'.format(file_name))
+            img_path = os.path.join(image_dir, '{}'.format(seq_name), '{}'.format(file_name))
             # label_path = os.path.join(label_dir, image_name + '.png')
             label_name = image_name.replace(
                 'leftImg8bit', 'gtFine_labelIds') + '.png'
-            label_path = os.path.join(label_dir, label_name)
+            label_path = os.path.join(label_dir, '{}'.format(seq_name), label_name)
             # Log.info('{} {} {}'.format(image_name, img_path, label_path))
             if not os.path.exists(label_path) or not os.path.exists(img_path):
                 Log.error('Label Path: {} {} not exists.'.format(

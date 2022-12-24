@@ -63,13 +63,15 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             nn.Dropout2d(0.10)
         )
 
-        self.uncertainty_head = UncertaintyHead(in_feat=self.configer.get(
-            'protoseg', 'proj_dim'), out_feat=self.configer.get('protoseg', 'proj_dim'))  # predict variance of each gaussian
+        self.uncertainty_head = UncertaintyHead(
+            in_feat=self.configer.get('protoseg', 'proj_dim'),
+            out_feat=self.configer.get('protoseg', 'proj_dim'))  # predict variance of each gaussian
 
         # [cls_num, proto_num, channel/k]
         self.prototypes = nn.Parameter(torch.zeros(
             self.num_classes, self.num_prototype, self.proj_dim), requires_grad=True)
-        trunc_normal_(self.prototypes, std=0.02)
+        trunc_normal_(self.prototypes, std=0.02)  # ori: 0.02
+
         if self.use_probability:
             self.proto_var = nn.Parameter(torch.ones(
                 self.num_classes, self.num_prototype, self.proj_dim), requires_grad=True)
@@ -78,6 +80,9 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         self.proj_head = ProjectionHead(in_channels, self.proj_dim)
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
+        self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
+
+        self.gamma = self.configer.get('protoseg', 'gamma')  # momentum update
 
     def similarity_compute(self, x, x_var=None):
         """ 
@@ -90,10 +95,13 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         gt_seg: [b*h*w]
         """
         if self.use_probability and self.sim_measure == "mls":  # mls larger -> similar
+            x = F.normalize(x, dim=-1)
+
             proto_mean = self.prototypes.clone().detach()
             proto_var = self.proto_var.clone().detach()
             proto_mean = rearrange(
                 proto_mean, 'c m k -> c m 1 k')  # [c m 1 k]
+            proto_mean = F.normalize(proto_mean)
             # [c m 1 k] - [n k]=[c m n k]
             mean_diff = torch.square((proto_mean - x))  # [c m n k]
             proto_var = rearrange(
@@ -162,12 +170,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
                 # the prototypes that are being selected calcualted by sum
                 n = torch.sum(m_q, dim=0)  # [num_proto]
-                # select the feature embed and var of the correctly predicted pixels in i-th class
-                # c_k_tile = repeat(m_k, 'n -> n tile',
-                #                   tile=c_k.shape[-1])  # [n, embed_dim]
-                # c_q = c_k * c_k_tile
-                # # [n, k] * [n, k]=[n, embed_dim] element-wise product
-                # var_q = var_k * c_k_tile
+
                 if self.update_prototype is True and torch.sum(n) > 0:
                     if self.use_probability:
                         for k in range(self.num_prototype):
@@ -178,11 +181,22 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
                                 var_hat = 1 / \
                                     (torch.sum(
                                         (1/var_k[proto_ind]), dim=0))  # [embed_dim]
-                                mean_gamma = torch.sum(
-                                    (var_hat * c_k[proto_ind]) / var_k[proto_ind], dim=0)  # [fea_dim]
 
-                                protos[i, k, :] = mean_gamma
-                                proto_var[i, k, :] = var_hat
+                                # var_hat = torch.min(var_k[proto_ind], dim=0)[0]
+                                mean_gamma = torch.sum(
+                                    (var_hat * c_k[proto_ind]) / var_k[proto_ind],
+                                    dim=0)  # [fea_dim]
+
+                                # protos[i, k, :] = mean_gamma
+                                # proto_var[i, k, :] = var_hat
+
+                                #! momentum update
+                                protos[i, k, :] = momentum_update(old_value=protos[i, k, :],
+                                                                  new_value=mean_gamma,
+                                                                  momentum=self.gamma)
+                                proto_var[i, k, :] = momentum_update(old_value=proto_var[i, k, :],
+                                                                     new_value=var_hat,
+                                                                     momentum=self.gamma)
 
                     elif self.use_probability is False:
                         return
@@ -233,7 +247,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         #! log-likelihood
         sim_mat = self.similarity_compute(
             c, x_var)  # [b*h*w, num_cls, num_proto]
-        sim_mat = torch.exp(sim_mat)  # ! likelihood
+        # sim_mat = torch.exp(sim_mat)  # ! likelihood
 
         # select the  largest proto in each cls
         out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
@@ -252,6 +266,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
                 sim_mat, gt_seg, c, x_var)  # prototype selection [n]
             contrast_logits = rearrange(
                 sim_mat, 'n c m -> n (c m)')  # log-likelihood
+            contrast_logits = self.proto_norm(contrast_logits)
             return {'seg': out_seg, 'logits': contrast_logits, 'target': contrast_target}
 
         return out_seg
@@ -284,8 +299,9 @@ class HRNet_W48_Proto(nn.Module):
             nn.Dropout2d(0.10)
         )
 
-        self.prototypes = nn.Parameter(torch.zeros(self.num_classes, self.num_prototype, in_channels),
-                                       requires_grad=True)
+        self.prototypes = nn.Parameter(
+            torch.zeros(self.num_classes, self.num_prototype, in_channels),
+            requires_grad=True)
 
         self.proj_head = ProjectionHead(in_channels, in_channels)
         self.feat_norm = nn.LayerNorm(in_channels)
