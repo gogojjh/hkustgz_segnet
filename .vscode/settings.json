@@ -1,4 +1,9 @@
 {
 	"python.pythonPath": "/opt/conda/bin/python",
-	"python.analysis.typeCheckingMode": "off"
+	"python.analysis.typeCheckingMode": "off",
+	"editor.defaultFormatter": "esbenp.prettier-vscode",
+	"editor.formatOnSave": true,
+	"[python]": {
+		"editor.defaultFormatter": "ms-python.python"
+	}
 }

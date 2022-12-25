@@ -1,0 +1,18 @@
+2022-12-24 18:49:48,213 INFO    [offset_helper.py, 51] engery/max-distance: 5 engery/min-distance: 0
+2022-12-24 18:49:48,214 INFO    [offset_helper.py, 58] direction/num_classes: 8 scale: 1
+2022-12-24 18:49:48,215 INFO    [offset_helper.py, 65] c4 align axis: False
+2022-12-24 18:49:48,903 INFO    [module_runner.py, 47] BN Type is torchsyncbn.
+2022-12-24 18:49:48,904 INFO    [__init__.py, 17] Using evaluator: StandardEvaluator
+2022-12-24 18:49:48,904 INFO    [running_score.py, 129] 19
+2022-12-24 18:49:50,114 INFO    [trainer.py, 89] Failed in getting model complexity info.
+2022-12-24 18:49:51,735 INFO    [trainer.py, 94] Params Group Method: None
+2022-12-24 18:49:51,739 INFO    [trainer.py, 161] lr for uncertainty head: 5e-07
+2022-12-24 18:49:51,741 INFO    [optim_scheduler.py, 108] Use lambda_poly policy with default power 0.9
+2022-12-24 18:49:51,742 INFO    [data_loader.py, 132] use the DefaultLoader for train...
+2022-12-24 18:49:51,790 INFO    [default_loader.py, 39] train 2975
+2022-12-24 18:49:51,790 INFO    [data_loader.py, 164] use DefaultLoader for val ...
+2022-12-24 18:49:51,799 INFO    [default_loader.py, 39] val 500
+2022-12-24 18:49:51,799 INFO    [loss_manager.py, 71] use loss: pixel_prob_prototype_ce_loss.
+2022-12-24 18:49:51,799 INFO    [loss_prob_proto.py, 100] ignore_index: -1
+2022-12-24 18:50:05,097 INFO    [data_helper.py, 126] Input keys: ['img']
+2022-12-24 18:50:05,098 INFO    [data_helper.py, 127] Target keys: ['labelmap']

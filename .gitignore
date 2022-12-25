@@ -8,5 +8,5 @@
 *.pt
 *.pth
 
-wandb 
+wandb
 log

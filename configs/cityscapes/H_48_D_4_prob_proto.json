@@ -6,11 +6,11 @@
 		"input_mode": "BGR",
 		"num_classes": 19,
 		"label_list": [7, 8, 11, 12, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33],
-		"data_dir": "/data/test_cityscapes/cityscapes",
+		"data_dir": "/data/Cityscapes",
 		"workers": 8
 	},
 	"train": {
-		"batch_size": 1,
+		"batch_size": 8,
 		"data_transformer": {
 			"size_mode": "fix_size",
 			"input_size": [1024, 512],
@@ -79,7 +79,7 @@
 		"multi_grid": [1, 1, 1],
 		"model_name": "base_ocnet",
 		"stride": 8,
-		"bn_type": "torchbn",
+		"bn_type": "torchsyncbn",
 		"factors": [[8, 8]],
 		"loss_weights": {
 			"corr_loss": 0.01,
@@ -96,7 +96,7 @@
 	},
 	"lr": {
 		"base_lr": 0.003,
-		"var_lr": 5e-5,
+		"var_lr": 5e-7,
 		"metric": "iters",
 		"lr_policy": "lambda_poly",
 		"step": {
@@ -137,9 +137,7 @@
 	},
 	"protoseg": {
 		"gamma": 0.999,
-		"loss_ppc_weight": 0.01,
-		"loss_ppd_weight": 0.001,
-		"num_prototype": 3,
+		"num_prototype": 5,
 		"pretrain_prototype": false,
 		"use_rmi": false,
 		"use_prototype": true,
@@ -151,13 +149,18 @@
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 1.0,
-		"proj_dim": 64
+		"prob_ppc_weight": 0.3,
+		"proj_dim": 64,
+		"var_temp": true
 	},
-	"rampdownscheduler":{
+	"rampdownscheduler": {
 		"begin_epoch": 0,
-		"max_epoch": 200,
-		"max_value": 0.7,
+		"max_epoch": 300,
+		"max_value": 1.0,
 		"min_value": 0,
 		"ramp_mult": -5.0
+	},
+	"wandb": {
+		"mode": "online"
 	}
 }

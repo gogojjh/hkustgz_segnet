@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 from torch.nn.parallel.scatter_gather import gather as torch_gather
 from torch.nn.functional import interpolate
+import wandb
 
 from lib.extensions.parallel.data_parallel import DataParallelModel
 from lib.utils.tools.logger import Logger as Log
@@ -101,8 +102,8 @@ class ModuleRunner(object):
                 checkpoint_dict = resume_dict
 
             else:
-                raise RuntimeError(
-                    'No state_dict found in checkpoint file {}'.format(self.configer.get('network', 'resume')))
+                raise RuntimeError('No state_dict found in checkpoint file {}'.format(
+                    self.configer.get('network', 'resume')))
 
             if list(checkpoint_dict.keys())[0].startswith('module.'):
                 checkpoint_dict = {k[7:]: v for k,
@@ -196,11 +197,13 @@ class ModuleRunner(object):
         latest_name = '{}_latest.pth'.format(
             self.configer.get('checkpoints', 'checkpoints_name'))
         torch.save(state, os.path.join(checkpoints_dir, latest_name))
+        wandb.save(os.path.join(checkpoints_dir, latest_name))
         if save_mode == 'performance':
             if self.configer.get('performance') > self.configer.get('max_performance'):
                 latest_name = '{}_max_performance.pth'.format(
                     self.configer.get('checkpoints', 'checkpoints_name'))
                 torch.save(state, os.path.join(checkpoints_dir, latest_name))
+                wandb.save(os.path.join(checkpoints_dir, latest_name))
                 self.configer.update(['max_performance'],
                                      self.configer.get('performance'))
 
@@ -209,24 +212,29 @@ class ModuleRunner(object):
                 latest_name = '{}_min_loss.pth'.format(
                     self.configer.get('checkpoints', 'checkpoints_name'))
                 torch.save(state, os.path.join(checkpoints_dir, latest_name))
+                wandb.save(os.path.join(checkpoints_dir, latest_name))
                 self.configer.update(
                     ['min_val_loss'], self.configer.get('val_loss'))
 
         elif save_mode == 'iters':
             if self.configer.get('iters') - self.configer.get('last_iters') >= \
                     self.configer.get('checkpoints', 'save_iters'):
-                latest_name = '{}_iters{}.pth'.format(self.configer.get('checkpoints', 'checkpoints_name'),
-                                                      self.configer.get('iters'))
+                latest_name = '{}_iters{}.pth'.format(
+                    self.configer.get('checkpoints', 'checkpoints_name'),
+                    self.configer.get('iters'))
                 torch.save(state, os.path.join(checkpoints_dir, latest_name))
+                wandb.save(state, os.path.join(checkpoints_dir, latest_name))
                 self.configer.update(
                     ['last_iters'], self.configer.get('iters'))
 
         elif save_mode == 'epoch':
             if self.configer.get('epoch') - self.configer.get('last_epoch') >= \
                     self.configer.get('checkpoints', 'save_epoch'):
-                latest_name = '{}_epoch{}.pth'.format(self.configer.get('checkpoints', 'checkpoints_name'),
-                                                      self.configer.get('epoch'))
+                latest_name = '{}_epoch{}.pth'.format(
+                    self.configer.get('checkpoints', 'checkpoints_name'),
+                    self.configer.get('epoch'))
                 torch.save(state, os.path.join(checkpoints_dir, latest_name))
+                wandb.save(os.path.join(checkpoints_dir, latest_name))
                 self.configer.update(
                     ['last_epoch'], self.configer.get('epoch'))
 

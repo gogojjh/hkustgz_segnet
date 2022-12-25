@@ -19,7 +19,9 @@ class PPC(nn.Module, ABC):
         self.configer = configer
 
         self.ignore_label = -1
-        if self.configer.exists('loss', 'params') and 'ce_ignore_index' in self.configer.get('loss', 'params'):
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
@@ -37,7 +39,9 @@ class PPD(nn.Module, ABC):
         self.configer = configer
 
         self.ignore_label = -1
-        if self.configer.exists('loss', 'params') and 'ce_ignore_index' in self.configer.get('loss', 'params'):
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
@@ -46,8 +50,8 @@ class PPD(nn.Module, ABC):
                                           self.ignore_label, :]
         contrast_target = contrast_target[contrast_target != self.ignore_label]
 
-        logits = torch.gather(contrast_logits, 1,
-                              contrast_target[:, None].long())  # select the similarity between the pixel embedding and the proto of predicted class
+        # select the similarity between the pixel embedding and the proto of predicted class
+        logits = torch.gather(contrast_logits, 1, contrast_target[:, None].long())
         loss_ppd = (1 - logits).pow(2).mean()
 
         return loss_ppd
@@ -60,7 +64,9 @@ class PixelPrototypeCELoss(nn.Module, ABC):
         self.configer = configer
 
         ignore_index = -1
-        if self.configer.exists('loss', 'params') and 'ce_ignore_index' in self.configer.get('loss', 'params'):
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
             ignore_index = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
         Log.info('ignore_index: {}'.format(ignore_index))

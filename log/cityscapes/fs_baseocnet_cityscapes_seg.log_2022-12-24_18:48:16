@@ -1,0 +1,11 @@
+2022-12-24 18:48:16,784 INFO    [offset_helper.py, 51] engery/max-distance: 5 engery/min-distance: 0
+2022-12-24 18:48:16,784 INFO    [offset_helper.py, 58] direction/num_classes: 8 scale: 1
+2022-12-24 18:48:16,784 INFO    [offset_helper.py, 65] c4 align axis: False
+2022-12-24 18:48:17,210 INFO    [module_runner.py, 47] BN Type is torchsyncbn.
+2022-12-24 18:48:17,211 INFO    [__init__.py, 17] Using evaluator: StandardEvaluator
+2022-12-24 18:48:17,211 INFO    [running_score.py, 129] 19
+2022-12-24 18:48:17,937 INFO    [trainer.py, 89] Failed in getting model complexity info.
+2022-12-24 18:48:19,460 INFO    [trainer.py, 94] Params Group Method: None
+2022-12-24 18:48:19,465 INFO    [trainer.py, 161] lr for uncertainty head: 5e-07
+2022-12-24 18:48:19,467 INFO    [optim_scheduler.py, 108] Use lambda_poly policy with default power 0.9
+2022-12-24 18:48:19,468 INFO    [data_loader.py, 132] use the DefaultLoader for train...
