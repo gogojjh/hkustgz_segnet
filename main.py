@@ -13,9 +13,12 @@ from datetime import date
 import torch
 import torch.backends.cudnn as cudnn
 import wandb
+import warnings
 
 from lib.utils.tools.logger import Logger as Log
 from lib.utils.tools.configer import Configer
+
+warnings.filterwarnings('ignore')
 
 
 def str2bool(v):

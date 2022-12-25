@@ -10,7 +10,7 @@
 		"workers": 8
 	},
 	"train": {
-		"batch_size": 16,
+		"batch_size": 8,
 		"data_transformer": {
 			"size_mode": "fix_size",
 			"input_size": [1024, 512],
@@ -150,16 +150,17 @@
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 1.0,
 		"prob_ppc_weight": 0.3,
-		"proj_dim": 64
+		"proj_dim": 64,
+		"var_temp": true
 	},
 	"rampdownscheduler": {
 		"begin_epoch": 0,
-		"max_epoch": 200,
-		"max_value": 0.7,
+		"max_epoch": 300,
+		"max_value": 1.0,
 		"min_value": 0,
 		"ramp_mult": -5.0
 	},
 	"wandb": {
-		"mode": "offline"
+		"mode": "online"
 	}
 }

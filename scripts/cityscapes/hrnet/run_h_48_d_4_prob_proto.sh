@@ -22,13 +22,13 @@ LOG_FILE="${SCRATCH_ROOT}/logs/Cityscapes/${CHECKPOINTS_NAME}.log"
 echo "Logging to $LOG_FILE"
 mkdir -p `dirname $LOG_FILE`
 
-PRETRAINED_MODEL="${ASSET_ROOT}/hrnetv2_w48_imagenet_pretrained.pth"
+PRETRAINED_MODEL="/save_data/hrnetv2_w48_imagenet_pretrained.pth"
 MAX_ITERS=80000
-BATCH_SIZE=4
+BATCH_SIZE=8
 BASE_LR=0.003
 
 if [ "$1"x == "train"x ]; then
-  # python -u -m debugpy --listen 5993 --wait-for-client main.py --configs ${CONFIGS} \
+  # python -u -m debugpy --listen 5994 --wait-for-client main.py --configs ${CONFIGS} \
   python -u main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
@@ -43,6 +43,7 @@ if [ "$1"x == "train"x ]; then
                        --max_iters ${MAX_ITERS} \
                        --checkpoints_root ${CHECKPOINTS_ROOT} \
                        --checkpoints_name ${CHECKPOINTS_NAME} \
+                       --pretrained ${PRETRAINED_MODEL} \
                        --train_batch_size ${BATCH_SIZE} \
                        --distributed \
                        --base_lr ${BASE_LR} \
@@ -61,7 +62,7 @@ elif [ "$1"x == "resume"x ]; then
                        --max_iters ${MAX_ITERS} \
                        --data_dir ${DATA_DIR} \
                        --loss_type ${LOSS_TYPE} \
-                       --gpu 0 1 2 3 \
+                       --gpu 0 1 2 3\
                        --checkpoints_root ${CHECKPOINTS_ROOT} \
                        --checkpoints_name ${CHECKPOINTS_NAME} \
                        --resume_continue y \

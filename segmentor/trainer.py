@@ -201,6 +201,7 @@ class Trainer(object):
                 )
 
             (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
+
             self.data_time.update(time.time() - start_time)
 
             foward_start_time = time.time()
@@ -212,6 +213,7 @@ class Trainer(object):
                         'iters') < self. configer.get('protoseg', 'warmup_iters') else False
                     outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...],
                                            pretrain_prototype=pretrain_prototype)
+
             self.foward_time.update(time.time() - foward_start_time)
 
             loss_start_time = time.time()
@@ -243,6 +245,7 @@ class Trainer(object):
                 #     outputs, targets)
                 loss_tuple = self.pixel_loss(
                     outputs, targets)
+
                 backward_loss = display_loss = loss_tuple['loss']
                 seg_loss = loss_tuple['seg_loss']
                 prob_ppc_loss = loss_tuple['prob_ppc_loss']
@@ -312,6 +315,8 @@ class Trainer(object):
                 print('---------------------start validation---------------------')
                 self.__val()
 
+            del data_dict, inputs, targets, outputs
+
         self.configer.plus_one('epoch')
 
     def __val(self, data_loader=None):
@@ -367,6 +372,8 @@ class Trainer(object):
                     outputs = (outputs + outputs_rev) / 2.
                     self.evaluator.update_score(outputs, data_dict['meta'])
 
+                    del outputs_rev
+
                 elif self.data_helper.conditions.diverse_size:
                     if is_distributed():
                         outputs = [self.seg_net(inputs[i])
@@ -385,6 +392,8 @@ class Trainer(object):
                         self.evaluator.update_score(
                             outputs_i, data_dict['meta'][i:i + 1])
 
+                        del outputs
+
                 else:
                     outputs = self.seg_net(*inputs)
 
@@ -393,6 +402,8 @@ class Trainer(object):
                     if isinstance(outputs, dict):
                         outputs = outputs['seg']
                     self.evaluator.update_score(outputs, data_dict['meta'])
+
+                    del outputs
 
             self.batch_time.update(time.time() - start_time)
             start_time = time.time()

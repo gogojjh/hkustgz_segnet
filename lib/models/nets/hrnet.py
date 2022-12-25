@@ -73,9 +73,16 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         trunc_normal_(self.prototypes, std=0.02)  # ori: 0.02
 
         if self.use_probability:
-            self.proto_var = nn.Parameter(torch.ones(
-                self.num_classes, self.num_prototype, self.proj_dim), requires_grad=True)
-            trunc_normal_(self.proto_var, std=0.02)
+            # proto_var = torch.ones(
+            #     self.num_classes, self.num_prototype, self.proj_dim)
+            # trunc_normal_(proto_var, std=0.02)  # prior: unit gaussian
+            proto_var = torch.normal(mean=1, std=0.02, size=(
+                self.num_classes, self.num_prototype, self.proj_dim))
+            m = torch.nn.ReLU()
+            proto_var = m(proto_var)  # ! make sure var is positive
+            proto_var = torch.log(proto_var)  # log(sigma)
+            proto_var = torch.sigmoid(proto_var)  # scale log(sigma) to (0, 1)
+            self.proto_var = nn.Parameter(proto_var, requires_grad=True)  # ! log(sigma)
 
         self.proj_head = ProjectionHead(in_channels, self.proj_dim)
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
@@ -104,6 +111,9 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             proto_mean = F.normalize(proto_mean)
             # [c m 1 k] - [n k]=[c m n k]
             mean_diff = torch.square((proto_mean - x))  # [c m n k]
+
+            del x
+
             proto_var = rearrange(
                 proto_var, 'c m k -> c m 1 k')  # [c m 1 k]
             var_sum = x_var + proto_var  # [c m 1 k]
@@ -118,6 +128,8 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             # batch product (toward d dimension) -> cosine simialrity between fea and prototypes
             # n: h*w, k: num_class, m: num_prototype
             sim_mat = torch.einsum('nd,kmd->nmk', x, self.prototypes)
+
+        del proto_var, proto_mean, mean_diff
 
         return sim_mat
 
@@ -182,7 +194,6 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
                                     (torch.sum(
                                         (1/var_k[proto_ind]), dim=0))  # [embed_dim]
 
-                                # var_hat = torch.min(var_k[proto_ind], dim=0)[0]
                                 mean_gamma = torch.sum(
                                     (var_hat * c_k[proto_ind]) / var_k[proto_ind],
                                     dim=0)  # [fea_dim]
@@ -203,10 +214,12 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
                 # each class has a target id between [0, num_proto]
                 proto_target[gt_seg == i] = indexs.float(
                 ) + (self.num_prototype * i)  # n samples -> n*m labels
-
+            #! rescale and normalize on proto_mean and proto_var
             self.prototypes = nn.Parameter(
                 l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
             self.proto_var = nn.Parameter(proto_var, requires_grad=False)
+
+            del mask, proto_var, protos, m_q, m_k_tile, var_k, c_k, m_k, q, indexs, pred_seg, cls_score
 
         return proto_target  # [n]
 
@@ -223,8 +236,12 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             h, w), mode="bilinear", align_corners=True)
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
+
+        b_size = feats.shape[0]
+        h_size = feats.shape[2]
+
         c = self.cls_head(feats)  # 720
-        # del feats
+        del feats, feat1, feat2, feat3, feat4
 
         c = self.proj_head(c)  # 256
 
@@ -240,7 +257,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             c = rearrange(c, '(b h w) c -> b c h w',
                           h=gt_size[0], w=gt_size[1])
             x_var = self.uncertainty_head(c)  # ! b c h w, log(sigma^2)
-            x_var = torch.exp(x_var)  # ! variance x_var should > 0!
+            # x_var = torch.exp(x_var)  # ! variance x_var should > 0!
             c = rearrange(c, 'b c h w -> (b h w) c')
             x_var = rearrange(x_var, 'b c h w -> (b h w) c')
 
@@ -254,20 +271,27 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         # normalize along the num_cls dimension
         out_seg = self.mask_norm(out_seg)
         out_seg = rearrange(out_seg, '(b h w) c -> b c h w',
-                            b=feats.shape[0], h=feats.shape[2])
-
-        # Log.info('proto:{}\n proto_var: {}'.format(
-        #     self.prototypes, self.proto_var))
+                            b=b_size, h=h_size)
 
         if pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
             gt_seg = F.interpolate(gt_semantic_seg.float(
             ), size=gt_size, mode="nearest").view(-1)  # [b*h*w]?
             contrast_target = self.prototype_learning(
                 sim_mat, gt_seg, c, x_var)  # prototype selection [n]
-            contrast_logits = rearrange(
+
+            del x_var, gt_seg, c
+
+            sim_mat = rearrange(
                 sim_mat, 'n c m -> n (c m)')  # log-likelihood
-            contrast_logits = self.proto_norm(contrast_logits)
-            return {'seg': out_seg, 'logits': contrast_logits, 'target': contrast_target}
+            sim_mat = self.proto_norm(sim_mat)
+            if self.configer.get('protoseg', 'var_temp'):
+                proto_var = self.proto_var.clone().detach()  # [num_cls, num_proto, proj_dim]
+                proto_var = rearrange(proto_var, 'c m k -> (c m) k')
+                proto_var = torch.mean(proto_var, dim=1)  # [(c m)]
+
+                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_var': proto_var}
+            else:
+                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
 
         return out_seg
 

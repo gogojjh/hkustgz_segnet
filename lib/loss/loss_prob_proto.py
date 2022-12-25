@@ -38,7 +38,11 @@ class ProbPPCLoss(nn.Module, ABC):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
-    def forward(self, contrast_logits, contrast_target):
+    def forward(self, contrast_logits, contrast_target, proto_var=None):
+        # Use var as temperature of contrastive loss
+        if proto_var is not None:
+            contrast_logits = contrast_logits / proto_var
+
         prob_ppc_loss = F.cross_entropy(
             contrast_logits, contrast_target.long(), ignore_index=self.ignore_label)
 
@@ -69,6 +73,7 @@ class ProbPPDLoss(nn.Module, ABC):
 
         logits = torch.gather(contrast_logits, 1,
                               contrast_target[:, None].long())
+
         # exp(-log_likelihood)
         if logits.shape[0] > 0:
             prob_ppd_loss = torch.mean(torch.exp(-logits))  # torch.exp(negative MLS)
@@ -100,7 +105,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
         Log.info('ignore_index: {}'.format(ignore_index))
 
         self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
-        self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
+        # self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
 
         self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
         self.prob_ppd_criterion = ProbPPDLoss(configer=configer)
@@ -133,8 +138,13 @@ class PixelProbContrastLoss(nn.Module, ABC):
             seg = preds['seg']  # [b c h w]
             contrast_logits = preds['logits']
             contrast_target = preds['target']  # prototype selection [n]
+
+            proto_var = None
+            if 'proto_var' in preds:
+                proto_var = preds['proto_var']  # [n]
             prob_ppc_loss = self.prob_ppc_criterion(
-                contrast_logits, contrast_target)
+                contrast_logits, contrast_target, proto_var)
+
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
 
@@ -142,13 +152,13 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 h, w), mode='bilinear', align_corners=True)
             seg_loss = self.seg_criterion(pred, target)
 
-            # prob_ppc_weight = self.get_uncer_loss_weight()
+            prob_ppc_weight = self.get_uncer_loss_weight()
 
             if prob_ppd_loss != 0:
-                return {'loss': seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss,
+                return {'loss': seg_loss + prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss,
                         'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss}
             else:
-                return {'loss': seg_loss + self.prob_ppc_weight * prob_ppc_loss,
+                return {'loss': seg_loss + prob_ppc_weight * prob_ppc_loss,
                         'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss}
 
         seg = preds
