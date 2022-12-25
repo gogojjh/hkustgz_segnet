@@ -57,7 +57,7 @@ class ProbPPDLoss(nn.Module, ABC):
 
         self.ignore_label = -1
         if self.configer.exists(
-                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params') and 'ce_ignore_incccdex' in self.configer.get(
                 'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
@@ -70,7 +70,11 @@ class ProbPPDLoss(nn.Module, ABC):
         logits = torch.gather(contrast_logits, 1,
                               contrast_target[:, None].long())
         # exp(-log_likelihood)
-        prob_ppd_loss = torch.mean(torch.exp(-logits))  # torch.exp(negative MLS)
+        if logits.shape[0] > 0:
+            prob_ppd_loss = torch.mean(torch.exp(-logits))  # torch.exp(negative MLS)
+        else:
+            print('0 in logits')
+            prob_ppd_loss = 0
 
         return prob_ppd_loss
 
@@ -140,8 +144,12 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             # prob_ppc_weight = self.get_uncer_loss_weight()
 
-            return {'loss': seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss,
-                    'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
+            if prob_ppd_loss != 0:
+                return {'loss': seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss,
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss}
+            else:
+                return {'loss': seg_loss + self.prob_ppc_weight * prob_ppc_loss,
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(
