@@ -95,8 +95,8 @@
 		"rewrite": true
 	},
 	"lr": {
-		"base_lr": 0.003,
-		"var_lr": 5e-7,
+		"base_lr": 0.01,
+		"var_lr": 5e-5,
 		"metric": "iters",
 		"lr_policy": "lambda_poly",
 		"step": {
@@ -124,6 +124,9 @@
 	},
 	"loss": {
 		"loss_type": "pixel_prob_prototype_ce_loss",
+		"stochastic_contrastive_loss": true,
+		"init_shift": 15,
+		"init_negative_scale": 15,
 		"params": {
 			"ce_weight": [
 				0.8373, 0.918, 0.866, 1.0345, 1.0166, 0.9969, 0.9754, 1.0489, 0.8786, 1.0023,
@@ -148,8 +151,8 @@
 		"multi_proxy": false,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
-		"prob_ppd_weight": 1.0,
-		"prob_ppc_weight": 0.3,
+		"prob_ppd_weight": 0.1,
+		"prob_ppc_weight": 0.01,
 		"proj_dim": 64,
 		"var_temp": true
 	},
@@ -162,5 +165,8 @@
 	},
 	"wandb": {
 		"mode": "online"
+	},
+	"run": {
+		"server": 3
 	}
 }
