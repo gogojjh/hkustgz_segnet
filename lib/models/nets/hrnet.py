@@ -8,14 +8,11 @@
 # LICENSE file in the root directory of this source tree
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-import os
-import pdb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
+
 import torch.distributed as dist
-import ot
 
 from lib.models.backbones.backbone_selector import BackboneSelector
 from lib.models.tools.module_helper import ModuleHelper
@@ -23,7 +20,9 @@ from lib.utils.tools.logger import Logger as Log
 from lib.models.modules.hanet_attention import HANet_Conv
 from lib.models.modules.contrast import momentum_update, l2_normalize, ProjectionHead
 from lib.models.modules.uncertainty_head import UncertaintyHead
-from lib.models.modules.sinkhorn import distributed_sinkhorn, distributed_greenkhorn
+from lib.models.modules.sinkhorn import distributed_sinkhorn
+from lib.models.modules.prob_proto_seg_head import ProbProtoSegHead
+
 from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
 
@@ -44,12 +43,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             'protoseg', 'update_prototype')
         self.pretrain_prototype = self.configer.get(
             'protoseg', 'pretrain_prototype')
-        # similarity measure between features and prototypes
-        self.sim_measure = self.configer.get('protoseg', 'similarity_measure')
         self.use_probability = self.configer.get('protoseg', 'use_probability')
-        # multi_proxy = True: sum of M prototypes
-        # multi_proxy = False: each proto corresponds to a pixel
-        self.multi_proxy = self.configer.get('protoseg', 'multi_proxy')
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
@@ -68,206 +62,12 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             in_feat=self.configer.get('protoseg', 'proj_dim'),
             out_feat=self.configer.get('protoseg', 'proj_dim'))  # predict variance of each gaussian
 
-        # [cls_num, proto_num, channel/k]
-        self.prototypes = nn.Parameter(torch.zeros(
-            self.num_classes, self.num_prototype, self.proj_dim), requires_grad=True)
-        trunc_normal_(self.prototypes, std=0.02)  # ori: 0.02
-
-        if self.use_probability:
-            # proto_var = torch.ones(
-            #     self.num_classes, self.num_prototype, self.proj_dim)
-            # trunc_normal_(proto_var, std=0.02)  # prior: unit gaussian
-            proto_var = torch.normal(mean=1, std=0.02, size=(
-                self.num_classes, self.num_prototype, self.proj_dim))
-            m = torch.nn.ReLU()
-            proto_var = m(proto_var)  # ! make sure var is positive
-            proto_var = torch.log(proto_var)  # log(sigma)
-            proto_var = torch.sigmoid(proto_var)  # scale log(sigma) to (0, 1)
-            proto_var = torch.exp(proto_var)
-            self.proto_var = nn.Parameter(proto_var, requires_grad=True)  # ! log(sigma)
-
         self.proj_head = ProjectionHead(in_channels, self.proj_dim)
+
+        self.prob_seg_head = ProbProtoSegHead(configer=configer)
+
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
-        self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
-
-        self.gamma = self.configer.get('protoseg', 'gamma')  # momentum update
-
-        self.ignore_label = -1
-        if self.configer.exists(
-                'loss', 'params') and 'ce_ignore_incccdex' in self.configer.get(
-                'loss', 'params'):
-            self.ignore_label = self.configer.get('loss', 'params')[
-                'ce_ignore_index']
-
-        if self.configer.get('loss', 'stochastic_contrastive_loss'):
-            shift = (torch.ones(1) * self.configer.get('loss', 'init_shift')).cuda()
-            self.shift = nn.Parameter(shift, requires_grad=True)
-            neg_scale = (torch.ones(1) * self.configer.get('loss', 'init_negative_scale')).cuda()
-            self.neg_scale = nn.Parameter(neg_scale, requires_grad=True)
-
-    def similarity_compute(self, x, x_var=None):
-        """ 
-        Similarity between pixel embeddings and prototypes
-
-        x: batch-wise pixel embeddings [(b h w) c]
-        x_var: var of x [(b h w) c]
-        prototypes: [cls_num, proto_num, channel/c]
-        c: similarity [] 
-        gt_seg: [b*h*w]
-        """
-        if self.use_probability:
-            x = F.normalize(x, dim=-1)
-
-            proto_mean = self.prototypes.detach().clone()
-            proto_var = self.proto_var.detach().clone()
-            proto_mean = rearrange(
-                proto_mean, 'c m k -> c m 1 k')  # [c m 1 k]
-            proto_mean = F.normalize(proto_mean)
-            proto_var = rearrange(
-                proto_var, 'c m k -> c m 1 k')  # [c m 1 k]
-
-            cosine_dist = None
-            if self.configer.get('loss', 'stochastic_contrastive_loss'):
-                # eucl_dist = torch.sqrt(torch.square(proto_mean - x).sum(-1) + 1e-8)
-                cosine_dist = torch.einsum(
-                    'nd,kmd->nmk', x, self.prototypes)  # [n num_proto num_cls]
-                cosine_dist = (1 - cosine_dist).pow(2)
-
-                cosine_dist = - self.neg_scale * cosine_dist + self.shift
-                cosine_dist = torch.sigmoid(cosine_dist)  # [n num_proto num_cls]
-                # cosine_dist = torch.exp(cosine_dist) / (torch.exp(cosine_dist) + torch.exp(-cosine_dist)) # [n m c]
-
-                cosine_dist = cosine_dist.permute(0, 2, 1)  # [n c m]
-
-            if self.sim_measure == "mls":  # mls larger -> similar
-                # [c m 1 k] - [n k]=[c m n k]
-                mean_diff = torch.square((proto_mean - x))  # [c m n k]
-
-                del x
-
-                var_sum = x_var + proto_var  # [c m 1 k]
-
-                sim_mat = mean_diff / var_sum + torch.log(var_sum)
-                sim_mat = - 0.5 * torch.mean(sim_mat, dim=-1)
-                #! sim_mat larger -> similar
-                sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
-                del mean_diff
-
-            elif self.sim_measure == "wasserstein":  # smaller -> similar
-                x_var = torch.sqrt(x_var + 1e-8)
-                proto_var = torch.sqrt(proto_var + 1e-8)
-
-                sim_mat = torch.square(
-                    (proto_mean - x)) + torch.square((proto_var - x_var))  # [c m n k]
-                sim_mat = torch.mean(sim_mat, dim=-1)  # [c m n]
-
-                sim_mat = -sim_mat  # ! larger -> similar
-
-                sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
-
-            return sim_mat, cosine_dist
-
-        elif self.use_probability is False and self.sim_measure == "cosine":
-            # batch product (toward d dimension) -> cosine simialrity between fea and prototypes
-            # n: h*w, k: num_class, m: num_prototype
-            sim_mat = torch.einsum('nd,kmd->nmk', x, self.prototypes)
-
-            return sim_mat
-
-    def prototype_learning(self, sim_mat, gt_seg, _c, x_var):
-        """ 
-        Prototype selection and update
-        _c: (normalized) feature embin_channels
-        each pixel corresponds to a mix to multiple protoyptes
-        "Prototype selection and update"
-        min(tr(M * T_t) + lamda * tr(T * log(T) - 1 * 1_T)_t)
-        M = 1 - C, M: cost matrx, C: similarity matrix
-        T: optimal transport plan
-
-        sim_mat: [b*h*w, num_cls, num_proto]
-        gt_seg: [b*h*w]
-        """
-        # largest score inside a class, # [n m]
-        cls_score = torch.amax(sim_mat, dim=2)
-        pred_seg = torch.max(cls_score, dim=1)[1]  # [b*h*w]
-
-        mask = (gt_seg == pred_seg)  # [b*h*w] bool
-
-        #! pixel-to-prototype online clustering
-        protos = self.prototypes.detach().clone()
-        proto_var = self.proto_var.detach().clone()
-        # to store predictions of proto in each class
-        proto_target = gt_seg.clone().float()
-        sim_mat = sim_mat.permute(0, 2, 1)  # [n m c]
-        if not self.multi_proxy:
-            for i in range(self.num_classes):
-                init_q = sim_mat[..., i]  # [b*h*w, num_proto]
-                # select the right preidctions inside i-th class
-                init_q = init_q[gt_seg == i, ...]  # [n, num_proto]
-                if init_q.shape[0] == 0:
-                    continue
-
-                q, indexs = distributed_sinkhorn(init_q, sinkhorn_iterations=self.configer.get('protoseg', 'sinkhorn_iterations'), epsilon=self.configer.get(
-                    'protoseg', 'sinkhorn_epsilon'))  # q: mapping mat [n, num_proto] indexs: ind of largest proto in this cls[n]
-
-                m_k = mask[gt_seg == i]  # ! the correctly predicted ones
-
-                c_k = _c[gt_seg == i, ...]  # [n, embed_dim]
-
-                var_k = x_var[gt_seg == i, ...]
-
-                m_k_tile = repeat(m_k, 'n -> n tile',
-                                  tile=self.num_prototype)  # [n, num_proto], bool
-
-                # ! select the prototypes of the correctly predicted pixels in i-th class
-                m_q = q * m_k_tile  # [n, num_proto]
-
-                # the prototypes that are being selected calcualted by sum
-                n = torch.sum(m_q, dim=0)  # [num_proto]
-
-                if self.update_prototype is True and torch.sum(n) > 0:
-                    if self.use_probability:
-                        for k in range(self.num_prototype):
-                            if torch.sum(m_q[..., k] > 0):
-                                proto_ind = m_q[..., k] != 0
-                                #! only pick the correctly predicted pixels to update proto mean and var
-                                # [embed_dim]
-                                var_hat = 1 / \
-                                    (torch.sum(
-                                        (1/var_k[proto_ind]), dim=0))  # [embed_dim]
-
-                                mean_gamma = torch.sum(
-                                    (var_hat * c_k[proto_ind]) / var_k[proto_ind],
-                                    dim=0)  # [fea_dim]
-
-                                # protos[i, k, :] = mean_gamma
-                                # proto_var[i, k, :] = var_hat
-
-                                #! momentum update
-                                protos[i, k, :] = momentum_update(old_value=protos[i, k, :],
-                                                                  new_value=mean_gamma,
-                                                                  momentum=self.gamma)
-                                proto_var[i, k, :] = momentum_update(old_value=proto_var[i, k, :],
-                                                                     new_value=var_hat,
-                                                                     momentum=self.gamma)
-
-                    elif self.use_probability is False:
-                        return
-                # each class has a target id between [0, num_proto]
-                proto_target[gt_seg == i] = indexs.float(
-                ) + (self.num_prototype * i)  # n samples -> n*m labels
-
-                del m_q, m_k_tile, var_k, c_k, m_k, q, indexs
-
-            #! rescale and normalize on proto_mean and proto_var
-            self.prototypes = nn.Parameter(
-                l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
-            self.proto_var = nn.Parameter(proto_var, requires_grad=False)
-
-            del mask, proto_var, protos, pred_seg, cls_score
-
-        return proto_target  # [n]
 
     def forward(self, x_, gt_semantic_seg=None, pretrain_prototype=False):
         x = self.backbone(x_)
@@ -283,100 +83,28 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
 
-        b_size = feats.shape[0]
-        h_size = feats.shape[2]
-
         c = self.cls_head(feats)  # 720
         c = self.proj_head(c)  # 256
 
         del feats, feat1, feat2, feat3, feat4
 
+        #! seghead
         gt_size = c.size()[2:]
         c = rearrange(c, 'b c h w -> (b h w) c')
         c = self.feat_norm(c)  # ! along channel dimension
         c = l2_normalize(c)  # ! l2_norm along num_class dimension
 
-        self.prototypes.data.copy_(l2_normalize(self.prototypes))
-
-        x_var = None
         if self.use_probability:
             c = rearrange(c, '(b h w) c -> b c h w',
                           h=gt_size[0], w=gt_size[1])
-            x_var = self.uncertainty_head(c)  # ! b c h w, log(sigma^2)
-            x_var = torch.exp(x_var)  # ! variance x_var should > 0!
-            c = rearrange(c, 'b c h w -> (b h w) c')
-            x_var = rearrange(x_var, 'b c h w -> (b h w) c')
+            c_var = self.uncertainty_head(c)  # ! b c h w, log(sigma^2)
+            c_var = torch.exp(c_var)  # ! variance x_var should > 0!
 
-        #! log-likelihood
-        if self.configer.get('loss', 'stochastic_contrastive_loss'):
-            sim_mat, cosine_dist = self.similarity_compute(
-                c, x_var)  # [b*h*w, num_cls, num_proto]
+            preds = self.prob_seg_head(c, c_var, gt_semantic_seg=gt_semantic_seg)
+
+            return preds
         else:
-            sim_mat = self.similarity_compute(
-                c, x_var)  # [b*h*w, num_cls, num_proto]
-        # sim_mat = torch.exp(sim_mat)  # ! likelihood
-
-        # select the  largest proto in each cls
-        out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
-
-        # normalize along the num_cls dimension
-        out_seg = self.mask_norm(out_seg)
-        out_seg = rearrange(out_seg, '(b h w) c -> b c h w',
-                            b=b_size, h=h_size)
-
-        if pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
-            gt_seg = F.interpolate(gt_semantic_seg.float(
-            ), size=gt_size, mode="nearest").view(-1)  # [b*h*w]?
-            contrast_target = self.prototype_learning(
-                sim_mat, gt_seg, c, x_var)  # prototype selection [n]
-
-            del gt_seg, c
-
-            sim_mat = rearrange(
-                sim_mat, 'n c m -> n (c m)')  # log-likelihood
-            sim_mat_norm = self.proto_norm(sim_mat)
-
-            # if self.configer.get('protoseg', 'var_temp'):
-            #     proto_var = self.proto_var.data.clone()  # [num_cls, num_proto, proj_dim]
-            #     proto_var = rearrange(proto_var, 'c m k -> (c m) k')
-            #     proto_var = torch.exp(proto_var)
-            #     proto_var = torch.mean(proto_var, dim=1)  # [(c m)]
-
-            #     sim_mat_norm = sim_mat / proto_var
-            #     sim_mat_norm = self.proto_norm(sim_mat_norm)
-
-            if self.configer.get('loss', 'stochastic_contrastive_loss'):
-                x_var = x_var.mean(-1)  # [(b h w)]
-                x_var = repeat(x_var, 'n -> n l', l=(self.num_classes * self.num_prototype))
-
-                proto_var = self.proto_var.detach().clone()  # [num_clss, num_proto, proj_dim)
-                proto_var = proto_var.mean(-1)
-                proto_var = rearrange(proto_var, 'c m -> (c m)')  # [(c m)]
-                proto_var = repeat(proto_var, 'l -> n l', n=x_var.shape[0])  # [n (c m)]
-
-                x_var = x_var[contrast_target !=
-                              self.ignore_label, :]
-                contrast_target_int = contrast_target[contrast_target != self.ignore_label]
-                x_var = torch.gather(x_var, 1, contrast_target_int[:, None].long()).view(-1)  # [n]
-
-                proto_var = proto_var[contrast_target !=
-                                      self.ignore_label, :]
-                proto_var = torch.gather(
-                    proto_var, 1, contrast_target_int[:, None].long()).view(-1)  # [n]
-
-                cosine_dist = rearrange(
-                    cosine_dist, 'n c m -> n (c m)')  # log-likelihood
-                cosine_dist = self.proto_norm(cosine_dist)
-
-                x_var = torch.sigmoid(x_var)
-                proto_var = torch.sigmoid(proto_var)
-
-                return {'seg': out_seg, 'logits': sim_mat_norm, 'sim_mat_ori': sim_mat, 'target': contrast_target, 'cosine_dist': cosine_dist, 'x_var': x_var, 'proto_var': proto_var}
-
-            else:
-                return {'seg': out_seg, 'logits': sim_mat_norm, 'sim_mat_ori': sim_mat, 'target': contrast_target}
-
-        return out_seg
+            return
 
 
 class HRNet_W48_Proto(nn.Module):
@@ -468,8 +196,14 @@ class HRNet_W48_Proto(nn.Module):
         self.prototypes = nn.Parameter(l2_normalize(protos),
                                        requires_grad=False)
 
+        #! update proto in distributed learning
         if dist.is_available() and dist.is_initialized():  # distributed learning
             protos = self.prototypes.data.clone()
+            """
+            To get average result across all gpus: 
+            first average the sum
+            then sum the tensors on all gpus, and copy the sum to all gpus
+            """
             dist.all_reduce(protos.div_(dist.get_world_size()))
             self.prototypes = nn.Parameter(protos, requires_grad=False)
 

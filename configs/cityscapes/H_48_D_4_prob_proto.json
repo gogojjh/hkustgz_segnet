@@ -95,7 +95,7 @@
 		"rewrite": true
 	},
 	"lr": {
-		"base_lr": 0.01,
+		"base_lr": 0.003,
 		"var_lr": 5e-5,
 		"metric": "iters",
 		"lr_policy": "lambda_poly",
@@ -106,7 +106,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 2000,
+		"test_interval": 200,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -124,7 +124,7 @@
 	},
 	"loss": {
 		"loss_type": "pixel_prob_prototype_ce_loss",
-		"stochastic_contrastive_loss": true,
+		"stochastic_contrastive_loss": false,
 		"init_shift": 15,
 		"init_negative_scale": 15,
 		"params": {
@@ -139,19 +139,20 @@
 		}
 	},
 	"protoseg": {
-		"gamma": 0.999,
+		"mean_gamma": 0.999,
+		"cov_gamma": 0.999,
 		"num_prototype": 5,
 		"pretrain_prototype": false,
 		"use_rmi": false,
 		"use_prototype": true,
 		"update_prototype": true,
 		"warmup_iters": 0,
-		"similarity_measure": "mls",
+		"similarity_measure": "wasserstein",
 		"use_probability": true,
 		"multi_proxy": false,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
-		"prob_ppd_weight": 0.1,
+		"prob_ppd_weight": 0.5,
 		"prob_ppc_weight": 0.01,
 		"proj_dim": 64,
 		"var_temp": true
@@ -163,10 +164,15 @@
 		"min_value": 0,
 		"ramp_mult": -5.0
 	},
+	"GMM": {
+		"factor_n": 2,
+		"factor_c": 1,
+		"factor_p": 1
+	},
 	"wandb": {
 		"mode": "online"
 	},
 	"run": {
-		"server": 3
+		"server": 2
 	}
 }

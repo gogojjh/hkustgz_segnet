@@ -36,7 +36,7 @@ if [ "$1"x == "train"x ]; then
                        --log_to_file n \
                        --backbone ${BACKBONE} \
                        --model_name ${MODEL_NAME} \
-                       --gpu 0 \
+                       --gpu 0 1 2 3\
                        --data_dir ${DATA_DIR} \
                        --loss_type ${LOSS_TYPE} \
                        --max_iters ${MAX_ITERS} \
@@ -44,6 +44,7 @@ if [ "$1"x == "train"x ]; then
                        --checkpoints_name ${CHECKPOINTS_NAME} \
                        --train_batch_size ${BATCH_SIZE} \
                        --base_lr ${BASE_LR} \
+                       --distributed \
                        2>&1 | tee ${LOG_FILE}
 
 

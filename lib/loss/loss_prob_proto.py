@@ -38,20 +38,42 @@ class ProbPPCLoss(nn.Module, ABC):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
+
     def forward(self, contrast_logits, contrast_target):
+        contrast_logits = self.proto_norm(contrast_logits)
+
         prob_ppc_loss = F.cross_entropy(
             contrast_logits, contrast_target.long(), ignore_index=self.ignore_label)
 
         return prob_ppc_loss
 
 
-class stoch_contrastive_loss(nn.Module, ABC):
+# class KLLoss(nn.Module, ABC):
+#     def __init__(self, configer):
+#         super(KLLoss, self).__init__()
+
+#         self.configer = configer
+
+#         self.ignore_label = -1
+#         if self.configer.exists(
+#                 'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+#                 'loss', 'params'):
+#             self.ignore_label = self.configer.get('loss', 'params')[
+#                 'ce_ignore_index']
+
+#     def forward()
+
+
+class StochContrastiveLoss(nn.Module, ABC):
     """ 
     Probabilistic Representations for Video Contrastive Learning
     """
 
     def __init__(self, configer):
-        super(stoch_contrastive_loss, self).__init__()
+        super(StochContrastiveLoss, self).__init__()
 
         self.configer = configer
 
@@ -85,7 +107,7 @@ class ProbPPDLoss(nn.Module, ABC):
 
         self.ignore_label = -1
         if self.configer.exists(
-                'loss', 'params') and 'ce_ignore_incccdex' in self.configer.get(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
                 'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
@@ -148,7 +170,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
             ramp_mult=self.configer.get('rampdownscheduler', 'ramp_mult'),
             configer=configer)
 
-        self.stoch_contrastive_loss = stoch_contrastive_loss(configer=configer)
+        self.stoch_contrastive_loss = StochContrastiveLoss(configer=configer)
 
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
@@ -166,9 +188,6 @@ class PixelProbContrastLoss(nn.Module, ABC):
             seg = preds['seg']  # [b c h w]
             contrast_logits = preds['logits']
             contrast_target = preds['target']  # prototype selection [n]
-            contrast_logits_ori = preds['sim_mat_ori']
-
-            temp_sim_mat = None
 
             if self.configer.get('loss', 'stochastic_contrastive_loss'):
                 x_var = preds['x_var']
@@ -181,7 +200,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
                     contrast_logits, contrast_target)
 
             prob_ppd_loss = self.prob_ppd_criterion(
-                contrast_logits_ori, contrast_target)
+                contrast_logits, contrast_target)
 
             pred = F.interpolate(input=seg, size=(
                 h, w), mode='bilinear', align_corners=True)

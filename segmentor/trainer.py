@@ -257,8 +257,6 @@ class Trainer(object):
 
             backward_start_time = time.time()
 
-            wandb.log({"pixel loss": backward_loss})
-
             # backward_loss.backward()
             # self.optimizer.step()
             scaler.scale(backward_loss).backward()
@@ -293,6 +291,13 @@ class Trainer(object):
                         backward_time=self.backward_time, loss_time=self.loss_time,
                         data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
                         prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss))
+
+                wandb.log({"Epoch": self.configer.get('epoch'),
+                           "Train Iteration": self.configer.get('iters'),
+                           "Loss": self.train_losses,
+                           "seg_loss": seg_loss,
+                           "prob_ppc_loss": prob_ppc_loss,
+                           "prob_ppd_loss": prob_ppc_loss})
 
                 self.batch_time.reset()
                 self.foward_time.reset()
