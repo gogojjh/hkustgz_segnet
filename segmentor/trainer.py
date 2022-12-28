@@ -294,7 +294,7 @@ class Trainer(object):
 
                 wandb.log({"Epoch": self.configer.get('epoch'),
                            "Train Iteration": self.configer.get('iters'),
-                           "Loss": self.train_losses,
+                           "Loss": self.train_losses.avg,
                            "seg_loss": seg_loss,
                            "prob_ppc_loss": prob_ppc_loss,
                            "prob_ppd_loss": prob_ppc_loss})

@@ -106,7 +106,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 200,
+		"test_interval": 2000,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -154,7 +154,7 @@
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 0.5,
 		"prob_ppc_weight": 0.01,
-		"proj_dim": 64,
+		"proj_dim": 96,
 		"var_temp": true
 	},
 	"rampdownscheduler": {
