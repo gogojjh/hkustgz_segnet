@@ -11,12 +11,8 @@ from torch.distributions.distribution import Distribution
 from torch.distributions.utils import lazy_property
 import math
 
-from lib.models.backbones.backbone_selector import BackboneSelector
-from lib.models.tools.module_helper import ModuleHelper
 from lib.utils.tools.logger import Logger as Log
-from lib.models.modules.hanet_attention import HANet_Conv
-from lib.models.modules.contrast import momentum_update, l2_normalize, ProjectionHead
-from lib.models.modules.uncertainty_head import UncertaintyHead
+from lib.models.modules.contrast import momentum_update, l2_normalize
 from lib.models.modules.sinkhorn import distributed_sinkhorn
 from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
@@ -435,7 +431,19 @@ class ProbProtoSegHead(nn.Module):
                     cosine_dist, 'n c m -> n (c m)')  # log-likelihood
                 # cosine_dist = self.proto_norm(cosine_dist)
 
+                if self.configer.get('loss', 'kl_loss'):
+                    proto_mean = self.prototypes.data.clone()
+
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'cosine_dist': cosine_dist, 'x_var': x_var, 'proto_var': proto_var, 'proto_mean': proto_mean}
+
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'cosine_dist': cosine_dist, 'x_var': x_var, 'proto_var': proto_var}
+
+            if self.configer.get(
+                    'loss', 'stochastic_contrastive_loss') is False and self.configer.get(
+                    'loss', 'kl_loss') is True:
+                proto_mean = self.prototypes.data.clone()
+
+                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_var': proto_var, 'proto_mean': proto_mean}
 
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}

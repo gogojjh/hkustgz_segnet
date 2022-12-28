@@ -51,20 +51,25 @@ class ProbPPCLoss(nn.Module, ABC):
         return prob_ppc_loss
 
 
-# class KLLoss(nn.Module, ABC):
-#     def __init__(self, configer):
-#         super(KLLoss, self).__init__()
+class KLLoss(nn.Module, ABC):
+    def __init__(self, configer):
+        super(KLLoss, self).__init__()
 
-#         self.configer = configer
+        self.configer = configer
 
-#         self.ignore_label = -1
-#         if self.configer.exists(
-#                 'loss', 'params') and 'ce_ignore_index' in self.configer.get(
-#                 'loss', 'params'):
-#             self.ignore_label = self.configer.get('loss', 'params')[
-#                 'ce_ignore_index']
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
 
-#     def forward()
+    def forward(self, proto_mean, proto_var):
+        kl_loss = 0.5 * torch.sum(
+            (torch.square(proto_mean) + proto_var - torch.log(proto_var) - 1),
+            dim=-1).mean()
+
+        return kl_loss
 
 
 class StochContrastiveLoss(nn.Module, ABC):
@@ -172,6 +177,9 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
         self.stoch_contrastive_loss = StochContrastiveLoss(configer=configer)
 
+        if self.configer.get('loss', 'kl_loss'):
+            self.kl_loss = KLLoss(configer)
+
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
 
@@ -206,6 +214,9 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 h, w), mode='bilinear', align_corners=True)
 
             seg_loss = self.seg_criterion(pred, target)
+
+            if self.configer.get('loss', 'kl_loss'):
+                kl_loss = self.kl_loss()
 
             # prob_ppc_weight = self.get_uncer_loss_weight()
 

@@ -106,7 +106,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 2000,
+		"test_interval": 200,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -124,7 +124,8 @@
 	},
 	"loss": {
 		"loss_type": "pixel_prob_prototype_ce_loss",
-		"stochastic_contrastive_loss": false,
+		"stochastic_contrastive_loss": true,
+		"kl_loss": false,
 		"init_shift": 15,
 		"init_negative_scale": 15,
 		"params": {
