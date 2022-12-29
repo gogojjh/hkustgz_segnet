@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
+import wandb
 
 from lib.utils.tools.logger import Logger as Log
 from lib.metrics import running_score as rslib

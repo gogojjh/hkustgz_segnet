@@ -255,6 +255,13 @@ class Trainer(object):
             self.train_losses.update(display_loss.item(), batch_size)
             self.loss_time.update(time.time() - loss_start_time)
 
+            wandb.log({"Epoch": self.configer.get('epoch'),
+                       "Train Iteration": self.configer.get('iters'),
+                       "Loss": backward_loss,
+                       "seg_loss": seg_loss,
+                       "prob_ppc_loss": prob_ppc_loss,
+                       "prob_ppd_loss": prob_ppc_loss})
+
             backward_start_time = time.time()
 
             # backward_loss.backward()
@@ -291,13 +298,6 @@ class Trainer(object):
                         backward_time=self.backward_time, loss_time=self.loss_time,
                         data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
                         prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss))
-
-                wandb.log({"Epoch": self.configer.get('epoch'),
-                           "Train Iteration": self.configer.get('iters'),
-                           "Loss": self.train_losses.avg,
-                           "seg_loss": seg_loss,
-                           "prob_ppc_loss": prob_ppc_loss,
-                           "prob_ppd_loss": prob_ppc_loss})
 
                 self.batch_time.reset()
                 self.foward_time.reset()

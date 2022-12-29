@@ -17,6 +17,7 @@ import warnings
 
 from lib.utils.tools.logger import Logger as Log
 from lib.utils.tools.configer import Configer
+from lib.utils.distributed import get_world_size, get_rank, is_distributed
 
 warnings.filterwarnings('ignore')
 
@@ -227,11 +228,23 @@ if __name__ == "__main__":
 
     wb_proj_name = configer.get('checkpoints', 'checkpoints_name')
     today = date.today()
-    wb_name = today.strftime("%d/%m/%Y")
-    wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
-               name=wb_name, mode=configer.get('wandb', 'mode'),
-               settings=wandb.Settings(start_method='fork'))
-    wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
+    wb_name = today.strftime("%d/%m/%Y") + '_server' + str(configer.get('run', 'server'))
+
+    if is_distributed():
+        if get_rank() == 0:
+            Log.info('======================wandb init in distributed learning.=================')
+            wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
+                       name=wb_name, mode=configer.get('wandb', 'mode'),
+                       settings=wandb.Settings(start_method='fork'))
+            wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
+            wandb.save(args_parser.configs)
+
+    else:
+        wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
+                   name=wb_name, mode=configer.get('wandb', 'mode'),
+                   settings=wandb.Settings(start_method='fork'))
+        wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
+        wandb.save(args_parser.configs)
 
     if configer.get('phase') == 'train':
         model.train()
