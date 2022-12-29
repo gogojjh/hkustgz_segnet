@@ -255,12 +255,13 @@ class Trainer(object):
             self.train_losses.update(display_loss.item(), batch_size)
             self.loss_time.update(time.time() - loss_start_time)
 
-            wandb.log({"Epoch": self.configer.get('epoch'),
-                       "Train Iteration": self.configer.get('iters'),
-                       "Loss": backward_loss,
-                       "seg_loss": seg_loss,
-                       "prob_ppc_loss": prob_ppc_loss,
-                       "prob_ppd_loss": prob_ppc_loss})
+            if get_rank() == 0:
+                wandb.log({"Epoch": self.configer.get('epoch'),
+                        "Train Iteration": self.configer.get('iters'),
+                        "Loss": backward_loss,
+                        "seg_loss": seg_loss,
+                        "prob_ppc_loss": prob_ppc_loss,
+                        "prob_ppd_loss": prob_ppc_loss})
 
             backward_start_time = time.time()
 
