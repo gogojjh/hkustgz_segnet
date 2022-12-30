@@ -10,7 +10,7 @@
 		"workers": 8
 	},
 	"train": {
-		"batch_size": 8,
+		"batch_size": 24,
 		"data_transformer": {
 			"size_mode": "fix_size",
 			"input_size": [1024, 512],
@@ -106,7 +106,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 200,
+		"test_interval": 2000,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -142,7 +142,7 @@
 	"protoseg": {
 		"mean_gamma": 0.999,
 		"cov_gamma": 0.5,
-		"num_prototype": 5,
+		"num_prototype": 10,
 		"pretrain_prototype": false,
 		"use_rmi": false,
 		"use_prototype": true,
@@ -155,7 +155,7 @@
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 0.1,
 		"prob_ppc_weight": 0.01,
-		"proj_dim": 256,
+		"proj_dim": 720,
 		"var_temp": true
 	},
 	"rampdownscheduler": {
@@ -171,7 +171,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 2
