@@ -81,6 +81,8 @@ class StochContrastiveLoss(nn.Module, ABC):
         super(StochContrastiveLoss, self).__init__()
 
         self.configer = configer
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
 
         self.ignore_label = -1
         if self.configer.exists(
@@ -89,7 +91,10 @@ class StochContrastiveLoss(nn.Module, ABC):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
+        self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
+
     def forward(self, cosine_dist, contrast_target, x_var, proto_var):
+        cosine_dist = self.proto_norm(cosine_dist)
         stoch_conta_loss = F.cross_entropy(
             cosine_dist, contrast_target.long(), ignore_index=self.ignore_label, reduction='none')
         stoch_conta_loss = stoch_conta_loss[contrast_target !=
@@ -125,13 +130,11 @@ class ProbPPDLoss(nn.Module, ABC):
         logits = torch.gather(contrast_logits, 1,
                               contrast_target[:, None].long())
 
-        if self.configer.get('protoseg', 'similarity_measure') == "mls":
-            # exp(-log_likelihood)
-            if logits.shape[0] > 0:
-                prob_ppd_loss = torch.mean(torch.exp(-logits))  # torch.exp(negative MLS)
-            else:
-                print('0 in logits')
-                prob_ppd_loss = 0
+        if logits.shape[0] == 0:
+            prob_ppd_loss == 0
+
+        if self.configer.get('protoseg', 'similarity_measure') == "mls" or self.configer.get('protoseg', 'similarity_measure') == "fast_mls":
+            prob_ppd_loss = torch.mean(torch.exp(-logits))  # torch.exp(negative MLS)
         elif self.configer.get('protoseg', 'similarity_measure') == "wasserstein":  # mls larger -> similar
             prob_ppd_loss = torch.mean(-logits)
 
@@ -216,13 +219,16 @@ class PixelProbContrastLoss(nn.Module, ABC):
             seg_loss = self.seg_criterion(pred, target)
 
             if self.configer.get('loss', 'kl_loss'):
+                proto_var = preds['proto_var']
                 kl_loss = self.kl_loss()
 
             # prob_ppc_weight = self.get_uncer_loss_weight()
 
-            loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
             if prob_ppd_loss == 0:
-                prob_ppd_loss = prob_ppc_loss * 0
+                prob_ppd_loss = seg_loss * 0
+
+            loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
+
             return {'loss': loss,
                     'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
 

@@ -156,6 +156,17 @@ class ProbProtoSegHead(nn.Module):
 
                 sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
 
+            if self.sim_measure == 'fast_mls':
+                x_var = torch.mean(x_var, dim=-1)  # x_var: [n, k] -> [n]
+                proto_var = torch.mean(proto_var, dim=-1)  # [c m]
+                proto_var = rearrange(proto_var, 'c m -> c m 1')  # [c m 1]
+                proto_var = repeat(proto_var, 'c m 1 -> c m n', n=x_var.shape[0])  # [c m n]
+                cosine_dist = torch.einsum('nd,kmd->nmk', x, self.prototypes)  # [n m c]
+                cosine_dist = cosine_dist.permute(2, 1, 0)  # [c m n]
+                # [c m n]
+                sim_mat = - (2 - 2 * cosine_dist) / (proto_var + x_var) - torch.log(proto_var + x_var)
+                sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
+
             elif self.sim_measure == "wasserstein":  # smaller -> similar
                 proto_mean = rearrange(
                     proto_mean, 'c m k -> c m 1 k')  # [c m 1 k]
@@ -309,7 +320,7 @@ class ProbProtoSegHead(nn.Module):
                                 # todo: why do not multiply with probs of GMM????????
                                 mean_gamma = torch.sum(
                                     (init_q[proto_ind, k] * c_q[proto_ind]),
-                                    dim=0) / (c_q[proto_ind].shape[0])  # [proj_dim]
+                                    dinm=0) / (c_q[proto_ind].shape[0])  # [proj_dim]
 
                                 mean_gamma = l2_normalize(mean_gamma)
 
@@ -322,11 +333,16 @@ class ProbProtoSegHead(nn.Module):
                                 # [embed_dim]
                                 var_hat = 1 / \
                                     (torch.sum(
-                                        (1/var_q[proto_ind]), dim=0))  # [embed_dim]
+                                        (1/var_q[proto_ind]), dim=0)) * (var_q[proto_ind].shape[0])  # [embed_dim]
 
-                                mean_gamma = torch.sum(
-                                    (var_hat * c_q[proto_ind]) / var_q[proto_ind],
+                                # var_hat = torch.log(var_hat)
+                                # var_hat = torch.sigmoid(var_hat)
+                                # var_hat = torch.exp(var_hat)
+
+                                mean_gamma = torch.mean(
+                                    ((var_hat * c_q[proto_ind]) / var_q[proto_ind]),
                                     dim=0)  # [fea_dim]
+                                mean_gamma = l2_normalize(mean_gamma)
 
                             #! momentum update
                             protos[i, k, :] = momentum_update(old_value=protos[i, k, :],
@@ -338,16 +354,13 @@ class ProbProtoSegHead(nn.Module):
 
                 elif self.use_probability is False:
                     return
-            # each class has a target id between [0, num_proto]
+            # each class has a target id between [0, num_proto]c
             proto_target[gt_seg == i] = indexs.float(
             ) + (self.num_prototype * i)  # n samples -> n*m labels
 
         self.prototypes = nn.Parameter(
             l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
         #! =============== rescale variance into proper value range ===============
-        proto_var = torch.log(proto_var + 1e-6)
-        proto_var = torch.sigmoid(proto_var)
-        proto_var = torch.exp(proto_var)
         self.proto_var = nn.Parameter(proto_var, requires_grad=False)
 
         if dist.is_available() and dist.is_initialized():  # distributed learning
@@ -383,7 +396,6 @@ class ProbProtoSegHead(nn.Module):
                             b=b_size, h=h_size)
 
         sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
-        # sim_mat = self.proto_norm(sim_mat)
         sim_mat = rearrange(sim_mat, 'n (c m) -> n c m', c=self.num_classes)
 
         if self.pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
@@ -421,15 +433,9 @@ class ProbProtoSegHead(nn.Module):
                 proto_var = torch.gather(
                     proto_var, 1, contrast_target_int[:, None].long()).view(-1)  # [n]
 
-                proto_var = torch.log(proto_var + 1e-6)
-                proto_var = torch.exp(torch.sigmoid(proto_var))
-
-                x_var = torch.log(x_var + 1e-6)
-                x_var = torch.exp(torch.sigmoid(x_var))
-
                 cosine_dist = rearrange(
                     cosine_dist, 'n c m -> n (c m)')  # log-likelihood
-                # cosine_dist = self.proto_norm(cosine_dist)
+                cosine_dist = self.proto_norm(cosine_dist)
 
                 if self.configer.get('loss', 'kl_loss'):
                     proto_mean = self.prototypes.data.clone()

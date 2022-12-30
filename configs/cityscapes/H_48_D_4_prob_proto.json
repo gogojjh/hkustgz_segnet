@@ -124,7 +124,7 @@
 	},
 	"loss": {
 		"loss_type": "pixel_prob_prototype_ce_loss",
-		"stochastic_contrastive_loss": true,
+		"stochastic_contrastive_loss": false,
 		"kl_loss": false,
 		"init_shift": 15,
 		"init_negative_scale": 15,
@@ -141,21 +141,21 @@
 	},
 	"protoseg": {
 		"mean_gamma": 0.999,
-		"cov_gamma": 0.999,
+		"cov_gamma": 0.5,
 		"num_prototype": 5,
 		"pretrain_prototype": false,
 		"use_rmi": false,
 		"use_prototype": true,
 		"update_prototype": true,
 		"warmup_iters": 0,
-		"similarity_measure": "wasserstein",
+		"similarity_measure": "fast_mls",
 		"use_probability": true,
 		"multi_proxy": false,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
-		"prob_ppd_weight": 0.5,
+		"prob_ppd_weight": 0.1,
 		"prob_ppc_weight": 0.01,
-		"proj_dim": 96,
+		"proj_dim": 256,
 		"var_temp": true
 	},
 	"rampdownscheduler": {
@@ -171,7 +171,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 2
