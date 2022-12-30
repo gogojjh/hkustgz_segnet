@@ -37,6 +37,7 @@ from segmentor.tools.optim_scheduler import OptimScheduler
 from segmentor.tools.data_helper import DataHelper
 from segmentor.tools.evaluator import get_evaluator
 from lib.utils.distributed import get_world_size, get_rank, is_distributed
+from lib.vis.uncertainty_visualizer import UncertaintyVisualizer
 # from mmcv.cnn import get_model_complexity_info
 from ptflops import get_model_complexity_info
 
@@ -109,6 +110,8 @@ class Trainer(object):
             self.pixel_loss = self.module_runner.to_device(self.pixel_loss)
 
         self.with_proto = True if self.configer.exists("protoseg") else False
+
+        self.uncer_visualizer = UncertaintyVisualizer(configer=self.configer)
 
     @staticmethod
     def group_weight(module):
@@ -188,6 +191,7 @@ class Trainer(object):
             self.train_loader.sampler.set_epoch(self.configer.get('epoch'))
 
         for i, data_dict in enumerate(self.train_loader):
+            self.configer.update(('phase',), 'train')
             self.optimizer.zero_grad()
             if self.configer.get('lr', 'metric') == 'iters':
                 self.scheduler.step(self.configer.get('iters'))
@@ -331,6 +335,8 @@ class Trainer(object):
         """
           Validation function during the train phase.
         """
+        self.configer.update(('phase',), 'val')
+
         self.seg_net.eval()
         self.pixel_loss.eval()
         start_time = time.time()
@@ -346,6 +352,8 @@ class Trainer(object):
             if self.configer.get('dataset') == 'lip':
                 (inputs, targets, inputs_rev, targets_rev), batch_size = self.data_helper.prepare_data(
                     data_dict, want_reverse=True)
+            elif self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
+                (inputs, targets, names), batch_size = self.data_helper.prepare_data(data_dict)
             else:
                 (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
 
@@ -403,11 +411,32 @@ class Trainer(object):
                         del outputs
 
                 else:
-                    outputs = self.seg_net(*inputs)
+                    if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
+                        pretrain_prototype = True if self.configer.get(
+                            'iters') < self. configer.get('protoseg', 'warmup_iters') else False
+                        outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...],
+                                               pretrain_prototype=pretrain_prototype)
+                    else:
+                        outputs = self.seg_net(*inputs)
 
                     if not is_distributed():
                         outputs = self.module_runner.gather(outputs)
                     if isinstance(outputs, dict):
+
+                        # ============== vis uncertainty ==============#
+                        if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
+                            uncertainty = outputs['uncertainty']  # [b h w] [1, 256, 512]
+                            if (self.configer.get('iters') % (self.configer.get(
+                                    'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
+                                vis_interval_img = self.configer.get(
+                                    'uncertainty_visualizer', 'vis_interval_img')
+                                batch_size = uncertainty.shape[0]
+                                if vis_interval_img <= batch_size:
+                                    for i in range(0, vis_interval_img, batch_size):
+                                        uncer_img = uncertainty[i]
+                                        self.uncer_visualizer.vis_uncertainty(
+                                            uncer_img, name='{}'.format(names[0]))
+
                         outputs = outputs['seg']
                     self.evaluator.update_score(outputs, data_dict['meta'])
 

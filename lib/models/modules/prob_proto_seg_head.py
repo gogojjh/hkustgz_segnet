@@ -380,6 +380,7 @@ class ProbProtoSegHead(nn.Module):
     def forward(self, x, x_var, gt_semantic_seg=None):
         b_size = x.shape[0]
         h_size = x.shape[2]
+        w_size = x.shape[3]
         gt_size = x.size()[2:]
 
         x = rearrange(x, 'b c h w -> (b h w) c')
@@ -444,12 +445,10 @@ class ProbProtoSegHead(nn.Module):
 
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'cosine_dist': cosine_dist, 'x_var': x_var, 'proto_var': proto_var}
 
-            if self.configer.get(
-                    'loss', 'stochastic_contrastive_loss') is False and self.configer.get(
-                    'loss', 'kl_loss') is True:
-                proto_mean = self.prototypes.data.clone()
-
-                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_var': proto_var, 'proto_mean': proto_mean}
+            elif self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
+                x_var = x_var.mean(-1)  # [(b h w)]
+                x_var = rearrange(x_var, '(b h w) -> b h w', b=b_size, h=h_size)  # [b h w]
+                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'uncertainty': x_var}
 
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}

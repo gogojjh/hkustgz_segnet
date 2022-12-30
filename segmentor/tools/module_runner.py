@@ -47,15 +47,20 @@ class ModuleRunner(object):
         Log.info('BN Type is {}.'.format(
             self.configer.get('network', 'bn_type')))
 
-    def to_device(self, *params, force_list=False):
+    def to_device(self, *params, force_list=False, name_seq=False):
         if is_distributed():
             device = torch.device('cuda:{}'.format(get_rank()))
+        if name_seq:
+            device = 'cpu'
         else:
             device = torch.device(
                 'cpu' if self.configer.get('gpu') is None else 'cuda')
         return_list = list()
         for i in range(len(params)):
-            return_list.append(params[i].to(device))
+            if name_seq:
+                return_list.append(params[i][0])
+            else:
+                return_list.append(params[i].to(device))
 
         if force_list:
             return return_list

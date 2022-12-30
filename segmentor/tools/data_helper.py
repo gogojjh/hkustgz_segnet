@@ -24,6 +24,7 @@ class DataHelper:
         self.configer = configer
         self.trainer = trainer
         self.conditions = configer.conditions
+        self.vis_uncertainty = self.configer.get('uncertainty_visualizer', 'vis_uncertainty')
 
     def input_keys(self):
         env_value = _get_list_from_env('input_keys')
@@ -37,6 +38,12 @@ class DataHelper:
             inputs = ['img']
 
         return inputs
+
+    def name_keys(self):
+        if self.vis_uncertainty:
+            names = ['name']
+
+            return names
 
     def target_keys(self):
 
@@ -90,9 +97,10 @@ class DataHelper:
 
         return result
 
-    def _prepare_sequence(self, seq, force_list=False):
+    def _prepare_sequence(self, seq, force_list=False, name_seq=False):
 
-        def split_and_cuda(lst: 'List[List[Tensor, len=N]]', device_ids) -> 'List[List[Tensor], len=N]':
+        def split_and_cuda(
+                lst: 'List[List[Tensor, len=N]]', device_ids) -> 'List[List[Tensor], len=N]':
             results = []
             for *items, d in zip(*lst, device_ids):
                 if len(items) == 1 and not force_list:
@@ -114,11 +122,16 @@ class DataHelper:
             device_ids = list(range(len(self.configer.get('gpu'))))
             return split_and_cuda(seq, device_ids)
         else:
-            return self.trainer.module_runner.to_device(*seq, force_list=force_list)
+            return self.trainer.module_runner.to_device(
+                *seq, force_list=force_list, name_seq=name_seq)
 
     def prepare_data(self, data_dict, want_reverse=False):
 
         input_keys, target_keys = self.input_keys(), self.target_keys()
+
+        if self.vis_uncertainty and self.configer.get('phase') == 'val':
+            name_keys = self.name_keys()
+            names = [data_dict[k] for k in name_keys]
 
         if self.conditions.use_ground_truth:
             input_keys += target_keys
@@ -130,10 +143,17 @@ class DataHelper:
         batch_size = len(inputs[0])
         targets = [data_dict[k] for k in target_keys]
 
-        sequences = [
-            self._prepare_sequence(inputs, force_list=True),
-            self._prepare_sequence(targets, force_list=False)
-        ]
+        if self.vis_uncertainty and self.configer.get('phase') == 'val':
+            sequences = [
+                self._prepare_sequence(inputs, force_list=True),
+                self._prepare_sequence(targets, force_list=False),
+                self._prepare_sequence(names, force_list=True, name_seq=True)
+            ]
+        else:
+            sequences = [
+                self._prepare_sequence(inputs, force_list=True),
+                self._prepare_sequence(targets, force_list=False)
+            ]
         if want_reverse:
             rev_data_dict = self._reverse_data_dict(data_dict)
             sequences.extend([
