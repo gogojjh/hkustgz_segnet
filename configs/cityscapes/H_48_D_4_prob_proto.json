@@ -162,7 +162,8 @@
 	"uncertainty_visualizer": {
 		"vis_uncertainty": true,
 		"vis_interval_img": 1,
-		"vis_inter_iter": 10
+		"vis_inter_iter": 10,
+		"dataset": "val"
 	},
 	"rampdownscheduler": {
 		"begin_epoch": 0,

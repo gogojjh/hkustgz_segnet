@@ -28,7 +28,7 @@ BATCH_SIZE=4
 BASE_LR=0.003
 
 if [ "$1"x == "train"x ]; then
-  python -u -m debugpy --listen 5679 --wait-for-client main.py --configs ${CONFIGS} \
+  python -u -m debugpy --listen 5680 --wait-for-client main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
                        --gathered n \
@@ -50,7 +50,7 @@ if [ "$1"x == "train"x ]; then
 
 
 elif [ "$1"x == "resume"x ]; then
-  python -u main.py --configs ${CONFIGS} \
+  python -u -m debugpy --listen 5680 --wait-for-client main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
                        --gathered n \
@@ -64,8 +64,8 @@ elif [ "$1"x == "resume"x ]; then
                        --gpu 0 1 2 3\
                        --checkpoints_root ${CHECKPOINTS_ROOT} \
                        --checkpoints_name ${CHECKPOINTS_NAME} \
-                       --resume_continue y \
-                       --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_latest.pth \
+                       --resume_continue n \
+                       --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_max_performance.pth \
                        --train_batch_size ${BATCH_SIZE} \
                        --distributed \
                         2>&1 | tee -a ${LOG_FILE}

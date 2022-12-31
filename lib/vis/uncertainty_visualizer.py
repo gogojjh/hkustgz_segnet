@@ -23,7 +23,8 @@ class UncertaintyVisualizer(object):
                 Log.error('Tensor size of uncertainty is not valid.')
                 exit(1)
 
-            uncertainty = uncertainty.data.cpu().numpy().transpose(1, 0)
+            # uncertainty = uncertainty.data.cpu().numpy().transpose(1, 0)
+            uncertainty = uncertainty.data.cpu().numpy()
 
         if not os.path.exists(base_dir):
             Log.error('Dir:{} not exists!'.format(base_dir))
@@ -33,8 +34,9 @@ class UncertaintyVisualizer(object):
         for i in range(uncertainty_img.shape[-1]):
             uncertainty_img[:, :, i] = uncertainty
 
-        uncertainty_img = cv2.resize(uncertainty, tuple(
-            self.configer.get('val', 'data_transformer')['input_size']))
+        # uncertainty_img = cv2.resize(uncertainty, tuple(
+        #     self.configer.get('val', 'data_transformer')['input_size']))
         uncertainty_img = cv2.normalize(uncertainty_img, None, 0, 255, cv2.NORM_MINMAX)
         uncertainty_img = uncertainty_img.astype(np.uint8)
         cv2.imwrite(os.path.join(base_dir, '{}_uncertainty.jpg'.format(name)), uncertainty_img)
+        Log.info('Saving {}_uncertainty.jpg'.format(name))

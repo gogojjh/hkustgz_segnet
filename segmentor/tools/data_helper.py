@@ -44,6 +44,12 @@ class DataHelper:
             names = ['name']
 
             return names
+        
+    def img_keys(self):
+        if self.vis_uncertainty:
+            imgs = ['img']
+            
+            return imgs
 
     def target_keys(self):
 
@@ -97,7 +103,7 @@ class DataHelper:
 
         return result
 
-    def _prepare_sequence(self, seq, force_list=False, name_seq=False):
+    def _prepare_sequence(self, seq, force_list=False, name_seq=False, img_seq=False):
 
         def split_and_cuda(
                 lst: 'List[List[Tensor, len=N]]', device_ids) -> 'List[List[Tensor], len=N]':
@@ -123,7 +129,7 @@ class DataHelper:
             return split_and_cuda(seq, device_ids)
         else:
             return self.trainer.module_runner.to_device(
-                *seq, force_list=force_list, name_seq=name_seq)
+                *seq, force_list=force_list, name_seq=name_seq, img_seq=img_seq)
 
     def prepare_data(self, data_dict, want_reverse=False):
 
@@ -132,6 +138,8 @@ class DataHelper:
         if self.vis_uncertainty and self.configer.get('phase') == 'val':
             name_keys = self.name_keys()
             names = [data_dict[k] for k in name_keys]
+            img_keys = self.img_keys()
+            imgs = [data_dict[k] for k in img_keys]
 
         if self.conditions.use_ground_truth:
             input_keys += target_keys
@@ -147,7 +155,8 @@ class DataHelper:
             sequences = [
                 self._prepare_sequence(inputs, force_list=True),
                 self._prepare_sequence(targets, force_list=False),
-                self._prepare_sequence(names, force_list=True, name_seq=True)
+                self._prepare_sequence(names, force_list=True, name_seq=True),
+                self._prepare_sequence(imgs, force_list=True, img_seq=True)
             ]
         else:
             sequences = [

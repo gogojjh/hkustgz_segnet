@@ -353,7 +353,7 @@ class Trainer(object):
                 (inputs, targets, inputs_rev, targets_rev), batch_size = self.data_helper.prepare_data(
                     data_dict, want_reverse=True)
             elif self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
-                (inputs, targets, names), batch_size = self.data_helper.prepare_data(data_dict)
+                (inputs, targets, names, imgs), batch_size = self.data_helper.prepare_data(data_dict)
             else:
                 (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
 
@@ -423,7 +423,7 @@ class Trainer(object):
                         outputs = self.module_runner.gather(outputs)
                     if isinstance(outputs, dict):
 
-                        # ============== vis uncertainty ==============#
+                        # ============== vis uncertainty and error map ==============#
                         if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
                             uncertainty = outputs['uncertainty']  # [b h w] [1, 256, 512]
                             if (self.configer.get('iters') % (self.configer.get(
@@ -435,7 +435,13 @@ class Trainer(object):
                                     for i in range(0, vis_interval_img, batch_size):
                                         uncer_img = uncertainty[i]
                                         self.uncer_visualizer.vis_uncertainty(
-                                            uncer_img, name='{}'.format(names[0]))
+                                            uncer_img, name='{}'.format(names[i]))
+
+                                        pred = outputs['seg']  # [b c h w]
+                                        pred = torch.argmax(pred, dim=1)  # [b h w]
+
+                                        self.seg_visualizer.vis_error(
+                                            imgs[i], pred[i], targets[i], names[i])
 
                         outputs = outputs['seg']
                     self.evaluator.update_score(outputs, data_dict['meta'])
