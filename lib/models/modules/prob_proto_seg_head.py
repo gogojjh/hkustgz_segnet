@@ -133,13 +133,6 @@ class ProbProtoSegHead(nn.Module):
             proto_mean = self.prototypes.data.clone()
             proto_var = self.proto_var.data.clone()
 
-            if self.configer.get('loss', 'stochastic_contrastive_loss'):
-                # eucl_dist = torch.sqrt(torch.square(proto_mean - x).sum(-1) + 1e-8)
-                cosine_dist = torch.einsum('nd,kmd->nmk', x, proto_mean)  # [n num_proto num_cls]
-                cosine_dist = (1 - cosine_dist).pow(2)  # smaller sqaured cosine dist -> similar
-
-                cosine_dist = cosine_dist.permute(0, 2, 1)  # [n c m]
-
             if self.sim_measure == 'mls':  # larger mls -> similar
                 proto_mean = rearrange(
                     proto_mean, 'c m k -> c m 1 k')  # [c m 1 k]
@@ -408,7 +401,7 @@ class ProbProtoSegHead(nn.Module):
 
         # TODO: ====================== use var as temperature ======================
 
-            if self.configer.get('loss', 'stochastic_contrastive_loss'):
+            if self.configer.get('loss', 'kl_loss'):
                 ignore_label = -1
                 if self.configer.exists(
                         'loss', 'params') and 'ce_ignore_incccdex' in self.configer.get(
@@ -438,17 +431,20 @@ class ProbProtoSegHead(nn.Module):
                     cosine_dist, 'n c m -> n (c m)')  # log-likelihood
                 cosine_dist = self.proto_norm(cosine_dist)
 
-                if self.configer.get('loss', 'kl_loss'):
-                    proto_mean = self.prototypes.data.clone()
+                proto_mean = self.prototypes.data.clone()
 
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'cosine_dist': cosine_dist, 'x_var': x_var, 'proto_var': proto_var, 'proto_mean': proto_mean}
+                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'cosine_dist': cosine_dist, 'x_var': x_var, 'proto_var': proto_var, 'proto_mean': proto_mean}
 
-                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'cosine_dist': cosine_dist, 'x_var': x_var, 'proto_var': proto_var}
+            elif self.configer.get('loss', 'aleatoric_uncer_loss') and self.configer.get('phase') == 'train':
+                x_var = rearrange(x_var, '(b h w) c -> b c h w', b=b_size, h=h_size, w=w_size)
+                x_var = torch.mean(x_var, dim=1, keepdim=True)  # [b 1 h w]
 
-            elif self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
-                x_var = x_var.mean(-1)  # [(b h w)]
-                x_var = rearrange(x_var, '(b h w) -> b h w', b=b_size, h=h_size)  # [b h w]
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'uncertainty': x_var}
+
+            elif self.configer.get('uncertainty_visualizer', 'vis_uncertainty') and self.configer.get('phase') == 'val':
+                x_var = x_var.mean(-1)  # [(b h w)]
+                x_var = rearrange(x_var, '(b h w) -> b h w', b=b_size, h=h_size)
+                return {'seg': out_seg, 'uncertainty': x_var}
 
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}

@@ -24,11 +24,11 @@ mkdir -p `dirname $LOG_FILE`
 
 PRETRAINED_MODEL="/save_data/hrnetv2_w48_imagenet_pretrained.pth"
 MAX_ITERS=80000
-BATCH_SIZE=4
+BATCH_SIZE=20
 BASE_LR=0.003
 
 if [ "$1"x == "train"x ]; then
-  python -u -m debugpy --listen 5680 --wait-for-client main.py --configs ${CONFIGS} \
+  python -u -m debugpy --listen 5681 --wait-for-client main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
                        --gathered n \

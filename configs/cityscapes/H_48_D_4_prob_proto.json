@@ -97,7 +97,7 @@
 	},
 	"lr": {
 		"base_lr": 0.003,
-		"var_lr": 5e-5,
+		"var_lr": 5e-4,
 		"metric": "iters",
 		"lr_policy": "lambda_poly",
 		"step": {
@@ -107,7 +107,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 10,
+		"test_interval": 200,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -125,8 +125,8 @@
 	},
 	"loss": {
 		"loss_type": "pixel_prob_prototype_ce_loss",
-		"stochastic_contrastive_loss": false,
 		"kl_loss": false,
+		"aleatoric_uncer_loss": true,
 		"init_shift": 15,
 		"init_negative_scale": 15,
 		"params": {
@@ -155,14 +155,15 @@
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 0.1,
-		"prob_ppc_weight": 0.01,
+		"prob_ppc_weight": 0.1,
+		"aleatoric_uncer_weight": 1.0,
 		"proj_dim": 720,
 		"var_temp": true
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": true,
-		"vis_interval_img": 1,
-		"vis_inter_iter": 10,
+		"vis_interval_img": 20,
+		"vis_inter_iter": 20,
 		"dataset": "val"
 	},
 	"rampdownscheduler": {
