@@ -50,7 +50,7 @@ if [ "$1"x == "train"x ]; then
 
 
 elif [ "$1"x == "resume"x ]; then
-  python -u -m debugpy --listen 5680 --wait-for-client main.py --configs ${CONFIGS} \
+  python -u -m debugpy --listen 5681 --wait-for-client main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
                        --gathered n \

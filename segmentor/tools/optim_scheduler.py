@@ -18,6 +18,30 @@ from torch.optim.lr_scheduler import LambdaLR
 from lib.utils.tools.logger import Logger as Log
 
 
+class WarmupCosineBaseLRSchedule(LambdaLR):
+    """ Linear warmup and then cosine decay.
+        Linearly increases learning rate from 0 to 1 over `warmup_steps` training steps.
+        Decreases learning rate from 1. to 0. over remaining `t_total - warmup_steps` steps following a cosine curve.
+        If `cycles` (default=0.5) is different from default, learning rate follows cosine function after warmup.
+    """
+
+    def __init__(self, optimizer, warmup_steps, t_total, base_lr, cycles=.5, last_epoch=-1):
+        self.warmup_steps = warmup_steps
+        self.t_total = t_total
+        self.cycles = cycles
+        self.base_lr = base_lr
+        super(WarmupCosineSchedule, self).__init__(
+            optimizer, self.lr_lambda, last_epoch=last_epoch)
+
+    def lr_lambda(self, step):
+        if step < self.warmup_steps:
+            return (float(step) / float(max(1.0, self.warmup_steps))) * self.base_lr
+        # progress after warmup
+        progress = float(step - self.warmup_steps) / \
+            float(max(1, self.t_total - self.warmup_steps))
+        return (max(0.0, 0.5 * (1. + math.cos(math.pi * float(self.cycles) * 2.0 * progress)))) * self.base_lr
+
+
 class WarmupCosineSchedule(LambdaLR):
     """ Linear warmup and then cosine decay.
         Linearly increases learning rate from 0 to 1 over `warmup_steps` training steps.
@@ -45,37 +69,77 @@ class OptimScheduler(object):
     def __init__(self, configer):
         self.configer = configer
 
-    def init_optimizer(self, net_params):
+    def init_optimizer(self, net_params, var_net_params=None):
         optimizer = None
-        if self.configer.get('optim', 'optim_method') == 'sgd':
-            optimizer = SGD(net_params,
-                            lr=self.configer.get('lr', 'base_lr'),
-                            momentum=self.configer.get('optim', 'sgd')[
-                                'momentum'],
-                            weight_decay=self.configer.get('optim', 'sgd')[
-                                'weight_decay'],
-                            nesterov=self.configer.get('optim', 'sgd')['nesterov'])
+        var_optimizer = None
 
-        elif self.configer.get('optim', 'optim_method') == 'adam':
-            optimizer = Adam(net_params,
-                             lr=self.configer.get('lr', 'base_lr'),
-                             betas=self.configer.get('optim', 'adam')['betas'],
-                             eps=self.configer.get('optim', 'adam')['eps'],
-                             weight_decay=self.configer.get('optim', 'adam')['weight_decay'])
-        elif self.configer.get('optim', 'optim_method') == 'adamw':
-            optimizer = AdamW(net_params,
-                              lr=self.configer.get('lr', 'base_lr'),
-                              betas=self.configer.get(
-                                  'optim', 'adamw')['betas'],
-                              eps=self.configer.get('optim', 'adamw')['eps'],
-                              weight_decay=self.configer.get('optim', 'adamw')['weight_decay'])
+        if self.configer.exists('var_lr', 'lr_policy'):
+            if self.configer.get('optim', 'optim_method') == 'sgd':
+                optimizer = SGD(net_params,
+                                lr=self.configer.get('lr', 'base_lr'),
+                                momentum=self.configer.get('optim', 'sgd')[
+                                    'momentum'],
+                                weight_decay=self.configer.get('optim', 'sgd')[
+                                    'weight_decay'],
+                                nesterov=self.configer.get('optim', 'sgd')['nesterov'])
 
+            elif self.configer.get('optim', 'optim_method') == 'adam':
+                optimizer = Adam(net_params,
+                                 lr=self.configer.get('lr', 'base_lr'),
+                                 betas=self.configer.get(
+                                     'optim', 'adam')['betas'],
+                                 eps=self.configer.get('optim', 'adam')['eps'],
+                                 weight_decay=self.configer.get('optim', 'adam')['weight_decay'])
+            elif self.configer.get('optim', 'optim_method') == 'adamw':
+                optimizer = AdamW(net_params,
+                                  lr=self.configer.get('lr', 'base_lr'),
+                                  betas=self.configer.get(
+                                      'optim', 'adamw')['betas'],
+                                  eps=self.configer.get(
+                                      'optim', 'adamw')['eps'],
+                                  weight_decay=self.configer.get('optim', 'adamw')['weight_decay'])
+
+            else:
+                Log.error('Optimizer {} is not valid.'.format(
+                    self.configer.get('optim', 'optim_method')))
+                exit(1)
         else:
-            Log.error('Optimizer {} is not valid.'.format(
-                self.configer.get('optim', 'optim_method')))
-            exit(1)
+            if self.configer.get('optim', 'optim_method') == 'sgd':
+                optimizer = SGD(net_params,
+                                lr=self.configer.get('lr', 'base_lr'),
+                                momentum=self.configer.get('optim', 'sgd')[
+                                    'momentum'],
+                                weight_decay=self.configer.get('optim', 'sgd')[
+                                    'weight_decay'],
+                                nesterov=self.configer.get('optim', 'sgd')['nesterov'])
+
+            elif self.configer.get('optim', 'optim_method') == 'adam':
+                optimizer = Adam(net_params,
+                                 lr=self.configer.get('lr', 'base_lr'),
+                                 betas=self.configer.get(
+                                     'optim', 'adam')['betas'],
+                                 eps=self.configer.get('optim', 'adam')['eps'],
+                                 weight_decay=self.configer.get('optim', 'adam')['weight_decay'])
+            elif self.configer.get('optim', 'optim_method') == 'adamw':
+                optimizer = AdamW(net_params,
+                                  lr=self.configer.get('lr', 'base_lr'),
+                                  betas=self.configer.get(
+                                      'optim', 'adamw')['betas'],
+                                  eps=self.configer.get(
+                                      'optim', 'adamw')['eps'],
+                                  weight_decay=self.configer.get('optim', 'adamw')['weight_decay'])
+
+            else:
+                Log.error('Optimizer {} is not valid.'.format(
+                    self.configer.get('optim', 'optim_method')))
+                exit(1)
+
+        # optimizer for uncertainty head
+        if var_net_params is not None:
+            var_optimizer =
 
         policy = self.configer.get('lr', 'lr_policy')
+        var_policy = self.configer.get('var_lr', '')
 
         scheduler = None
         if policy == 'step':
@@ -176,10 +240,16 @@ class OptimScheduler(object):
             Log.error('Policy:{} is not valid.'.format(policy))
             exit(1)
 
+        # lr for uncertainty head
+        if self.configer.exists('var_lr', 'lr_policy') and self.configer.get('var_lr', 'lr_policy') == 'warmup_cosine_baselr':
+            var_scheduler = WarmupCosineBaseLRSchedule(optimizer, warmup_steps=self.configer.get(
+                'var_lr', 'warmup_steps', ), t_total=self.configer.get('var_lr', 't_total'), base_lr=self.configer.get('var_lr', 'base_lr'))
+            return optimizer, scheduler, var_scheduler
+
         return optimizer, scheduler
 
     def update_optimizer(self, net, optim_method, lr_policy):
         self.configer.update(('optim', 'optim_method'), optim_method)
         self.configer.update(('lr', 'lr_policy'), lr_policy)
-        optimizer, scheduler = self.init_optimizer(net)
-        return optimizer, scheduler
+        optimizer, scheduler, var_scheduler = self.init_optimizer(net)
+        return optimizer, scheduler, var_scheduler
