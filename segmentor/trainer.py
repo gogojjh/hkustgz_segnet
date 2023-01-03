@@ -70,6 +70,7 @@ class Trainer(object):
         self.val_loader = None
         self.optimizer = None
         self.scheduler = None
+        self.var_scheduler = None
         self.running_score = None
 
         self._init_model()
@@ -92,16 +93,20 @@ class Trainer(object):
 
         self.seg_net = self.module_runner.load_net(self.seg_net)
 
+        var_params_group = None
         Log.info('Params Group Method: {}'.format(
             self.configer.get('optim', 'group_method')))
         if self.configer.get('optim', 'group_method') == 'decay':
             params_group = self.group_weight(self.seg_net)
         else:
             assert self.configer.get('optim', 'group_method') is None
-            params_group = self._get_parameters()
+            if self.configer.exists('var_lr', 'lr_policy'):
+                params_group, var_params_group = self._get_parameters()
+            else:
+                params_group = self._get_parameters()
 
-        self.optimizer, self.scheduler = self.optim_scheduler.init_optimizer(
-            params_group)
+        self.optimizer, self.scheduler, self.var_scheduler = self.optim_scheduler.init_optimizer(
+            params_group, var_params_group)
 
         self.train_loader = self.data_loader.get_trainloader()
         self.val_loader = self.data_loader.get_valloader()
@@ -154,23 +159,33 @@ class Trainer(object):
             else:
                 nbb_lr.append(value)
 
-        if self.configer.exists('lr', 'var_lr'):
+        # if self.configer.exists('lr', 'var_lr'):
+            # params = [{'params': bb_lr, 'lr': self.configer.get('lr', 'base_lr')},
+            #           {'params': fcn_lr, 'lr': self.configer.get(
+            #               'lr', 'base_lr') * 10},
+            #           {'params': nbb_lr, 'lr': self.configer.get(
+            #               'lr', 'base_lr') * self.configer.get('lr', 'nbb_mult')},
+            #           {'params': var_lr, 'lr': self.configer.get('var_lr', 'base_lr')}]
+            # Log.info('base lr for uncertainty head: {}'.format(
+            #     self.configer.get('lr', 'var_lr')))
+        if self.configer.exists('var_lr', 'lr_policy'):
             params = [{'params': bb_lr, 'lr': self.configer.get('lr', 'base_lr')},
                       {'params': fcn_lr, 'lr': self.configer.get(
                           'lr', 'base_lr') * 10},
                       {'params': nbb_lr, 'lr': self.configer.get(
-                          'lr', 'base_lr') * self.configer.get('lr', 'nbb_mult')},
-                      {'params': var_lr, 'lr': self.configer.get('lr', 'var_lr')}]
-            Log.info('lr for uncertainty head: {}'.format(
-                self.configer.get('lr', 'var_lr')))
+                          'lr', 'base_lr') * self.configer.get('lr', 'nbb_mult')}]
+            var_params = [
+                {'params': var_lr, 'lr': self.configer.get('var_lr', 'base_lr')}]
+            Log.info('base lr for uncertainty head: {}'.format(
+                self.configer.get('var_lr', 'base_lr')))
+            return params, var_params
         else:
             params = [{'params': bb_lr, 'lr': self.configer.get('lr', 'base_lr')},
                       {'params': fcn_lr, 'lr': self.configer.get(
                           'lr', 'base_lr') * 10},
                       {'params': nbb_lr, 'lr': self.configer.get(
                           'lr', 'base_lr') * self.configer.get('lr', 'nbb_mult')}]
-
-        return params
+            return params
 
     def __train(self):
         """
@@ -197,6 +212,11 @@ class Trainer(object):
                 self.scheduler.step(self.configer.get('iters'))
             else:
                 self.scheduler.step(self.configer.get('epoch'))
+
+            if self.configer.get('var_lr', 'metric') == 'iters':
+                self.var_scheduler.step(self.configer.get('iters'))
+            else:
+                self.var_scheduler.step(self.configer.get('epoch'))
 
             if self.configer.get('lr', 'is_warm'):
                 self.module_runner.warm_lr(
@@ -240,13 +260,17 @@ class Trainer(object):
                 with torch.cuda.amp.autocast():
                     loss = self.pixel_loss(outputs, targets)
                     backward_loss = loss['loss']
-                    seg_loss = reduce_tensor(loss['seg_loss']) / get_world_size()
-                    prob_ppc_loss = reduce_tensor(loss['prob_ppc_loss']) / get_world_size()
-                    prob_ppd_loss = reduce_tensor(loss['prob_ppd_loss']) / get_world_size()
+                    seg_loss = reduce_tensor(
+                        loss['seg_loss']) / get_world_size()
+                    prob_ppc_loss = reduce_tensor(
+                        loss['prob_ppc_loss']) / get_world_size()
+                    prob_ppd_loss = reduce_tensor(
+                        loss['prob_ppd_loss']) / get_world_size()
                     display_loss = reduce_tensor(
                         backward_loss) / get_world_size()
                     if self.configer.get('loss', 'aleatoric_uncer_loss'):
-                        aleatoric_uncer_loss = reduce_tensor(loss['aleatoric_uncer_loss']) / get_world_size()
+                        aleatoric_uncer_loss = reduce_tensor(
+                            loss['aleatoric_uncer_loss']) / get_world_size()
             else:
                 # backward_loss = display_loss = self.pixel_loss(
                 #     outputs, targets)
@@ -355,7 +379,8 @@ class Trainer(object):
                 (inputs, targets, inputs_rev, targets_rev), batch_size = self.data_helper.prepare_data(
                     data_dict, want_reverse=True)
             elif self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
-                (inputs, targets, names, imgs), batch_size = self.data_helper.prepare_data(data_dict)
+                (inputs, targets, names,
+                 imgs), batch_size = self.data_helper.prepare_data(data_dict)
             else:
                 (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
 
@@ -427,7 +452,8 @@ class Trainer(object):
 
                         # ============== vis uncertainty and error map ==============#
                         if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
-                            uncertainty = outputs['uncertainty']  # [b h w] [1, 256, 512]
+                            # [b h w] [1, 256, 512]
+                            uncertainty = outputs['uncertainty']
                             if (self.configer.get('iters') % (self.configer.get(
                                     'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
                                 vis_interval_img = self.configer.get(
@@ -440,7 +466,8 @@ class Trainer(object):
                                             uncer_img, name='{}'.format(names[i]))
 
                                         pred = outputs['seg']  # [b c h w]
-                                        pred = torch.argmax(pred, dim=1)  # [b h w]
+                                        pred = torch.argmax(
+                                            pred, dim=1)  # [b h w]
 
                                         self.seg_visualizer.vis_error(
                                             imgs[i], pred[i], targets[i], names[i])

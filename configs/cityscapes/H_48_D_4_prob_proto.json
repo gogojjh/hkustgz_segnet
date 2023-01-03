@@ -97,7 +97,6 @@
 	},
 	"lr": {
 		"base_lr": 0.003,
-		"var_lr": 5e-4,
 		"metric": "iters",
 		"lr_policy": "lambda_poly",
 		"step": {
@@ -105,9 +104,16 @@
 			"step_size": 100
 		}
 	},
+	"var_lr": {
+		"base_lr": 0.003,
+		"lr_policy": "warmup_cosine_baselr",
+		"metric": "iters",
+		"warmup_steps": 50000,
+		"t_total": 85000
+	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 200,
+		"test_interval": 10,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -156,14 +162,14 @@
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 0.1,
 		"prob_ppc_weight": 0.1,
-		"aleatoric_uncer_weight": 1.0,
+		"aleatoric_uncer_weight": 0.5,
 		"proj_dim": 720,
 		"var_temp": true
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": true,
-		"vis_interval_img": 20,
-		"vis_inter_iter": 20,
+		"vis_interval_img": 1,
+		"vis_inter_iter": 10,
 		"dataset": "val"
 	},
 	"rampdownscheduler": {
