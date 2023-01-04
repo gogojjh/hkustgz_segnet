@@ -42,7 +42,8 @@ class MultivariateNormalDiag(Distribution):
             raise ValueError(
                 "scale_diag must be a batch of vectors with shape {}".format(event_shape))
         try:
-            self.loc, self.scale_diag = torch.broadcast_tensors(loc, scale_diag)
+            self.loc, self.scale_diag = torch.broadcast_tensors(
+                loc, scale_diag)
         except RuntimeError:
             raise ValueError("Incompatible batch shapes: loc {}, scale_diag {}"
                              .format(loc.shape, scale_diag.shape))
@@ -107,7 +108,8 @@ class ProbProtoSegHead(nn.Module):
         self.sim_measure = self.configer.get('protoseg', 'similarity_measure')
         self.use_probability = self.configer.get('protoseg', 'use_probability')
         self.proj_dim = self.configer.get('protoseg', 'proj_dim')
-        self.pretrain_prototype = self.configer.get('protoseg', 'pretrain_prototype')
+        self.pretrain_prototype = self.configer.get(
+            'protoseg', 'pretrain_prototype')
         self.mean_gamma = self.configer.get('protoseg', 'mean_gamma')
         self.cov_gamma = self.configer.get('protoseg', 'cov_gamma')
         self.use_prototype = self.configer.get('protoseg', 'use_prototype')
@@ -153,11 +155,14 @@ class ProbProtoSegHead(nn.Module):
                 x_var = torch.mean(x_var, dim=-1)  # x_var: [n, k] -> [n]
                 proto_var = torch.mean(proto_var, dim=-1)  # [c m]
                 proto_var = rearrange(proto_var, 'c m -> c m 1')  # [c m 1]
-                proto_var = repeat(proto_var, 'c m 1 -> c m n', n=x_var.shape[0])  # [c m n]
-                cosine_dist = torch.einsum('nd,kmd->nmk', x, self.prototypes)  # [n m c]
+                proto_var = repeat(proto_var, 'c m 1 -> c m n',
+                                   n=x_var.shape[0])  # [c m n]
+                cosine_dist = torch.einsum(
+                    'nd,kmd->nmk', x, self.prototypes)  # [n m c]
                 cosine_dist = cosine_dist.permute(2, 1, 0)  # [c m n]
                 # [c m n]
-                sim_mat = - (2 - 2 * cosine_dist) / (proto_var + x_var) - torch.log(proto_var + x_var)
+                sim_mat = - (2 - 2 * cosine_dist) / (proto_var +
+                                                     x_var) - torch.log(proto_var + x_var)
                 sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
 
             elif self.sim_measure == "wasserstein":  # smaller -> similar
@@ -169,16 +174,21 @@ class ProbProtoSegHead(nn.Module):
                 x_var = torch.sqrt(x_var + 1e-8)
                 proto_var = torch.sqrt(proto_var + 1e-8)
 
-                sim_mat = torch.square(
-                    (proto_mean - x)) + torch.square((proto_var - x_var))  # [c m n k]
+                # for memory usage:
+                sim_mat = torch.zeros(
+                    (self.num_classes, self.num_prototype, x.shape[0]))  # [c m n]
+                for i in range(self.num_classes):
+                    for m in range(self.num_prototype):
+                        sim_mat[i, m, :] = torch.square(
+                            (proto_mean[i][m] - x)).mean(-1) + torch.square((proto_var[i][m] - x_var)).mean(-1)  # [n]
 
-                sim_mat = - sim_mat.mean(-1)
+                sim_mat = - sim_mat
 
                 sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
 
             elif self.sim_measure == 'gmm_log_prob':
                 """
-                log probability of GMM classifier as similarity measure
+                log probability of GMM classifier as similarixty measure
                 """
                 factor_n = self.configer.get('GMM', 'factor_n')
                 factor_c = self.configer.get('GMM', 'factor_c')
@@ -200,7 +210,8 @@ class ProbProtoSegHead(nn.Module):
                         scale_diag=_c_cov.view(-1, self.proj_dim))  # c * m multivariate gaussian
 
                     for _n in range(0, x.shape[0], _n_group):
-                        _prob_c.append(_c_gauss.log_prob(x[_n:_n+_n_group, None, ...]))
+                        _prob_c.append(_c_gauss.log_prob(
+                            x[_n:_n+_n_group, None, ...]))
 
                     _c_probs = torch.cat(_prob_c, dim=0)  # [n, c*m?]
                     _c_probs = _c_probs.contiguous().view(
@@ -227,7 +238,8 @@ class ProbProtoSegHead(nn.Module):
         x = x if row_var else x.transpose(-1, -2)
         factor = 1 / (x.shape[-1] - int(not bool(bias)))
 
-        x = (sim_mat[None, ...] * (x ** 2)).sum(-1)  # row_var is False -> x: [proj_dim, n]
+        # row_var is False -> x: [proj_dim, n]
+        x = (sim_mat[None, ...] * (x ** 2)).sum(-1)
 
         return factor * x
 
@@ -274,7 +286,8 @@ class ProbProtoSegHead(nn.Module):
                 # process nan
                 Log.info('-'*10 + 'NaN in mapping matrix!' + '-'*10)
                 q[torch.isnan(q)] = 0
-                indexs[torch.isnan(q).int().sum(dim=1)] = 255 - (self.num_prototype * i)
+                indexs[torch.isnan(q).int().sum(dim=1)] = 255 - \
+                    (self.num_prototype * i)
 
             m_k = mask[gt_seg == i]  # the correctly predicted ones
 
@@ -288,7 +301,8 @@ class ProbProtoSegHead(nn.Module):
 
             c_k_tile = repeat(m_k, 'n -> n tile', tile=c_k.shape[-1])
 
-            c_q = c_k * c_k_tile  # correctly predicted pixel embed  [n embed_dim]
+            # correctly predicted pixel embed  [n embed_dim]
+            c_q = c_k * c_k_tile
 
             # f = m_q.transpose(0, 1) @ c_q  # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
 
@@ -307,7 +321,8 @@ class ProbProtoSegHead(nn.Module):
                             1. correctly predicted: c_q / var_q
                             2. choose the ones belonging to this prototype in c_q / var_q 
                             """
-                            proto_ind = torch.nonzero((m_q[..., k] != 0), as_tuple=True)
+                            proto_ind = torch.nonzero(
+                                (m_q[..., k] != 0), as_tuple=True)
 
                             if self.sim_measure == 'gmm_log_prob':
                                 # todo: why do not multiply with probs of GMM????????
@@ -318,9 +333,11 @@ class ProbProtoSegHead(nn.Module):
                                 mean_gamma = l2_normalize(mean_gamma)
 
                                 # [n_proto, proj_dim]
-                                _shfit_fea = c_q[proto_ind] - mean_gamma[None, ...]
+                                _shfit_fea = c_q[proto_ind] - \
+                                    mean_gamma[None, ...]
 
-                                _cov = self.shifted_var(_shfit_fea, row_var=False)  # [proj_dim]
+                                _cov = self.shifted_var(
+                                    _shfit_fea, row_var=False)  # [proj_dim]
                                 # TODO: How to utilize variance of pixel embeddings?
                             else:
                                 # [embed_dim]
@@ -333,7 +350,8 @@ class ProbProtoSegHead(nn.Module):
                                 # var_hat = torch.exp(var_hat)
 
                                 mean_gamma = torch.mean(
-                                    ((var_hat * c_q[proto_ind]) / var_q[proto_ind]),
+                                    ((var_hat * c_q[proto_ind]
+                                      ) / var_q[proto_ind]),
                                     dim=0)  # [fea_dim]
                                 mean_gamma = l2_normalize(mean_gamma)
 
@@ -393,9 +411,11 @@ class ProbProtoSegHead(nn.Module):
         sim_mat = rearrange(sim_mat, 'n (c m) -> n c m', c=self.num_classes)
 
         if self.pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
-            gt_seg = F.interpolate(gt_semantic_seg.float(), size=gt_size, mode='nearest').view(-1)
+            gt_seg = F.interpolate(
+                gt_semantic_seg.float(), size=gt_size, mode='nearest').view(-1)
 
-            contrast_target = self.prototype_learning(sim_mat, out_seg, gt_seg, x, x_var)
+            contrast_target = self.prototype_learning(
+                sim_mat, out_seg, gt_seg, x, x_var)
 
             sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
 
@@ -410,17 +430,21 @@ class ProbProtoSegHead(nn.Module):
                         'ce_ignore_index']
 
                 x_var = x_var.mean(-1)  # [(b h w)]
-                x_var = repeat(x_var, 'n -> n l', l=(self.num_classes * self.num_prototype))
+                x_var = repeat(x_var, 'n -> n l',
+                               l=(self.num_classes * self.num_prototype))
 
-                proto_var = self.proto_var.data.clone()  # [num_clss, num_proto, proj_dim)
+                # [num_clss, num_proto, proj_dim)
+                proto_var = self.proto_var.data.clone()
                 proto_var = proto_var.mean(-1)
                 proto_var = rearrange(proto_var, 'c m -> (c m)')  # [(c m)]
-                proto_var = repeat(proto_var, 'l -> n l', n=x_var.shape[0])  # [n (c m)]
+                proto_var = repeat(proto_var, 'l -> n l',
+                                   n=x_var.shape[0])  # [n (c m)]
 
                 x_var = x_var[contrast_target !=
                               ignore_label, :]
                 contrast_target_int = contrast_target[contrast_target != ignore_label]
-                x_var = torch.gather(x_var, 1, contrast_target_int[:, None].long()).view(-1)  # [n]
+                x_var = torch.gather(
+                    x_var, 1, contrast_target_int[:, None].long()).view(-1)  # [n]
 
                 proto_var = proto_var[contrast_target !=
                                       ignore_label, :]
@@ -436,14 +460,16 @@ class ProbProtoSegHead(nn.Module):
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'cosine_dist': cosine_dist, 'x_var': x_var, 'proto_var': proto_var, 'proto_mean': proto_mean}
 
             elif self.configer.get('loss', 'aleatoric_uncer_loss') and self.configer.get('phase') == 'train':
-                x_var = rearrange(x_var, '(b h w) c -> b c h w', b=b_size, h=h_size, w=w_size)
+                x_var = rearrange(x_var, '(b h w) c -> b c h w',
+                                  b=b_size, h=h_size, w=w_size)
                 x_var = torch.mean(x_var, dim=1, keepdim=True)  # [b 1 h w]
 
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'uncertainty': x_var}
 
             elif self.configer.get('uncertainty_visualizer', 'vis_uncertainty') and self.configer.get('phase') == 'val':
                 x_var = x_var.mean(-1)  # [(b h w)]
-                x_var = rearrange(x_var, '(b h w) -> b h w', b=b_size, h=h_size)
+                x_var = rearrange(x_var, '(b h w) -> b h w',
+                                  b=b_size, h=h_size)
                 return {'seg': out_seg, 'uncertainty': x_var}
 
             else:

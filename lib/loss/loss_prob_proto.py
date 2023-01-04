@@ -227,15 +227,15 @@ class PixelProbContrastLoss(nn.Module, ABC):
             if prob_ppd_loss == 0:
                 prob_ppd_loss = seg_loss * 0
 
-            if self.configer.get('loss', 'aleatoric_uncer_loss'):
-                x_var = preds['uncertainty']
-                aleatoric_uncer_loss = self.aleatoric_uncer_loss(x_var, target, pred)
+            # if self.configer.get('loss', 'aleatoric_uncer_loss'):
+            #     x_var = preds['uncertainty']
+            #     aleatoric_uncer_loss = self.aleatoric_uncer_loss(x_var, target, pred)
 
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
-                    prob_ppd_loss + self.aleatoric_uncer_weight * aleatoric_uncer_loss
+            #     loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
+            #         prob_ppd_loss + self.aleatoric_uncer_weight * aleatoric_uncer_loss
 
-                return {'loss': loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'aleatoric_uncer_loss': aleatoric_uncer_loss}
+            #     return {'loss': loss,
+            #             'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'aleatoric_uncer_loss': aleatoric_uncer_loss}
 
             loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
 

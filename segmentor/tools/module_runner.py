@@ -299,8 +299,8 @@ class ModuleRunner(object):
 
         return [param_group['lr'] for param_group in optimizer.param_groups]
 
-    def warm_lr(self, iters, scheduler, optimizer, backbone_list=(0, )):
         """Sets the learning rate
+    def warm_lr(self, iters, scheduler, optimizer, backbone_list=(0, )):
         # Adapted from PyTorch Imagenet example:
         # https://github.com/pytorch/examples/blob/master/imagenet/main.py
         """

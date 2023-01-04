@@ -10,7 +10,7 @@
 		"workers": 8
 	},
 	"train": {
-		"batch_size": 4,
+		"batch_size": 12,
 		"data_transformer": {
 			"size_mode": "fix_size",
 			"input_size": [1024, 512],
@@ -106,14 +106,14 @@
 	},
 	"var_lr": {
 		"base_lr": 0.003,
-		"lr_policy": "warmup_cosine_baselr",
+		"lr_policy": "warmup_cosine",
 		"metric": "iters",
-		"warmup_steps": 50000,
+		"warmup_steps": 2000,
 		"t_total": 85000
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 10,
+		"test_interval": 2000,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -132,7 +132,7 @@
 	"loss": {
 		"loss_type": "pixel_prob_prototype_ce_loss",
 		"kl_loss": false,
-		"aleatoric_uncer_loss": true,
+		"aleatoric_uncer_loss": false,
 		"init_shift": 15,
 		"init_negative_scale": 15,
 		"params": {
@@ -148,7 +148,7 @@
 	},
 	"protoseg": {
 		"mean_gamma": 0.999,
-		"cov_gamma": 0.5,
+		"cov_gamma": 0.0,
 		"num_prototype": 10,
 		"pretrain_prototype": false,
 		"use_rmi": false,
@@ -160,16 +160,16 @@
 		"multi_proxy": false,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
-		"prob_ppd_weight": 0.1,
-		"prob_ppc_weight": 0.1,
+		"prob_ppd_weight": 0.3,
+		"prob_ppc_weight": 0.3,
 		"aleatoric_uncer_weight": 0.5,
 		"proj_dim": 720,
 		"var_temp": true
 	},
 	"uncertainty_visualizer": {
-		"vis_uncertainty": true,
-		"vis_interval_img": 1,
-		"vis_inter_iter": 10,
+		"vis_uncertainty": false,
+		"vis_interval_img": 8,
+		"vis_inter_iter": 20,
 		"dataset": "val"
 	},
 	"rampdownscheduler": {
@@ -177,7 +177,7 @@
 		"max_epoch": 300,
 		"max_value": 1.0,
 		"min_value": 0,
-		"ramp_mult": -5.0
+		"ramp_mult": 5.0
 	},
 	"GMM": {
 		"factor_n": 2,
