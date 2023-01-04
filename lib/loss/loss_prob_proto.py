@@ -136,10 +136,10 @@ class ProbPPDLoss(nn.Module, ABC):
             return prob_ppd_loss
 
         if self.configer.get(
-                'protoseg', 'similarity_measure') == "mls" or self.configer.get(
-                'protoseg', 'similarity_measure') == "fast_mls":
-            prob_ppd_loss = torch.mean(-logits)  # negative MLS
-        elif self.configer.get('protoseg', 'similarity_measure') == "wasserstein":  # mls larger -> similar
+                'protoseg', 'similarity_measure') == 'fast_mls' or self.configer.get(
+                'protoseg', 'similarity_measure') == 'mls':
+            prob_ppd_loss = torch.mean(torch.exp(-logits))
+        else:
             prob_ppd_loss = torch.mean(-logits)
 
         return prob_ppd_loss

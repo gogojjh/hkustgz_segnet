@@ -108,7 +108,7 @@
 		"base_lr": 0.003,
 		"lr_policy": "warmup_cosine",
 		"metric": "iters",
-		"warmup_steps": 2000,
+		"warmup_steps": 1000,
 		"t_total": 85000
 	},
 	"solver": {
@@ -148,7 +148,7 @@
 	},
 	"protoseg": {
 		"mean_gamma": 0.999,
-		"cov_gamma": 0.0,
+		"cov_gamma": 0.999,
 		"num_prototype": 10,
 		"pretrain_prototype": false,
 		"use_rmi": false,
@@ -160,8 +160,8 @@
 		"multi_proxy": false,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
-		"prob_ppd_weight": 0.3,
-		"prob_ppc_weight": 0.3,
+		"prob_ppd_weight": 10.0,
+		"prob_ppc_weight": 0.1,
 		"aleatoric_uncer_weight": 0.5,
 		"proj_dim": 720,
 		"var_temp": true
@@ -185,7 +185,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 2
