@@ -113,7 +113,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 2000,
+		"test_interval": 200,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -131,8 +131,7 @@
 	},
 	"loss": {
 		"loss_type": "pixel_prob_prototype_ce_loss",
-		"kl_loss": false,
-		"aleatoric_uncer_loss": false,
+		"proto_alignment_loss": true,
 		"init_shift": 15,
 		"init_negative_scale": 15,
 		"params": {
@@ -162,7 +161,6 @@
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 10.0,
 		"prob_ppc_weight": 0.1,
-		"aleatoric_uncer_weight": 0.5,
 		"proj_dim": 720,
 		"var_temp": true
 	},
@@ -185,7 +183,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 2

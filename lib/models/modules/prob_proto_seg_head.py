@@ -388,7 +388,7 @@ class ProbProtoSegHead(nn.Module):
 
                 elif self.use_probability is False:
                     return
-            # each class has a target id between [0, num_proto]c
+            # each class has a target id between [0, num_proto * c]
             proto_target[gt_seg == i] = indexs.float(
             ) + (self.num_prototype * i)  # n samples -> n*m labels
 
@@ -445,56 +445,17 @@ class ProbProtoSegHead(nn.Module):
 
         # TODO: ====================== use var as temperature ======================
 
-            if self.configer.get('loss', 'kl_loss'):
-                ignore_label = -1
-                if self.configer.exists(
-                        'loss', 'params') and 'ce_ignore_incccdex' in self.configer.get(
-                        'loss', 'params'):
-                    ignore_label = self.configer.get('loss', 'params')[
-                        'ce_ignore_index']
-
-                x_var = x_var.mean(-1)  # [(b h w)]
-                x_var = repeat(x_var, 'n -> n l',
-                               l=(self.num_classes * self.num_prototype))
-
-                # [num_clss, num_proto, proj_dim)
-                proto_var = self.proto_var.data.clone()
-                proto_var = proto_var.mean(-1)
-                proto_var = rearrange(proto_var, 'c m -> (c m)')  # [(c m)]
-                proto_var = repeat(proto_var, 'l -> n l',
-                                   n=x_var.shape[0])  # [n (c m)]
-
-                x_var = x_var[contrast_target !=
-                              ignore_label, :]
-                contrast_target_int = contrast_target[contrast_target != ignore_label]
-                x_var = torch.gather(
-                    x_var, 1, contrast_target_int[:, None].long()).view(-1)  # [n]
-
-                proto_var = proto_var[contrast_target !=
-                                      ignore_label, :]
-                proto_var = torch.gather(
-                    proto_var, 1, contrast_target_int[:, None].long()).view(-1)  # [n]
-
-                cosine_dist = rearrange(
-                    cosine_dist, 'n c m -> n (c m)')  # log-likelihood
-                cosine_dist = self.proto_norm(cosine_dist)
-
-                proto_mean = self.prototypes.data.clone()
-
-                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'cosine_dist': cosine_dist, 'x_var': x_var, 'proto_var': proto_var, 'proto_mean': proto_mean}
-
-            elif self.configer.get('loss', 'aleatoric_uncer_loss') and self.configer.get('phase') == 'train':
-                x_var = rearrange(x_var, '(b h w) c -> b c h w',
-                                  b=b_size, h=h_size, w=w_size)
-                x_var = torch.mean(x_var, dim=1, keepdim=True)  # [b 1 h w]
-
-                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'uncertainty': x_var}
-
-            elif self.configer.get('uncertainty_visualizer', 'vis_uncertainty') and self.configer.get('phase') == 'val':
+            if self.configer.get('uncertainty_visualizer', 'vis_uncertainty') and self.configer.get(
+                    'phase') == 'val':
                 x_var = x_var.mean(-1)  # [(b h w)]
                 x_var = rearrange(x_var, '(b h w) -> b h w',
                                   b=b_size, h=h_size)
                 return {'seg': out_seg, 'uncertainty': x_var}
+
+            elif self.configer.get('protoseg', 'var_temp'):
+                proto_var = self.proto_var.data.clone()
+                proto_var = proto_var.mean(-1)
+                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_var': proto_var}
 
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}

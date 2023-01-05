@@ -18,9 +18,41 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
-# todo: class-wise contrastive loss
-# todo "Probabilistic Representations for Video Contrastive Learning"
-# todo: video loss
+# class ProtoAlignmentLoss(nn.Module, ABC):
+#     """
+#     “Rethinking Prototypical Contrastive Learning through Alignment, Uniformity and Correlation”
+#     Pull prototypes from the same class together, and push away prototypes from other classes.
+#     """
+
+#     def __init__(self, configer):
+#         super(ProtoAlignmentLoss, self).__init__()
+
+#         self.configer = configer
+
+#         self.ignore_label = -1
+#         if self.configer.exists(
+#                 'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+#                 'loss', 'params'):
+#             self.ignore_label = self.configer.get('loss', 'params')[
+#                 'ce_ignore_index']
+
+#         self.num_classes = self.configer.get('data', 'num_classes')
+#         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+#         self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
+
+#     def compute_distance(self, similarity_measure, proto_mean, proto_var):
+#         if similarity_measure == 'wasserstein':
+#             sim_mat = (proto_mean ** 2).mean(-1) + \
+#                         (x ** 2).mean(-1) - (2 * proto_mean[i] * x).mean(-1) + \
+#                         (proto_var[i] ** 2).mean(-1) + (x_var ** 2).mean(-1) - \
+#                         (2 * proto_var[i] * x_var).mean(-1)
+
+#     def foward(self, proto_mean, proto_var):
+#         # [c m k]
+#         for i in range(self.num_classes):
+#             proto_mean[i]
+
+
 class ProbPPCLoss(nn.Module, ABC):
     """ 
     Pixel-wise probabilistic contrastive loss (instanse-wise contrastive loss)
@@ -43,7 +75,13 @@ class ProbPPCLoss(nn.Module, ABC):
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
         self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
 
-    def forward(self, contrast_logits, contrast_target):
+    def forward(self, contrast_logits, contrast_target, proto_var=None):
+        if self.configer.get('protoseg', 'var_temp') and proto_var is not None:
+            # proto_var: [c m]
+            proto_var = rearrange(proto_var, 'c m -> (c m)')
+            proto_var = repeat(proto_var, 'l -> n l', n=contrast_target.shape[0])  # [n (c m)]
+            contrast_logits = contrast_logits / proto_var
+
         contrast_logits = self.proto_norm(contrast_logits)
 
         prob_ppc_loss = F.cross_entropy(
@@ -182,13 +220,6 @@ class PixelProbContrastLoss(nn.Module, ABC):
             ramp_mult=self.configer.get('rampdownscheduler', 'ramp_mult'),
             configer=configer)
 
-        if self.configer.get('loss', 'aleatoric_uncer_loss'):
-            self.aleatoric_uncer_loss = AleatoricUncertaintyLoss(configer=configer)
-            self.aleatoric_uncer_weight = self.configer.get('protoseg', 'aleatoric_uncer_weight')
-
-        if self.configer.get('loss', 'kl_loss'):
-            self.kl_loss = KLLoss(configer=configer)
-
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
 
@@ -206,8 +237,13 @@ class PixelProbContrastLoss(nn.Module, ABC):
             contrast_logits = preds['logits']
             contrast_target = preds['target']  # prototype selection [n]
 
+            proto_var = None
+
+            if self.configer.get('protoseg', 'var_temp'):
+                proto_var = preds['proto_var']
+
             prob_ppc_loss = self.prob_ppc_criterion(
-                contrast_logits, contrast_target)
+                contrast_logits, contrast_target, proto_var)
 
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
@@ -217,25 +253,10 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             seg_loss = self.seg_criterion(pred, target)
 
-            if self.configer.get('loss', 'kl_loss'):
-                proto_var = preds['proto_var']
-                proto_mean = preds['proto_mean']
-                kl_loss = self.kl_loss(proto_mean, proto_var)
-
             # prob_ppc_weight = self.get_uncer_loss_weight()
 
             if prob_ppd_loss == 0:
                 prob_ppd_loss = seg_loss * 0
-
-            # if self.configer.get('loss', 'aleatoric_uncer_loss'):
-            #     x_var = preds['uncertainty']
-            #     aleatoric_uncer_loss = self.aleatoric_uncer_loss(x_var, target, pred)
-
-            #     loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
-            #         prob_ppd_loss + self.aleatoric_uncer_weight * aleatoric_uncer_loss
-
-            #     return {'loss': loss,
-            #             'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'aleatoric_uncer_loss': aleatoric_uncer_loss}
 
             loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
 

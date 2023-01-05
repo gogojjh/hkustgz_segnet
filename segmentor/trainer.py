@@ -269,9 +269,6 @@ class Trainer(object):
                         loss['prob_ppd_loss']) / get_world_size()
                     display_loss = reduce_tensor(
                         backward_loss) / get_world_size()
-                    if self.configer.get('loss', 'aleatoric_uncer_loss'):
-                        aleatoric_uncer_loss = reduce_tensor(
-                            loss['aleatoric_uncer_loss']) / get_world_size()
             else:
                 # backward_loss = display_loss = self.pixel_loss(
                 #     outputs, targets)
