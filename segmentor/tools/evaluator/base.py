@@ -48,6 +48,8 @@ class _BaseEvaluator:
             else:
                 if show_miou and hasattr(rs, 'get_mean_iou'):
                     Log.info('Mean IOU: {}\n'.format(rs.get_mean_iou()))
+                    max_perf = self.configer.get('max_performance')
+                    Log.info('Max performance: {}'.format(max_perf))
                 Log.info('Pixel ACC: {}\n'.format(rs.get_pixel_acc()))
 
                 if hasattr(rs, 'n_classes') and rs.n_classes == 2:
