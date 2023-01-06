@@ -132,7 +132,7 @@
 	"loss": {
 		"loss_type": "pixel_prob_prototype_ce_loss",
 		"proto_alignment_loss": true,
-		"confidence_loss": true,
+		"confidence_loss": false,
 		"init_shift": 15,
 		"init_negative_scale": 15,
 		"params": {
