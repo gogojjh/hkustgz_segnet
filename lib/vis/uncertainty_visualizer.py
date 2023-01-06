@@ -10,6 +10,10 @@ UNCERTAINTY_DIR = 'vis/results/uncertainty'
 
 
 class UncertaintyVisualizer(object):
+    ''' 
+    Uncertainty is defined as the probability of the pixel belonging to its predicted class.
+    '''
+
     def __init__(self, configer):
         super(UncertaintyVisualizer, self).__init__()
 

@@ -18,39 +18,38 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
-# class ProtoAlignmentLoss(nn.Module, ABC):
-#     """
-#     “Rethinking Prototypical Contrastive Learning through Alignment, Uniformity and Correlation”
-#     Pull prototypes from the same class together, and push away prototypes from other classes.
-#     """
+class ConfidenceLoss(nn.Module, ABC):
+    ''' 
+    Video Object Segmentation with Adaptive Feature Bank and Uncertain-Region Refinement
+    '''
 
-#     def __init__(self, configer):
-#         super(ProtoAlignmentLoss, self).__init__()
+    def __init__(self, configer):
+        super(ProbPPCLoss, self).__init__()
 
-#         self.configer = configer
+        self.configer = configer
 
-#         self.ignore_label = -1
-#         if self.configer.exists(
-#                 'loss', 'params') and 'ce_ignore_index' in self.configer.get(
-#                 'loss', 'params'):
-#             self.ignore_label = self.configer.get('loss', 'params')[
-#                 'ce_ignore_index']
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
 
-#         self.num_classes = self.configer.get('data', 'num_classes')
-#         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
-#         self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
 
-#     def compute_distance(self, similarity_measure, proto_mean, proto_var):
-#         if similarity_measure == 'wasserstein':
-#             sim_mat = (proto_mean ** 2).mean(-1) + \
-#                         (x ** 2).mean(-1) - (2 * proto_mean[i] * x).mean(-1) + \
-#                         (proto_var[i] ** 2).mean(-1) + (x_var ** 2).mean(-1) - \
-#                         (2 * proto_var[i] * x_var).mean(-1)
+    def forward(self, sim_mat):
+        # sim_mat: [n (c m)]
+        if self.configer.get(
+                'protoseg', 'similarity_measure') == 'fast_mls' or self.configer.get(
+                'protoseg', 'similarity_measure') == 'mls':
+            sim_mat = torch.exp(sim_mat)
+        score_top, _ = sim_mat.topk(k=2, dim=1)
+        confidence = score_top[:, 0] / score_top[:, 1]
+        confidence = torch.exp(1 - confidence).mean(-1)
 
-#     def foward(self, proto_mean, proto_var):
-#         # [c m k]
-#         for i in range(self.num_classes):
-#             proto_mean[i]
+        return confidence
 
 
 class ProbPPCLoss(nn.Module, ABC):

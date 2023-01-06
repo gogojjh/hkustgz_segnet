@@ -366,10 +366,10 @@ class Trainer(object):
 
         self.seg_net.eval()
         self.pixel_loss.eval()
-        start_time=time.time()
-        replicas=self.evaluator.prepare_validaton()
+        start_time = time.time()
+        replicas = self.evaluator.prepare_validaton()
 
-        data_loader=self.val_loader if data_loader is None else data_loader
+        data_loader = self.val_loader if data_loader is None else data_loader
         for j, data_dict in enumerate(data_loader):
             if j % 10 == 0:
                 if is_distributed():
@@ -377,62 +377,62 @@ class Trainer(object):
                 Log.info('{} images processed\n'.format(j))
 
             if self.configer.get('dataset') == 'lip':
-                (inputs, targets, inputs_rev, targets_rev), batch_size=self.data_helper.prepare_data(
+                (inputs, targets, inputs_rev, targets_rev), batch_size = self.data_helper.prepare_data(
                     data_dict, want_reverse=True)
             elif self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
                 (inputs, targets, names,
-                 imgs), batch_size=self.data_helper.prepare_data(data_dict)
+                 imgs), batch_size = self.data_helper.prepare_data(data_dict)
             else:
-                (inputs, targets), batch_size=self.data_helper.prepare_data(data_dict)
+                (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
 
             with torch.no_grad():
                 if self.configer.get('dataset') == 'lip':
-                    inputs=torch.cat([inputs[0], inputs_rev[0]], dim=0)
-                    outputs=self.seg_net(inputs)
+                    inputs = torch.cat([inputs[0], inputs_rev[0]], dim=0)
+                    outputs = self.seg_net(inputs)
                     if not is_distributed():
-                        outputs_=self.module_runner.gather(outputs)
+                        outputs_ = self.module_runner.gather(outputs)
                     else:
-                        outputs_=outputs
+                        outputs_ = outputs
                     if isinstance(outputs_, (list, tuple)):
-                        outputs_=outputs_[-1]
-                    outputs=outputs_[
+                        outputs_ = outputs_[-1]
+                    outputs = outputs_[
                         0:int(outputs_.size(0) / 2), :, :, :].clone()
-                    outputs_rev=outputs_[
+                    outputs_rev = outputs_[
                         int(outputs_.size(0) / 2):int(outputs_.size(0)), :, :, :].clone()
                     if outputs_rev.shape[1] == 20:
-                        outputs_rev[:, 14, :, :]=outputs_[
+                        outputs_rev[:, 14, :, :] = outputs_[
                             int(outputs_.size(0) / 2):int(outputs_.size(0)), 15, :, :]
-                        outputs_rev[:, 15, :, :]=outputs_[
+                        outputs_rev[:, 15, :, :] = outputs_[
                             int(outputs_.size(0) / 2):int(outputs_.size(0)), 14, :, :]
-                        outputs_rev[:, 16, :, :]=outputs_[
+                        outputs_rev[:, 16, :, :] = outputs_[
                             int(outputs_.size(0) / 2):int(outputs_.size(0)), 17, :, :]
-                        outputs_rev[:, 17, :, :]=outputs_[
+                        outputs_rev[:, 17, :, :] = outputs_[
                             int(outputs_.size(0) / 2):int(outputs_.size(0)), 16, :, :]
-                        outputs_rev[:, 18, :, :]=outputs_[
+                        outputs_rev[:, 18, :, :] = outputs_[
                             int(outputs_.size(0) / 2):int(outputs_.size(0)), 19, :, :]
-                        outputs_rev[:, 19, :, :]=outputs_[
+                        outputs_rev[:, 19, :, :] = outputs_[
                             int(outputs_.size(0) / 2):int(outputs_.size(0)), 18, :, :]
-                    outputs_rev=torch.flip(outputs_rev, [3])
-                    outputs=(outputs + outputs_rev) / 2.
+                    outputs_rev = torch.flip(outputs_rev, [3])
+                    outputs = (outputs + outputs_rev) / 2.
                     self.evaluator.update_score(outputs, data_dict['meta'])
 
                     del outputs_rev
 
                 elif self.data_helper.conditions.diverse_size:
                     if is_distributed():
-                        outputs=[self.seg_net(inputs[i])
+                        outputs = [self.seg_net(inputs[i])
                                    for i in range(len(inputs))]
                     else:
-                        outputs=nn.parallel.parallel_apply(
+                        outputs = nn.parallel.parallel_apply(
                             replicas[:len(inputs)], inputs)
 
                     for i in range(len(outputs)):
-                        loss=self.pixel_loss(
+                        loss = self.pixel_loss(
                             outputs[i], targets[i].unsqueeze(0))
                         # self.val_losses.update(loss.item(), 1)
-                        outputs_i=outputs[i]
+                        outputs_i = outputs[i]
                         if isinstance(outputs_i, torch.Tensor):
-                            outputs_i=[outputs_i]
+                            outputs_i = [outputs_i]
                         self.evaluator.update_score(
                             outputs_i, data_dict['meta'][i:i + 1])
 
@@ -440,51 +440,56 @@ class Trainer(object):
 
                 else:
                     if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
-                        pretrain_prototype=True if self.configer.get(
+                        pretrain_prototype = True if self.configer.get(
                             'iters') < self. configer.get('protoseg', 'warmup_iters') else False
-                        outputs=self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...],
+                        outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...],
                                                pretrain_prototype=pretrain_prototype)
                     else:
-                        outputs=self.seg_net(*inputs)
+                        outputs = self.seg_net(*inputs)
 
                     if not is_distributed():
-                        outputs=self.module_runner.gather(outputs)
+                        outputs = self.module_runner.gather(outputs)
                     if isinstance(outputs, dict):
 
                         # ============== vis uncertainty and error map ==============#
                         if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
                             # [b h w] [1, 256, 512]
-                            uncertainty=outputs['uncertainty']
+                            # uncertainty = outputs['uncertainty']
+                            h, w = targets.size(1), targets.size(2)
+                            uncertainty = outputs['seg']  # [b c h w]
+                            uncertainty = F.interpolate(
+                                input=uncertainty, size=(h, w),
+                                mode='bilinear', align_corners=True)
                             if (self.configer.get('iters') % (self.configer.get(
                                     'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
-                                vis_interval_img=self.configer.get(
+                                vis_interval_img = self.configer.get(
                                     'uncertainty_visualizer', 'vis_interval_img')
-                                batch_size=uncertainty.shape[0]
+                                batch_size = uncertainty.shape[0]
                                 if vis_interval_img <= batch_size:
                                     for i in range(0, vis_interval_img, batch_size):
-                                        uncer_img=uncertainty[i]
+                                        uncer_img = torch.amax(uncertainty[i], dim=0)
                                         self.uncer_visualizer.vis_uncertainty(
                                             uncer_img, name='{}'.format(names[i]))
 
-                                        pred=outputs['seg']  # [b c h w]
-                                        pred=torch.argmax(
+                                        pred = outputs['seg']  # [b c h w]
+                                        pred = torch.argmax(
                                             pred, dim=1)  # [b h w]
 
                                         self.seg_visualizer.vis_error(
                                             imgs[i], pred[i], targets[i], names[i])
 
-                        outputs=outputs['seg']
+                        outputs = outputs['seg']
                     self.evaluator.update_score(outputs, data_dict['meta'])
 
                     del outputs
 
             self.batch_time.update(time.time() - start_time)
-            start_time=time.time()
+            start_time = time.time()
 
         self.evaluator.update_performance()
 
         self.module_runner.save_net(self.seg_net, save_mode='performance')
-        cudnn.benchmark=True
+        cudnn.benchmark = True
 
         # Print the log info & reset the states.
         self.evaluator.reduce_scores()

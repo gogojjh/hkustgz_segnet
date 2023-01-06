@@ -113,7 +113,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 2000,
+		"test_interval": 10,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -165,9 +165,9 @@
 		"var_temp": true
 	},
 	"uncertainty_visualizer": {
-		"vis_uncertainty": false,
-		"vis_interval_img": 8,
-		"vis_inter_iter": 20,
+		"vis_uncertainty": true,
+		"vis_interval_img": 1,
+		"vis_inter_iter": 1,
 		"dataset": "val"
 	},
 	"rampdownscheduler": {
@@ -183,7 +183,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 2
