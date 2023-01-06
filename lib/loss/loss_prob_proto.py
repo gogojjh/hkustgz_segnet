@@ -24,7 +24,7 @@ class ConfidenceLoss(nn.Module, ABC):
     '''
 
     def __init__(self, configer):
-        super(ProbPPCLoss, self).__init__()
+        super(ConfidenceLoss, self).__init__()
 
         self.configer = configer
 
@@ -219,6 +219,10 @@ class PixelProbContrastLoss(nn.Module, ABC):
             ramp_mult=self.configer.get('rampdownscheduler', 'ramp_mult'),
             configer=configer)
 
+        if self.configer.get('loss', 'confidence_loss'):
+            self.confidence_loss = ConfidenceLoss(configer=configer)
+            self.confidence_loss_weight = self.configer.get('protoseg', 'confidence_loss_weight')
+
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
 
@@ -256,6 +260,14 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             if prob_ppd_loss == 0:
                 prob_ppd_loss = seg_loss * 0
+
+            if self.configer.get('loss', 'confidence_loss'):
+                confidence_loss = self.confidence_loss(contrast_logits)
+                
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.confidence_loss_weight * confidence_loss
+
+                return {'loss': loss,
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'confidence_loss': confidence_loss}
 
             loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
 

@@ -232,7 +232,6 @@ if __name__ == "__main__":
 
     if is_distributed():
         if get_rank() == 0:
-            Log.info('======================wandb init in distributed learning.=================')
             wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
                        name=wb_name, mode=configer.get('wandb', 'mode'),
                        settings=wandb.Settings(start_method='fork'))

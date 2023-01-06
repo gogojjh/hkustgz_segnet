@@ -130,6 +130,9 @@ class ProbProtoSegHead(nn.Module):
                 self.num_classes, self.num_prototype, self.proj_dim), requires_grad=False)
 
     def compute_similarity(self, x, x_var):
+        ''' 
+        To save memory usage, means of x_var and proto_var are used for calculation.
+        '''
         cosine_dist = None
         if self.use_probability:
             proto_mean = self.prototypes.data.clone()
@@ -157,33 +160,30 @@ class ProbProtoSegHead(nn.Module):
                 proto_var = rearrange(proto_var, 'c m -> c m 1')  # [c m 1]
                 proto_var = repeat(proto_var, 'c m 1 -> c m n',
                                    n=x_var.shape[0])  # [c m n]
-                cosine_dist = torch.einsum(
+                sim_mat = torch.einsum(
                     'nd,kmd->nmk', x, self.prototypes)  # [n m c]
-                cosine_dist = cosine_dist.permute(2, 1, 0)  # [c m n]
+                sim_mat = sim_mat.permute(2, 1, 0)  # [c m n]
                 # [c m n]
-                sim_mat = - (2 - 2 * cosine_dist) / (proto_var +
-                                                     x_var) - torch.log(proto_var + x_var)
+                sim_mat = - (2 - 2 * sim_mat) / (proto_var +
+                                                 x_var) - torch.log(proto_var + x_var)
                 sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
 
             elif self.sim_measure == "wasserstein":  # smaller -> similar
-                proto_mean = rearrange(
-                    proto_mean, 'c m k -> c m 1 k')  # [c m 1 k]
-                proto_var = rearrange(
-                    proto_var, 'c m k -> c m 1 k')  # [c m 1 k]
-
                 x_var = torch.sqrt(x_var + 1e-8)
                 proto_var = torch.sqrt(proto_var + 1e-8)
 
-                sim_mat = torch.zeros((self.num_classes, self.num_prototype, x.shape[0])).cuda()
+                x_var = torch.mean(x_var, dim=-1)  # x_var: [n, k] -> [n]
+                proto_var = torch.mean(proto_var, dim=-1)  # [c m]
+                proto_var = rearrange(proto_var, 'c m -> c m 1')  # [c m 1]
 
-                # for memory usage
-                for i in range(self.num_classes):
-                    sim_mat[i] = (proto_mean[i] ** 2).mean(-1) + \
-                        (x ** 2).mean(-1) - (2 * proto_mean[i] * x).mean(-1) + \
-                        (proto_var[i] ** 2).mean(-1) + (x_var ** 2).mean(-1) - \
-                        (2 * proto_var[i] * x_var).mean(-1)
+                sim_mat = torch.einsum(
+                    'nd,kmd->nmk', x, self.prototypes)  # [n m c]
+                sim_mat = sim_mat.permute(2, 1, 0)  # [c m n]
 
-                sim_mat = - sim_mat
+                sim_mat = (2 - 2 * sim_mat) + x_var ** 2 + proto_var ** 2 - 2 * x_var * proto_var
+                # [c m n] + [n] + [c m 1] - [n] * [c m 1]
+
+                sim_mat = - sim_mat  # ori_sim_mat > 0, now sim_mat < 0
 
                 sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
 
@@ -431,7 +431,7 @@ class ProbProtoSegHead(nn.Module):
                             b=b_size, h=h_size)
 
         sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
-        sim_mat = self.proto_norm(sim_mat)
+        # sim_mat = self.proto_norm(sim_mat)
         sim_mat = rearrange(sim_mat, 'n (c m) -> n c m', c=self.num_classes)
 
         if self.pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:

@@ -109,11 +109,11 @@
 		"lr_policy": "warmup_cosine",
 		"metric": "iters",
 		"warmup_steps": 1000,
-		"t_total": 85000
+		"t_total": 45000
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 10,
+		"test_interval": 200,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -132,6 +132,7 @@
 	"loss": {
 		"loss_type": "pixel_prob_prototype_ce_loss",
 		"proto_alignment_loss": true,
+		"confidence_loss": true,
 		"init_shift": 15,
 		"init_negative_scale": 15,
 		"params": {
@@ -154,18 +155,19 @@
 		"use_prototype": true,
 		"update_prototype": true,
 		"warmup_iters": 0,
-		"similarity_measure": "fast_mls",
+		"similarity_measure": "wasserstein",
 		"use_probability": true,
 		"multi_proxy": false,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
-		"prob_ppd_weight": 1.0,
+		"prob_ppd_weight": 0.1,
 		"prob_ppc_weight": 0.1,
+		"confidence_loss_weight": 0.1,
 		"proj_dim": 720,
 		"var_temp": true
 	},
 	"uncertainty_visualizer": {
-		"vis_uncertainty": true,
+		"vis_uncertainty": false,
 		"vis_interval_img": 1,
 		"vis_inter_iter": 1,
 		"dataset": "val"
