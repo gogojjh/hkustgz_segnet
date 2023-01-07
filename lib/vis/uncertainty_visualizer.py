@@ -5,6 +5,7 @@ import numpy as np
 
 from lib.datasets.tools.transforms import DeNormalize
 from lib.utils.tools.logger import Logger as Log
+from lib.utils.distributed import get_world_size, get_rank, is_distributed
 
 UNCERTAINTY_DIR = 'vis/results/uncertainty'
 
@@ -30,9 +31,10 @@ class UncertaintyVisualizer(object):
             # uncertainty = uncertainty.data.cpu().numpy().transpose(1, 0)
             uncertainty = uncertainty.data.cpu().numpy()
 
-        if not os.path.exists(base_dir):
-            Log.error('Dir:{} not exists!'.format(base_dir))
-            os.makedirs(base_dir)
+        if not is_distributed() or get_rank() == 0:
+            if not os.path.exists(base_dir):
+                Log.error('Dir:{} not exists!'.format(base_dir))
+                os.makedirs(base_dir)
 
         uncertainty_img = np.ones((uncertainty.shape[0], uncertainty.shape[1], 3))
         for i in range(uncertainty_img.shape[-1]):

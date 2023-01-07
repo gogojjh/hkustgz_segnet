@@ -12,6 +12,7 @@ import torch.nn.functional as F
 
 from lib.datasets.tools.transforms import DeNormalize
 from lib.utils.tools.logger import Logger as Log
+from lib.utils.distributed import get_world_size, get_rank, is_distributed
 
 SEG_DIR = 'vis/results/seg'
 ERROR_MAP_DIR = 'vis/results/error_map'
@@ -205,9 +206,11 @@ class SegVisualizer(object):
 
     def vis_error(self, im, pred, gt, name='default'):
         base_dir = os.path.join(self.configer.get('train', 'out_dir'), ERROR_MAP_DIR)
-        if not os.path.exists(base_dir):
-            Log.error('Dir:{} not exists!'.format(base_dir))
-            os.makedirs(base_dir)
+
+        if not is_distributed() or get_rank() == 0:
+            if not os.path.exists(base_dir):
+                Log.error('Dir:{} not exists!'.format(base_dir))
+                os.makedirs(base_dir)
 
         if not isinstance(pred, np.ndarray):
             if len(pred.size()) < 2:

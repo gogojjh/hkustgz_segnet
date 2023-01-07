@@ -54,8 +54,7 @@ class ConfidenceLoss(nn.Module, ABC):
 
 class ProbPPCLoss(nn.Module, ABC):
     """ 
-    Pixel-wise probabilistic contrastive loss (instanse-wise contrastive loss)
-    Probability masure: mutual likelihood loss
+    Pixel-wise probabilistic contrastive loss.
     """
 
     def __init__(self, configer):
@@ -74,13 +73,7 @@ class ProbPPCLoss(nn.Module, ABC):
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
         self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
 
-    def forward(self, contrast_logits, contrast_target, proto_var=None):
-        if self.configer.get('protoseg', 'var_temp') and proto_var is not None:
-            # proto_var: [c m]
-            proto_var = rearrange(proto_var, 'c m -> (c m)')
-            proto_var = repeat(proto_var, 'l -> n l', n=contrast_target.shape[0])  # [n (c m)]
-            contrast_logits = contrast_logits / proto_var
-
+    def forward(self, contrast_logits, contrast_target):
         contrast_logits = self.proto_norm(contrast_logits)
 
         prob_ppc_loss = F.cross_entropy(
@@ -166,7 +159,7 @@ class ProbPPDLoss(nn.Module, ABC):
         contrast_target = contrast_target[contrast_target != self.ignore_label]
 
         logits = torch.gather(contrast_logits, 1,
-                              contrast_target[:, None].long())
+                              contrast_target[:, None].long()).squeeze(-1)
 
         if logits.shape[0] == 0:
             prob_ppd_loss = 0
@@ -206,6 +199,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
         self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
 
         self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
+
         self.prob_ppd_criterion = ProbPPDLoss(configer=configer)
         self.seg_criterion = FSCELoss(configer=configer)
 
@@ -240,13 +234,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
             contrast_logits = preds['logits']
             contrast_target = preds['target']  # prototype selection [n]
 
-            proto_var = None
-
-            if self.configer.get('protoseg', 'var_temp'):
-                proto_var = preds['proto_var']
-
-            prob_ppc_loss = self.prob_ppc_criterion(
-                contrast_logits, contrast_target, proto_var)
+            prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
 
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
@@ -263,8 +251,9 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             if self.configer.get('loss', 'confidence_loss'):
                 confidence_loss = self.confidence_loss(contrast_logits)
-                
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.confidence_loss_weight * confidence_loss
+
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
+                    prob_ppd_loss + self.confidence_loss_weight * confidence_loss
 
                 return {'loss': loss,
                         'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'confidence_loss': confidence_loss}

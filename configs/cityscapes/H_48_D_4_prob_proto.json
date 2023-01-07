@@ -164,7 +164,7 @@
 		"prob_ppc_weight": 0.1,
 		"confidence_loss_weight": 0.1,
 		"proj_dim": 720,
-		"var_temp": true
+		"use_gt_proto_learning": true
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": false,
