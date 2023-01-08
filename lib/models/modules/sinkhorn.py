@@ -1,6 +1,5 @@
 import torch
 import torch.nn.functional as F
-import ot
 
 
 def sinkhorn(M, r=1.0, c=1.0, lamda=0.005, epsilon=1e-8):
@@ -137,11 +136,3 @@ def pot_sinkhorn(out):
     result = ot.sinkhorn(a=a, b=b, M=out, reg=50)
 
     return result
-
-
-if __name__ == "__main__":
-    out = torch.randn(100, 100).cuda()
-    result1 = distributed_sinkhorn(out)
-    a = torch.ones((out.shape[0])).cuda()
-    b = torch.ones((out.shape[0])).cuda()
-    result2 = ot.sinkhorn(a=a, b=b, M=out, reg=0.05)

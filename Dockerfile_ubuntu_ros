@@ -2,12 +2,10 @@ FROM nvidia/cuda:11.3.0-devel-ubuntu20.04
 LABEL maintainer="Daisy-GENG <rgengaa@connect.ust.hk>"
 # Just in case we need it
 ENV DEBIAN_FRONTEND noninteractive
-
 RUN apt update && apt install -y --no-install-recommends git curl wget git zsh tmux vim g++
 # needs to be done before we can apply the patches
 RUN git config --global user.email "janeandrebecca@outlook.com"
 RUN git config --global user.name "Daisy-GENG"
-
 # install zsh
 RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/v1.1.2/zsh-in-docker.sh)" -- \
     -t robbyrussell \
@@ -17,8 +15,6 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
     -p https://github.com/zsh-users/zsh-autosuggestions \
     -p https://github.com/zsh-users/zsh-completions \
     -p https://github.com/zsh-users/zsh-syntax-highlighting
-
-
 # ==========> INSTALL ROS noetic <=============
 RUN apt update && apt install -y curl lsb-release
 RUN sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
@@ -28,25 +24,42 @@ RUN apt install python3-rosdep python3-rosinstall python3-rosinstall-generator p
     && rosdep init && rosdep update
 RUN echo "source /opt/ros/noetic/setup.zsh" >> ~/.zshrc
 RUN echo "source /opt/ros/noetic/setup.bashrc" >> ~/.bashrc
-
 RUN apt update && apt install -y python3-pip
 RUN apt update && apt install -y python3-setuptools
 
-# tools for cityscapes dataset
-RUN python -m pip3 install cityscapesscripts   
 # code formatter
 RUN pip3 install -U flake8
 RUN pip3 install -U autopep8
 # mmcv
 RUN pip3 install -U openmim
-RUN install mmcv
+RUN pip3 install mmcv
+# some utility packages
+RUN pip3 install debugpy
+RUN pip3 install wandb
+RUN pip3 install einops
+RUN pip3 install timm 
+RUN pip3 install ptflops
+
+# copy ssh key to container
+ARG SSH_PRIVATE_KEY
+RUN mkdir /root/.ssh
+RUN echo "${SSH_PRIVATE_KEY}" > /root/.ssh/id_rsa
+RUN chmod 400 /root/.ssh/id_rsa
+RUN touch /root/.ssh/known_hosts
+RUN ssh-keyscan github.com >> /root/.ssh/known_hosts
 
 # pytorch
-RUN mkdir -p /home
-WORKDIR /home
-RUN git clone https://github.com/Daisy-GENG/HKUSTGZ_SegNet.git
-RUN cd hkustgz_segnet && pip3 install -r requirements.txt
-
+RUN mkdir -p /home/hkustgz_segnet
+WORKDIR /home/hkustgz_segnet
+RUN cd /home/hkustgz_segnet
+RUN git init .
+RUN git remote add origin git@github.com:Daisy-GENG/HKUSTGZ_SegNet.git
+RUN git fetch --all
+RUN git checkout main
+RUN git branch --set-upstream-to=remotes/origin/main
+RUN git pull
+#RUN cd /home/HKUSTGZ_SegNet 
+RUN pip3 install -r requirements.txt
 # =========> Clone ROS Package <============
 RUN apt update && apt install ros-noetic-ros-numpy ros-noetic-vision-msgs
 RUN apt-get install -y ros-noetic-catkin python3-catkin-tools
