@@ -18,6 +18,77 @@ from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
 
 
+def _batch_vector_diag(bvec):
+    """
+    Returns the diagonal matrices of a batch of vectors.
+    """
+    n = bvec.size(-1)
+    bmat = bvec.new_zeros(bvec.shape + (n,))
+    bmat.view(bvec.shape[:-1] + (-1,))[..., ::n + 1] = bvec
+    return bmat
+
+
+class MultivariateNormalDiag(Distribution):
+    arg_constraints = {"loc": constraints.real,
+                       "scale_diag": constraints.positive}
+    support = constraints.real
+    has_rsample = True
+
+    def __init__(self, loc, scale_diag, validate_args=None):
+        if loc.dim() < 1:
+            raise ValueError("loc must be at least one-dimensional.")
+        event_shape = loc.shape[-1:]
+        if scale_diag.shape[-1:] != event_shape:
+            raise ValueError(
+                "scale_diag must be a batch of vectors with shape {}".format(event_shape))
+        try:
+            self.loc, self.scale_diag = torch.broadcast_tensors(
+                loc, scale_diag)
+        except RuntimeError:
+            raise ValueError("Incompatible batch shapes: loc {}, scale_diag {}"
+                             .format(loc.shape, scale_diag.shape))
+        batch_shape = self.loc.shape[:-1]
+        super(MultivariateNormalDiag, self).__init__(batch_shape, event_shape,
+                                                     validate_args=validate_args)
+
+    @property
+    def mean(self):
+        return self.loc
+
+    @lazy_property
+    def variance(self):
+        return self.scale_diag.pow(2)
+
+    @lazy_property
+    def covariance_matrix(self):
+        return _batch_vector_diag(self.scale_diag.pow(2))
+
+    @lazy_property
+    def precision_matrix(self):
+        return _batch_vector_diag(self.scale_diag.pow(-2))
+
+    def rsample(self, sample_shape=torch.Size()):
+        shape = self._extended_shape(sample_shape)
+        eps = self.loc.new_empty(shape).normal_()
+        return self.loc + self.scale_diag * eps
+
+    def log_prob(self, value):
+        if self._validate_args:
+            self._validate_sample(value)
+        diff = value - self.loc
+        return (
+            -0.5 * self._event_shape[0] * math.log(2 * math.pi)
+            - self.scale_diag.log().sum(-1)
+            - 0.5 * (diff / self.scale_diag).pow(2).sum(-1)
+        )
+
+    def entropy(self):
+        return (
+            0.5 * self._event_shape[0] * (math.log(2 * math.pi) + 1) +
+            self.scale_diag.log().sum(-1)
+        )
+
+
 class ProbProtoSegHead(nn.Module):
     """
     Similarity between pixel embeddings and prototypes
@@ -114,26 +185,6 @@ class ProbProtoSegHead(nn.Module):
                 sim_mat = - sim_mat  # ori_sim_mat > 0, now sim_mat < 0
 
                 sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
-
-            elif self.sim_measure == 'bhattacharyya':
-                proto_mean = rearrange(
-                    proto_mean, 'c m k -> c m 1 k')  # [c m 1 k]
-                proto_var = rearrange(
-                    proto_var, 'c m k -> c m 1 k')  # [c m 1 k]
-
-                sim_mat = 0.25 * ((proto_mean ** 2).mean(-1) + (x ** 2).mean(-1) -
-                                  (2 * proto_mean * x).mean(-1))
-
-                x_var = torch.sqrt(x_var)
-                proto_var = torch.sqrt(proto_var)
-
-                sim_mat += 0.5 * torch.log(x_var / proto_var + proto_var / x_var).mean(-1)
-
-                sim_mat = - sim_mat  # smaller bhattacharyya -> similar
-
-                sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
-
-                # [c m 1 k] + [n k] - [c m n k] + [c m n k] / [c m n k] -> [c m n]
 
             elif self.sim_measure == 'gmm_log_prob':
                 """
