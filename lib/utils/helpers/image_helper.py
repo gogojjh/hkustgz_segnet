@@ -183,10 +183,12 @@ class ImageHelper(object):
 
         target_size = tuple(target_size)
         if isinstance(img, Image.Image):
-            return ImageHelper.pil_resize(img, target_size, interpolation=PIL_INTER_DICT[interpolation])
+            return ImageHelper.pil_resize(
+                img, target_size, interpolation=PIL_INTER_DICT[interpolation])
 
         elif isinstance(img, np.ndarray):
-            return ImageHelper.cv2_resize(img, target_size, interpolation=CV2_INTER_DICT[interpolation])
+            return ImageHelper.cv2_resize(
+                img, target_size, interpolation=CV2_INTER_DICT[interpolation])
 
         else:
             Log.error('Image type is invalid.')
@@ -208,6 +210,13 @@ class ImageHelper(object):
         else:
             Log.error('Image type is invalid.')
             exit(1)
+
+    @staticmethod
+    def convert_from_image_to_cv2(img):
+        if isinstance(img, Image.Image):
+            return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        else:
+            Log.error('Image type is invalid for saving semantic images.')
 
     @staticmethod
     def cv2_resize(img, target_size, interpolation):

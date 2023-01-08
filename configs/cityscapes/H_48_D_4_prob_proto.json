@@ -189,5 +189,11 @@
 	},
 	"run": {
 		"server": 2
+	},
+	"ros": {
+		"use_ros": true,
+		"image_topic": "/camera1/image_color/compressed",
+		"sem_image_topic": "/sem_camera1/image_color/compressed",
+		"msg_type": "sensor_msgs/Image"
 	}
 }
