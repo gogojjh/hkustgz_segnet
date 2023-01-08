@@ -29,8 +29,11 @@ RUN apt install python3-rosdep python3-rosinstall python3-rosinstall-generator p
 RUN echo "source /opt/ros/noetic/setup.zsh" >> ~/.zshrc
 RUN echo "source /opt/ros/noetic/setup.bashrc" >> ~/.bashrc
 
+RUN apt update && apt install -y python3-pip
+RUN apt update && apt install -y python3-setuptools
+
 # tools for cityscapes dataset
-RUN python -m pip install cityscapesscripts   
+RUN python -m pip3 install cityscapesscripts   
 # code formatter
 RUN pip3 install -U flake8
 RUN pip3 install -U autopep8
@@ -39,10 +42,11 @@ RUN pip3 install -U openmim
 RUN install mmcv
 
 # pytorch
-RUN apt update && apt install -y python3-pip
-RUN pip3 install torch==1.10.0+cu113 torchvision==0.11.0+cu113 torchaudio==0.10.0 -f https://download.pytorch.org/whl/torch_stable.html
-RUN apt update && apt install -y python3-setuptools
-RUN mkdir -p /home/hkustgz_segnet
-WORKDIR /home/hkustgz_segnet
+RUN mkdir -p /home
+WORKDIR /home
 RUN git clone https://github.com/Daisy-GENG/HKUSTGZ_SegNet.git
-RUN cd ProtoSeg && pip3 install -r requirements.txt
+RUN cd hkustgz_segnet && pip3 install -r requirements.txt
+
+# =========> Clone ROS Package <============
+RUN apt update && apt install ros-noetic-ros-numpy ros-noetic-vision-msgs
+RUN apt-get install -y ros-noetic-catkin python3-catkin-tools
