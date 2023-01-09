@@ -15,7 +15,6 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
     -p https://github.com/zsh-users/zsh-autosuggestions \
     -p https://github.com/zsh-users/zsh-completions \
     -p https://github.com/zsh-users/zsh-syntax-highlighting
-
 # ==========> INSTALL ROS noetic <=============
 RUN apt update && apt install -y curl lsb-release
 RUN sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
@@ -40,7 +39,6 @@ RUN pip3 install wandb
 RUN pip3 install einops
 RUN pip3 install timm 
 RUN pip3 install ptflops
-RUN pip3 install numpy==1.23
 
 # copy ssh key to container
 ARG SSH_PRIVATE_KEY
@@ -65,6 +63,3 @@ RUN pip3 install -r requirements.txt
 # =========> Clone ROS Package <============
 RUN apt update && apt install ros-noetic-ros-numpy ros-noetic-vision-msgs
 RUN apt-get install -y ros-noetic-catkin python3-catkin-tools
-
- # start zsh
-CMD [ "zsh" ]
