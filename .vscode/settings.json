@@ -6,5 +6,6 @@
 	"[python]": {
 		"editor.defaultFormatter": "ms-python.python"
 	},
-	"ros.distro": "noetic"
+	"ros.distro": "noetic",
+	"vsintellicode.java.completionsEnabled": true
 }

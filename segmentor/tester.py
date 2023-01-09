@@ -16,9 +16,7 @@ from __future__ import print_function
 import os
 import time
 import timeit
-import pdb
 import cv2
-import scipy
 import collections
 
 import torch
@@ -42,7 +40,6 @@ from segmentor.tools.optim_scheduler import OptimScheduler
 from scipy import ndimage
 from PIL import Image
 from math import ceil
-from hkustsegnet_ros.src.ros_processor import ROSProcessor
 
 
 class Tester(object):
@@ -102,7 +99,7 @@ class Tester(object):
 
         return label_dst
 
-    def test(self, data_loader=None):
+    def test(self, ros_processor=None, data_loader=None):
         """
           Validation function during the train phase.
         """
@@ -144,6 +141,7 @@ class Tester(object):
                 X /= sum_prob
                 return X
 
+        sem_img_ros = []
         for j, data_dict in enumerate(self.test_loader):
             inputs = data_dict['img']
             names = data_dict['name']
@@ -248,7 +246,8 @@ class Tester(object):
                         - semantic prediction
                         '''
                         sem_img_ = ImageHelper.convert_from_image_to_cv2(color_img_)
-                        ROSProcessor.pub_semimg_msg(sem_img_)
+                        sem_img_ros.append(sem_img_)
+                        
 
                     # # visualize
                     # from lib.datasets.tools.transforms import DeNormalize
@@ -314,6 +313,9 @@ class Tester(object):
 
         # Print the log info & reset the states.
         Log.info('Test Time {batch_time.sum:.3f}s'.format(batch_time=self.batch_time))
+        
+        if self.use_ros:
+            return sem_img_ros
 
     def offset_test(self, inputs, offset_h_maps, offset_w_maps, scale=1):
         if isinstance(inputs, torch.Tensor):
