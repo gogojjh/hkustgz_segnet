@@ -38,8 +38,8 @@ class ROSProcessor():
         bridge = CvBridge()
 
         try:
-            # self.sem_img_pub.publish(bridge.cv2_to_imgmsg(sem_img, 'bgr8'))
-            self.sem_img_pub.publish(bridge.cv2_to_compressed_imgmsg(sem_img, 'bgr8'))
+            self.sem_img_pub.publish(bridge.cv2_to_imgmsg(sem_img, 'bgr8'))
+            # self.sem_img_pub.publish(bridge.cv2_to_compressed_imgmsg(sem_img, 'bgr8'))
             Log.info('pub sem img topic')
         except CvBridgeError as e:
             Log.error(e)
@@ -87,11 +87,13 @@ class ROSProcessor():
         )
 
         # collate_fn in dataloader to make img to fixed size
+        
+        data_dict = [data_dict]
         data_dict = collate(data_dict, trans_dict=self.trans_dict)
 
         self.img_num += 1
 
-        return data_dict
+        return [data_dict]
 
     def _image_callback(self, msg, mode='rgb'):
         ''' 

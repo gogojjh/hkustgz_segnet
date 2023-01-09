@@ -27,7 +27,7 @@ BATCH_SIZE=20
 BASE_LR=0.003
 
 echo "[single scale] test"
-  python3 -u inference.py --configs ${CONFIGS} --drop_last y --data_dir ${DATA_DIR} \
+  python3 -u -m debugpy --listen 5688 --wait-for-client inference.py --configs ${CONFIGS} \
                         --backbone ${BACKBONE} --model_name ${MODEL_NAME} --checkpoints_name ${CHECKPOINTS_NAME} \
                         --phase test_ros --gpu 0 1 2 3 --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_max_performance.pth \
                         --test_dir ${DATA_DIR}/test --log_to_file n \

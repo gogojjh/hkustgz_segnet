@@ -80,6 +80,7 @@ class Tester(object):
                 self.test_size = len(self.test_loader) * self.configer.get('val', 'batch_size')
         else:
             self.test_loader = None
+            self.test_size = 1
 
         self.seg_net.eval()
 
