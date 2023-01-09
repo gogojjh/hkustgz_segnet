@@ -39,7 +39,6 @@ class ROSProcessor():
         self.is_stack = (size_mode != 'diverse_size')
 
         self.bridge = CvBridge()
-        self._init()
 
     @staticmethod
     def pub_semimg_msg(self, sem_img):
@@ -50,9 +49,9 @@ class ROSProcessor():
         except CvBridgeError as e:
             Log.error(e)
 
-    def _init(self):
+    def test(self):
         self.img_sub = rospy.Subscriber(
-            self.img_topic, Image, self.image_callback, queue_size=1, buff_size=2*24)
+            self.img_topic, Image, self._image_callback, queue_size=1, buff_size=2*24)
         self.sem_img_pub = rospy.Publisher(self.pub_img_topic, Image, queue_size=20)
 
         self.model = Tester(self.configer)
@@ -93,7 +92,7 @@ class ROSProcessor():
 
         return data_dict
 
-    def image_callback(self, msg, mode='rgb'):
+    def _image_callback(self, msg, mode='rgb'):
         ''' 
         When new rosmsg comes:
         - Convert to img/transform/form data_loader-like data_dict
