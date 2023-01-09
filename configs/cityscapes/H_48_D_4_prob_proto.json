@@ -10,13 +10,14 @@
 		"workers": 8
 	},
 	"train": {
-		"batch_size": 8,
+		"batch_size": 12,
 		"data_transformer": {
 			"size_mode": "fix_size",
 			"input_size": [1024, 512],
 			"align_method": "only_pad",
 			"pad_mode": "random"
-		}
+		},
+		"out_dir": "/save_data/cityscapes"
 	},
 	"val": {
 		"batch_size": 4,
@@ -96,7 +97,6 @@
 	},
 	"lr": {
 		"base_lr": 0.003,
-		"var_lr": 5e-7,
 		"metric": "iters",
 		"lr_policy": "lambda_poly",
 		"step": {
@@ -104,9 +104,16 @@
 			"step_size": 100
 		}
 	},
+	"var_lr": {
+		"base_lr": 0.003,
+		"lr_policy": "warmup_cosine",
+		"metric": "iters",
+		"warmup_steps": 1000,
+		"t_total": 45000
+	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 2000,
+		"test_interval": 200,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -124,6 +131,10 @@
 	},
 	"loss": {
 		"loss_type": "pixel_prob_prototype_ce_loss",
+		"proto_alignment_loss": true,
+		"confidence_loss": false,
+		"init_shift": 15,
+		"init_negative_scale": 15,
 		"params": {
 			"ce_weight": [
 				0.8373, 0.918, 0.866, 1.0345, 1.0166, 0.9969, 0.9754, 1.0489, 0.8786, 1.0023,
@@ -136,31 +147,53 @@
 		}
 	},
 	"protoseg": {
-		"gamma": 0.999,
-		"num_prototype": 5,
+		"mean_gamma": 0.999,
+		"cov_gamma": 0.999,
+		"num_prototype": 10,
 		"pretrain_prototype": false,
 		"use_rmi": false,
 		"use_prototype": true,
 		"update_prototype": true,
 		"warmup_iters": 0,
-		"similarity_measure": "mls",
+		"similarity_measure": "wasserstein",
 		"use_probability": true,
 		"multi_proxy": false,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
-		"prob_ppd_weight": 1.0,
-		"prob_ppc_weight": 0.3,
-		"proj_dim": 64,
-		"var_temp": true
+		"prob_ppd_weight": 0.1,
+		"prob_ppc_weight": 0.1,
+		"confidence_loss_weight": 0.1,
+		"proj_dim": 720,
+		"use_gt_proto_learning": true
+	},
+	"uncertainty_visualizer": {
+		"vis_uncertainty": false,
+		"vis_interval_img": 1,
+		"vis_inter_iter": 1,
+		"dataset": "val"
 	},
 	"rampdownscheduler": {
 		"begin_epoch": 0,
 		"max_epoch": 300,
 		"max_value": 1.0,
 		"min_value": 0,
-		"ramp_mult": -5.0
+		"ramp_mult": 5.0
+	},
+	"GMM": {
+		"factor_n": 2,
+		"factor_c": 1,
+		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
+	},
+	"run": {
+		"server": 2
+	},
+	"ros": {
+		"use_ros": true,
+		"image_topic": "/camera1/image_color/compressed",
+		"sem_image_topic": "/sem_camera1/image_color/compressed",
+		"msg_type": "sensor_msgs/Image"
 	}
 }

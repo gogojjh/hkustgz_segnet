@@ -47,15 +47,20 @@ class ModuleRunner(object):
         Log.info('BN Type is {}.'.format(
             self.configer.get('network', 'bn_type')))
 
-    def to_device(self, *params, force_list=False):
+    def to_device(self, *params, force_list=False, name_seq=False, img_seq=False):
         if is_distributed():
             device = torch.device('cuda:{}'.format(get_rank()))
+        if img_seq:
+            device = 'cpu'
         else:
             device = torch.device(
                 'cpu' if self.configer.get('gpu') is None else 'cuda')
         return_list = list()
         for i in range(len(params)):
-            return_list.append(params[i].to(device))
+            if name_seq:
+                return_list.append(params[i][0])
+            else:
+                return_list.append(params[i].to(device))
 
         if force_list:
             return return_list
@@ -294,8 +299,8 @@ class ModuleRunner(object):
 
         return [param_group['lr'] for param_group in optimizer.param_groups]
 
-    def warm_lr(self, iters, scheduler, optimizer, backbone_list=(0, )):
         """Sets the learning rate
+    def warm_lr(self, iters, scheduler, optimizer, backbone_list=(0, )):
         # Adapted from PyTorch Imagenet example:
         # https://github.com/pytorch/examples/blob/master/imagenet/main.py
         """

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#-*- coding:utf-8 -*-
+# -*- coding:utf-8 -*-
 # Author: Donny You(youansheng@gmail.com)
 # Visualize the tensor of the computer vision.
 
@@ -27,7 +27,7 @@ class TensorVisualizer(object):
             if len(tensor.size()) != 3:
                 Log.error('Tensor size is not valid.')
                 exit(1)
-
+            # [c h w] -> [h w c]
             tensor = tensor.data.cpu().numpy().transpose(1, 2, 0)
 
         if not os.path.exists(base_dir):

@@ -51,8 +51,8 @@ class DefaultLoader(data.Dataset):
         labelmap = ImageHelper.read_image(self.label_list[index],
                                           tool=self.configer.get('data', 'image_tool'), mode='P')
         if self.configer.exists('data', 'label_list'):
-            labelmap = self._encode_label(labelmap)
 
+            labelmap = self._encode_label(labelmap)
         if self.configer.exists('data', 'reduce_zero_label'):
             labelmap = self._reduce_zero_label(labelmap)
 

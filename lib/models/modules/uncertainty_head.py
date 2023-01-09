@@ -33,6 +33,6 @@ class UncertaintyHead(nn.Module):   # feature -> log(sigma^2)
         x = self.bn2(x)
         x = self.gamma * x + self.beta
         x = torch.log(torch.exp(x) + 1e-6)
-        x = torch.sigmoid(x)
+        x = torch.sigmoid(x)  # ! log^sigma
 
         return x  # [b c h w]

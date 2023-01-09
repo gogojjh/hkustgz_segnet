@@ -37,6 +37,7 @@ from segmentor.tools.optim_scheduler import OptimScheduler
 from segmentor.tools.data_helper import DataHelper
 from segmentor.tools.evaluator import get_evaluator
 from lib.utils.distributed import get_world_size, get_rank, is_distributed
+from lib.vis.uncertainty_visualizer import UncertaintyVisualizer
 # from mmcv.cnn import get_model_complexity_info
 from ptflops import get_model_complexity_info
 
@@ -69,6 +70,7 @@ class Trainer(object):
         self.val_loader = None
         self.optimizer = None
         self.scheduler = None
+        self.var_scheduler = None
         self.running_score = None
 
         self._init_model()
@@ -91,16 +93,20 @@ class Trainer(object):
 
         self.seg_net = self.module_runner.load_net(self.seg_net)
 
+        var_params_group = None
         Log.info('Params Group Method: {}'.format(
             self.configer.get('optim', 'group_method')))
         if self.configer.get('optim', 'group_method') == 'decay':
             params_group = self.group_weight(self.seg_net)
         else:
             assert self.configer.get('optim', 'group_method') is None
-            params_group = self._get_parameters()
+            if self.configer.exists('var_lr', 'lr_policy'):
+                params_group, var_params_group = self._get_parameters()
+            else:
+                params_group = self._get_parameters()
 
-        self.optimizer, self.scheduler = self.optim_scheduler.init_optimizer(
-            params_group)
+        self.optimizer, self.var_optimizer, self.scheduler, self.var_scheduler = self.optim_scheduler.init_optimizer(
+            params_group, var_params_group)
 
         self.train_loader = self.data_loader.get_trainloader()
         self.val_loader = self.data_loader.get_valloader()
@@ -109,6 +115,8 @@ class Trainer(object):
             self.pixel_loss = self.module_runner.to_device(self.pixel_loss)
 
         self.with_proto = True if self.configer.exists("protoseg") else False
+
+        self.uncer_visualizer = UncertaintyVisualizer(configer=self.configer)
 
     @staticmethod
     def group_weight(module):
@@ -151,23 +159,33 @@ class Trainer(object):
             else:
                 nbb_lr.append(value)
 
-        if self.configer.exists('lr', 'var_lr'):
+        # if self.configer.exists('lr', 'var_lr'):
+            # params = [{'params': bb_lr, 'lr': self.configer.get('lr', 'base_lr')},
+            #           {'params': fcn_lr, 'lr': self.configer.get(
+            #               'lr', 'base_lr') * 10},
+            #           {'params': nbb_lr, 'lr': self.configer.get(
+            #               'lr', 'base_lr') * self.configer.get('lr', 'nbb_mult')},
+            #           {'params': var_lr, 'lr': self.configer.get('var_lr', 'base_lr')}]
+            # Log.info('base lr for uncertainty head: {}'.format(
+            #     self.configer.get('lr', 'var_lr')))
+        if self.configer.exists('var_lr', 'lr_policy'):
             params = [{'params': bb_lr, 'lr': self.configer.get('lr', 'base_lr')},
                       {'params': fcn_lr, 'lr': self.configer.get(
                           'lr', 'base_lr') * 10},
                       {'params': nbb_lr, 'lr': self.configer.get(
-                          'lr', 'base_lr') * self.configer.get('lr', 'nbb_mult')},
-                      {'params': var_lr, 'lr': self.configer.get('lr', 'var_lr')}]
-            Log.info('lr for uncertainty head: {}'.format(
-                self.configer.get('lr', 'var_lr')))
+                          'lr', 'base_lr') * self.configer.get('lr', 'nbb_mult')}]
+            var_params = [
+                {'params': var_lr, 'lr': self.configer.get('var_lr', 'base_lr')}]
+            Log.info('base lr for uncertainty head: {}'.format(
+                self.configer.get('var_lr', 'base_lr')))
+            return params, var_params
         else:
             params = [{'params': bb_lr, 'lr': self.configer.get('lr', 'base_lr')},
                       {'params': fcn_lr, 'lr': self.configer.get(
                           'lr', 'base_lr') * 10},
                       {'params': nbb_lr, 'lr': self.configer.get(
                           'lr', 'base_lr') * self.configer.get('lr', 'nbb_mult')}]
-
-        return params
+            return params
 
     def __train(self):
         """
@@ -188,11 +206,18 @@ class Trainer(object):
             self.train_loader.sampler.set_epoch(self.configer.get('epoch'))
 
         for i, data_dict in enumerate(self.train_loader):
+            self.configer.update(('phase',), 'train')
             self.optimizer.zero_grad()
+            self.var_optimizer.zero_grad()
             if self.configer.get('lr', 'metric') == 'iters':
                 self.scheduler.step(self.configer.get('iters'))
             else:
                 self.scheduler.step(self.configer.get('epoch'))
+
+            if self.configer.get('var_lr', 'metric') == 'iters':
+                self.var_scheduler.step(self.configer.get('iters'))
+            else:
+                self.var_scheduler.step(self.configer.get('epoch'))
 
             if self.configer.get('lr', 'is_warm'):
                 self.module_runner.warm_lr(
@@ -236,10 +261,17 @@ class Trainer(object):
                 with torch.cuda.amp.autocast():
                     loss = self.pixel_loss(outputs, targets)
                     backward_loss = loss['loss']
-                    seg_loss = reduce_tensor(loss['seg_loss']) / get_world_size()
-                    prob_ppc_loss = reduce_tensor(loss['prob_ppc_loss']) / get_world_size()
+                    seg_loss = reduce_tensor(
+                        loss['seg_loss']) / get_world_size()
+                    prob_ppc_loss = reduce_tensor(
+                        loss['prob_ppc_loss']) / get_world_size()
+                    prob_ppd_loss = reduce_tensor(
+                        loss['prob_ppd_loss']) / get_world_size()
                     display_loss = reduce_tensor(
                         backward_loss) / get_world_size()
+                    if self.configer.get('loss', 'confidence_loss'):
+                        confidence_loss = reduce_tensor(
+                            loss['confidence_loss']) / get_world_size()
             else:
                 # backward_loss = display_loss = self.pixel_loss(
                 #     outputs, targets)
@@ -249,18 +281,26 @@ class Trainer(object):
                 backward_loss = display_loss = loss_tuple['loss']
                 seg_loss = loss_tuple['seg_loss']
                 prob_ppc_loss = loss_tuple['prob_ppc_loss']
+                prob_ppd_loss = loss_tuple['prob_ppd_loss']
 
             self.train_losses.update(display_loss.item(), batch_size)
             self.loss_time.update(time.time() - loss_start_time)
 
-            backward_start_time = time.time()
+            if get_rank() == 0:
+                wandb.log({"Epoch": self.configer.get('epoch'),
+                           "Train Iteration": self.configer.get('iters'),
+                           "Loss": backward_loss,
+                           "seg_loss": seg_loss,
+                           "prob_ppc_loss": prob_ppc_loss,
+                           "prob_ppd_loss": prob_ppc_loss})
 
-            wandb.log({"pixel loss": backward_loss})
+            backward_start_time = time.time()
 
             # backward_loss.backward()
             # self.optimizer.step()
             scaler.scale(backward_loss).backward()
             scaler.step(self.optimizer)
+            scaler.step(self.var_optimizer)
             scaler.update()
 
             self.backward_time.update(time.time() - backward_start_time)
@@ -273,24 +313,49 @@ class Trainer(object):
             # Print the log info & reset the states.
             if self.configer.get('iters') % self.configer.get('solver', 'display_iter') == 0 and \
                     (not is_distributed() or get_rank() == 0):
-                Log.info(
-                    'Train Epoch: {0}\tTrain Iteration: {1}\t'
-                    'Time {batch_time.sum:.3f}s / {2}iters, ({batch_time.avg:.3f})\t'
-                    'Forward Time {foward_time.sum:.3f}s / {2}iters, ({foward_time.avg:.3f})\t'
-                    'Backward Time {backward_time.sum:.3f}s / {2}iters, ({backward_time.avg:.3f})\t'
-                    'Loss Time {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
-                    'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
-                    'Learning rate = {3}\tLoss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f}'.
-                    format(
-                        self.configer.get('epoch'),
-                        self.configer.get('iters'),
-                        self.configer.get('solver', 'display_iter'),
-                        self.module_runner.get_lr(self.optimizer),
-                        batch_time=self.batch_time, foward_time=self.foward_time,
-                        backward_time=self.backward_time, loss_time=self.loss_time,
-                        data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
-                        prob_ppc_loss=prob_ppc_loss))
+                if self.configer.get('loss', 'confidence_loss'):
+                    Log.info(
+                        'Train Epoch: {0}\tTrain Iteration: {1}\t'
+                        'Time {batch_time.sum:.3f}s / {2}iters, ({batch_time.avg:.3f})\t'
+                        'Forward Time {foward_time.sum:.3f}s / {2}iters, ({foward_time.avg:.3f})\t'
+                        'Backward Time {backward_time.sum:.3f}s / {2}iters, ({backward_time.avg:.3f})\t'
+                        'Loss Time {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
+                        'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
+                        'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
+                        'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
+                        'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f}, prob_ppd_loss={prob_ppd_loss:.5f}, confidence_loss={confidence_loss:.5f}'.
+                        format(
+                            self.configer.get('epoch'),
+                            self.configer.get('iters'),
+                            self.configer.get('solver', 'display_iter'),
+                            self.module_runner.get_lr(self.optimizer),
+                            self.module_runner.get_lr(self.var_optimizer),
+                            batch_time=self.batch_time, foward_time=self.foward_time,
+                            backward_time=self.backward_time, loss_time=self.loss_time,
+                            data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
+                            prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss,
+                            confidence_loss=confidence_loss))
+                else:
+                    Log.info(
+                        'Train Epoch: {0}\tTrain Iteration: {1}\t'
+                        'Time {batch_time.sum:.3f}s / {2}iters, ({batch_time.avg:.3f})\t'
+                        'Forward Time {foward_time.sum:.3f}s / {2}iters, ({foward_time.avg:.3f})\t'
+                        'Backward Time {backward_time.sum:.3f}s / {2}iters, ({backward_time.avg:.3f})\t'
+                        'Loss Time {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
+                        'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
+                        'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
+                        'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
+                        'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f}, prob_ppd_loss={prob_ppd_loss:.5f}'.
+                        format(
+                            self.configer.get('epoch'),
+                            self.configer.get('iters'),
+                            self.configer.get('solver', 'display_iter'),
+                            self.module_runner.get_lr(self.optimizer),
+                            self.module_runner.get_lr(self.var_optimizer),
+                            batch_time=self.batch_time, foward_time=self.foward_time,
+                            backward_time=self.backward_time, loss_time=self.loss_time,
+                            data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
+                            prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss))
 
                 self.batch_time.reset()
                 self.foward_time.reset()
@@ -323,6 +388,8 @@ class Trainer(object):
         """
           Validation function during the train phase.
         """
+        self.configer.update(('phase',), 'val')
+
         self.seg_net.eval()
         self.pixel_loss.eval()
         start_time = time.time()
@@ -338,6 +405,9 @@ class Trainer(object):
             if self.configer.get('dataset') == 'lip':
                 (inputs, targets, inputs_rev, targets_rev), batch_size = self.data_helper.prepare_data(
                     data_dict, want_reverse=True)
+            elif self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
+                (inputs, targets, names,
+                 imgs), batch_size = self.data_helper.prepare_data(data_dict)
             else:
                 (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
 
@@ -395,11 +465,45 @@ class Trainer(object):
                         del outputs
 
                 else:
-                    outputs = self.seg_net(*inputs)
+                    if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
+                        pretrain_prototype = True if self.configer.get(
+                            'iters') < self. configer.get('protoseg', 'warmup_iters') else False
+                        outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...],
+                                               pretrain_prototype=pretrain_prototype)
+                    else:
+                        outputs = self.seg_net(*inputs)
 
                     if not is_distributed():
                         outputs = self.module_runner.gather(outputs)
                     if isinstance(outputs, dict):
+
+                        # ============== vis uncertainty and error map ==============#
+                        if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
+                            # [b h w] [1, 256, 512]
+                            # uncertainty = outputs['uncertainty']
+                            h, w = targets.size(1), targets.size(2)
+                            uncertainty = outputs['seg']  # [b c h w]
+                            uncertainty = F.interpolate(
+                                input=uncertainty, size=(h, w),
+                                mode='bilinear', align_corners=True)
+                            if (self.configer.get('iters') % (self.configer.get(
+                                    'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
+                                vis_interval_img = self.configer.get(
+                                    'uncertainty_visualizer', 'vis_interval_img')
+                                batch_size = uncertainty.shape[0]
+                                if vis_interval_img <= batch_size:
+                                    for i in range(0, vis_interval_img, batch_size):
+                                        uncer_img = torch.amax(uncertainty[i], dim=0)
+                                        self.uncer_visualizer.vis_uncertainty(
+                                            uncer_img, name='{}'.format(names[i]))
+
+                                        pred = outputs['seg']  # [b c h w]
+                                        pred = torch.argmax(
+                                            pred, dim=1)  # [b h w]
+
+                                        self.seg_visualizer.vis_error(
+                                            imgs[i], pred[i], targets[i], names[i])
+
                         outputs = outputs['seg']
                     self.evaluator.update_score(outputs, data_dict['meta'])
 

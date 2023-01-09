@@ -15,15 +15,46 @@ import torch.nn.functional as F
 from lib.utils.tools.logger import Logger as Log
 from lib.loss.loss_helper import FSCELoss
 from lib.utils.tools.rampscheduler import RampdownScheduler
+from einops import rearrange, repeat
 
 
-# todo: class-wise contrastive loss
-# todo "Probabilistic Representations for Video Contrastive Learning"
-# todo: video loss
+class ConfidenceLoss(nn.Module, ABC):
+    ''' 
+    Video Object Segmentation with Adaptive Feature Bank and Uncertain-Region Refinement
+    '''
+
+    def __init__(self, configer):
+        super(ConfidenceLoss, self).__init__()
+
+        self.configer = configer
+
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
+
+    def forward(self, sim_mat):
+        # sim_mat: [n (c m)]
+        if self.configer.get(
+                'protoseg', 'similarity_measure') == 'fast_mls' or self.configer.get(
+                'protoseg', 'similarity_measure') == 'mls':
+            sim_mat = torch.exp(sim_mat)
+        score_top, _ = sim_mat.topk(k=2, dim=1)
+        confidence = score_top[:, 0] / score_top[:, 1]
+        confidence = torch.exp(1 - confidence).mean(-1)
+
+        return confidence
+
+
 class ProbPPCLoss(nn.Module, ABC):
     """ 
-    Pixel-wise probabilistic contrastive loss (instanse-wise contrastive loss)
-    Probability masure: mutual likelihood loss
+    Pixel-wise probabilistic contrastive loss.
     """
 
     def __init__(self, configer):
@@ -38,15 +69,71 @@ class ProbPPCLoss(nn.Module, ABC):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
-    def forward(self, contrast_logits, contrast_target, proto_var=None):
-        # Use var as temperature of contrastive loss
-        if proto_var is not None:
-            contrast_logits = contrast_logits / proto_var
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
+
+    def forward(self, contrast_logits, contrast_target):
+        contrast_logits = self.proto_norm(contrast_logits)
 
         prob_ppc_loss = F.cross_entropy(
             contrast_logits, contrast_target.long(), ignore_index=self.ignore_label)
 
         return prob_ppc_loss
+
+
+class KLLoss(nn.Module, ABC):
+    def __init__(self, configer):
+        super(KLLoss, self).__init__()
+
+        self.configer = configer
+
+    def forward(self, proto_mean, proto_var):
+        kl_loss = 0.5 * torch.sum(
+            (torch.square(proto_mean) + proto_var - torch.log(proto_var) - 1),
+            dim=-1).mean()
+
+        return kl_loss
+
+
+class AleatoricUncertaintyLoss(nn.Module, ABC):
+    """ 
+    Geometry and Uncertainty in Deep Learning for Computer Vision
+    """
+
+    def __init__(self, configer):
+        super(AleatoricUncertaintyLoss, self).__init__()
+        self.configer = configer
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+
+    def forward(self, x_var, target, pred):  # x_var: [b 1 h w]
+        x_var = F.interpolate(
+            input=x_var, size=(target.shape[1],
+                               target.shape[2]),
+            mode='nearest')  # [b 1 h_ori w_ori]
+        x_var = x_var.squeeze(1)  # [b h w]
+        x_var = rearrange(x_var, 'b h w -> (b h w)')
+
+        pred = torch.argmax(pred, 1)  # [b h w]
+        pred = rearrange(pred, 'b h w -> (b h w)')
+        target = rearrange(target, 'b h w -> (b h w)')
+
+        # ignore the -1 label pixel
+        ignore_mask = (target != self.ignore_label)
+        target = target[ignore_mask]
+        pred = pred[ignore_mask]
+        x_var = x_var[ignore_mask]
+
+        #! change l2-norm into l1-norm to avoid large outlier
+        aleatoric_uncer_loss = torch.mean(
+            (0.5 * torch.abs(target.float() - pred.float()) / x_var + 0.5 * torch.log(x_var)))
+
+        return aleatoric_uncer_loss
 
 
 class ProbPPDLoss(nn.Module, ABC):
@@ -61,7 +148,7 @@ class ProbPPDLoss(nn.Module, ABC):
 
         self.ignore_label = -1
         if self.configer.exists(
-                'loss', 'params') and 'ce_ignore_incccdex' in self.configer.get(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
                 'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
@@ -72,14 +159,18 @@ class ProbPPDLoss(nn.Module, ABC):
         contrast_target = contrast_target[contrast_target != self.ignore_label]
 
         logits = torch.gather(contrast_logits, 1,
-                              contrast_target[:, None].long())
+                              contrast_target[:, None].long()).squeeze(-1)
 
-        # exp(-log_likelihood)
-        if logits.shape[0] > 0:
-            prob_ppd_loss = torch.mean(torch.exp(-logits))  # torch.exp(negative MLS)
-        else:
-            print('0 in logits')
+        if logits.shape[0] == 0:
             prob_ppd_loss = 0
+            return prob_ppd_loss
+
+        if self.configer.get(
+                'protoseg', 'similarity_measure') == 'fast_mls' or self.configer.get(
+                'protoseg', 'similarity_measure') == 'mls':
+            prob_ppd_loss = torch.mean(torch.exp(-logits))
+        else:
+            prob_ppd_loss = torch.mean(-logits)
 
         return prob_ppd_loss
 
@@ -105,9 +196,10 @@ class PixelProbContrastLoss(nn.Module, ABC):
         Log.info('ignore_index: {}'.format(ignore_index))
 
         self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
-        # self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
+        self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
 
         self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
+
         self.prob_ppd_criterion = ProbPPDLoss(configer=configer)
         self.seg_criterion = FSCELoss(configer=configer)
 
@@ -121,6 +213,10 @@ class PixelProbContrastLoss(nn.Module, ABC):
             ramp_mult=self.configer.get('rampdownscheduler', 'ramp_mult'),
             configer=configer)
 
+        if self.configer.get('loss', 'confidence_loss'):
+            self.confidence_loss = ConfidenceLoss(configer=configer)
+            self.confidence_loss_weight = self.configer.get('protoseg', 'confidence_loss_weight')
+
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
 
@@ -129,7 +225,6 @@ class PixelProbContrastLoss(nn.Module, ABC):
     def forward(self, preds, target):
         h, w = target.size(1), target.size(2)
 
-        # todo bug: fix preds[0] to preds
         if isinstance(preds, dict):
             assert 'seg' in preds
             assert 'logits' in preds
@@ -139,31 +234,39 @@ class PixelProbContrastLoss(nn.Module, ABC):
             contrast_logits = preds['logits']
             contrast_target = preds['target']  # prototype selection [n]
 
-            proto_var = None
-            if 'proto_var' in preds:
-                proto_var = preds['proto_var']  # [n]
-            prob_ppc_loss = self.prob_ppc_criterion(
-                contrast_logits, contrast_target, proto_var)
+            prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
 
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
 
             pred = F.interpolate(input=seg, size=(
                 h, w), mode='bilinear', align_corners=True)
+
             seg_loss = self.seg_criterion(pred, target)
 
-            prob_ppc_weight = self.get_uncer_loss_weight()
+            # prob_ppc_weight = self.get_uncer_loss_weight()
 
-            if prob_ppd_loss != 0:
-                return {'loss': seg_loss + prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss}
-            else:
-                return {'loss': seg_loss + prob_ppc_weight * prob_ppc_loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss}
+            if prob_ppd_loss == 0:
+                prob_ppd_loss = seg_loss * 0
+
+            if self.configer.get('loss', 'confidence_loss'):
+                confidence_loss = self.confidence_loss(contrast_logits)
+
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
+                    prob_ppd_loss + self.confidence_loss_weight * confidence_loss
+
+                return {'loss': loss,
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'confidence_loss': confidence_loss}
+
+            loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
+
+            return {'loss': loss,
+                    'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(
             h, w), mode='bilinear', align_corners=True)
+
         seg_loss = self.seg_criterion(pred, target)
 
         return seg_loss

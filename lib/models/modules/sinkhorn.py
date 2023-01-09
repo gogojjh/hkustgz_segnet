@@ -1,6 +1,5 @@
 import torch
 import torch.nn.functional as F
-import ot
 
 
 def sinkhorn(M, r=1.0, c=1.0, lamda=0.005, epsilon=1e-8):
@@ -46,41 +45,27 @@ def distributed_sinkhorn(out, sinkhorn_iterations=3, epsilon=0.05):
     # make the mat element are larger than 0
     sum_L = torch.sum(L)
     L /= sum_L  # mu_s, mu_t constraint
-    # err = 1
-    # to compute L (cost matrix) while updating mu and gamma
-    # i = 0
-    # u_prev = torch.zeros_like(L)
-    # while err >= 1e-8:
-    #     # to keep mat element equal to 0/1
-    #     L /= torch.sum(L, dim=1, keepdim=True)  # scale the row
-    #     L /= K  # u(l+1)
-    #     err = torch.max(torch.abs(L - u_prev))
-
-    #     u_prev = L
-
-    #     L /= torch.sum(L, dim=0, keepdim=True)  # scale the column
-    #     L /= B  # v(l+1)
-
-    #     i += 1
-    # print('iter: {}'.format(i))
 
     for _ in range(sinkhorn_iterations):
+        # normalize each row: total weight per component must be 1/K
         L /= torch.sum(L, dim=1, keepdim=True)
         L /= K
 
+        # normalize each column: total weight per samle must be 1/B
         L /= torch.sum(L, dim=0, keepdim=True)
         L /= B
 
-    L *= B
+    L *= B  # the columns must sum to 1 so that L is an assignment
     L = L.t()
 
     # select index of largest proto in this cls
     indexs = torch.argmax(L, dim=1)
-    # L = torch.nn.functional.one_hot(indexs, num_classes=L.shape[1]).float()
+    L = torch.nn.functional.one_hot(indexs, num_classes=L.shape[1]).float()
+
     # use gumbel_softmax to replace argmax in backpropagation
     # argmax: y = argmax(delta)
     # y = argmax(log(delta) + G): G (gumbel distribution) = -log(-log(delta))
-    L = F.gumbel_softmax(L, tau=0.5, hard=True)  # make elements 0 or 1
+    # L = F.gumbel_softmax(L, tau=0.5, hard=True)  # make elements 0 or 1
 
     return L, indexs
 
@@ -151,11 +136,3 @@ def pot_sinkhorn(out):
     result = ot.sinkhorn(a=a, b=b, M=out, reg=50)
 
     return result
-
-
-if __name__ == "__main__":
-    out = torch.randn(100, 100).cuda()
-    result1 = distributed_sinkhorn(out)
-    a = torch.ones((out.shape[0])).cuda()
-    b = torch.ones((out.shape[0])).cuda()
-    result2 = ot.sinkhorn(a=a, b=b, M=out, reg=0.05)
