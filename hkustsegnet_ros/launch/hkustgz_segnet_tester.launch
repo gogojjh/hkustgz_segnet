@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="hkustgz_segnet" type="run_h_48_d_4_prob_proto.sh" name="hkustgz_segnet_node" output="screen"/>
+</launch>

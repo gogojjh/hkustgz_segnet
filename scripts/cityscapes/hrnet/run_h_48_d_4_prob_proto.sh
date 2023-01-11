@@ -115,6 +115,22 @@ elif [ "$1"x == "test"x ]; then
                          --out_dir ${SAVE_DIR}${CHECKPOINTS_NAME}_test_ms
   fi
 
+elif [ "$1"x == "test_ros"x ]; then
+  if [ "$5"x == "ss"x ]; then
+    echo "[single scale] test"
+    python3 -u /hkustsegnet_ros/inference.py --configs ${CONFIGS} --drop_last y --data_dir ${DATA_DIR} \
+                         --backbone ${BACKBONE} --model_name ${MODEL_NAME} --checkpoints_name ${CHECKPOINTS_NAME} \
+                         --phase test --gpu 0 1 2 3 --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_latest.pth \
+                         --test_dir ${DATA_DIR}/test --log_to_file n \
+                         --out_dir ${SAVE_DIR}${CHECKPOINTS_NAME}_test_ss
+  else
+    echo "[multiple scale + flip] test"
+    python3 -u /hkustsegnet_ros/inference.py --configs ${CONFIGS_TEST} --drop_last y --data_dir ${DATA_DIR} \
+                         --backbone ${BACKBONE} --model_name ${MODEL_NAME} --checkpoints_name ${CHECKPOINTS_NAME} \
+                         --phase test --gpu 0 1 2 3 --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_latest.pth \
+                         --test_dir ${DATA_DIR}/test --log_to_file n \
+                         --out_dir ${SAVE_DIR}${CHECKPOINTS_NAME}_test_ms
+  fi
 
 else
   echo "$1"x" is invalid..."
