@@ -31,7 +31,7 @@ class DefaultLoader(data.Dataset):
         self.aug_transform = aug_transform
         self.img_transform = img_transform
         self.label_transform = label_transform
-        self.img_list, self.label_list, self.name_list = self.__list_dirs(
+        self.img_list, self.label_list, self.name_list, edge_label_list = self.__list_dirs(
             root_dir, dataset)
         size_mode = self.configer.get(dataset, 'data_transformer')['size_mode']
         self.is_stack = size_mode != 'diverse_size'
@@ -71,10 +71,6 @@ class DefaultLoader(data.Dataset):
 
         if self.label_transform is not None:
             labelmap = self.label_transform(labelmap)
-            
-        #! load edge map if use_boundary is set as True
-        if self.use_boundary:
-            edgemap = 
 
         meta = dict(
             ori_img_size=img_size,
@@ -121,6 +117,7 @@ class DefaultLoader(data.Dataset):
         img_list = list()
         label_list = list()
         name_list = list()
+        edge_label_list = list()
         image_dir = os.path.join(root_dir, dataset, 'image')
         label_dir = os.path.join(root_dir, dataset, 'label')
         edge_label_dir = os.path.join(root_dir, dataset, 'label_edge_void')
@@ -167,12 +164,14 @@ class DefaultLoader(data.Dataset):
                 Log.error('Label Path: {} {} not exists.'.format(
                     label_path, img_path))
                 continue
-            #todo
-            if self.use_boundary and not os.path.
+            if self.use_boundary and not os.path.exists(edge_label_path):
+                Log.error('Edge Label Path: {} not exists.'.format(edge_label_path))
+                continue
 
             img_list.append(img_path)
             label_list.append(label_path)
             name_list.append(image_name)
+            edge_label_list.append(edge_label_path)
 
         if dataset == 'train' and self.configer.get('data', 'include_val'):
             Log.info("Use validation dataset for training.")
@@ -292,7 +291,7 @@ class DefaultLoader(data.Dataset):
                 label_list.append(label_path)
                 name_list.append(image_name)
 
-        return img_list, label_list, name_list
+        return img_list, label_list, name_list, edge_label_list
 
 
 class CSDataTestLoader(data.Dataset):
