@@ -34,7 +34,7 @@
 		"out_dir": "/save_data/cityscapes",
 		"data_transformer": {
 			"size_mode": "fix_size",
-			"input_size": [2048, 1024],
+			"input_size": [1024, 768],
 			"align_method": "only_pad"
 		}
 	},
@@ -189,5 +189,14 @@
 	},
 	"run": {
 		"server": 2
+<<<<<<< HEAD
+=======
+	},
+	"ros": {
+		"use_ros": true,
+		"image_topic": "/camera1/image_color/compressed",
+		"sem_image_topic": "/sem_camera1/image_color/compressed",
+		"msg_type": "sensor_msgs/CompressedImage"
+>>>>>>> 67517f3e4aadd3b6dc1c97fc0b85199041a7cfe5
 	}
 }

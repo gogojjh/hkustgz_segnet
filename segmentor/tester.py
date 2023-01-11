@@ -16,9 +16,7 @@ from __future__ import print_function
 import os
 import time
 import timeit
-import pdb
 import cv2
-import scipy
 import collections
 
 import torch
@@ -75,8 +73,13 @@ class Tester(object):
             self.test_loader = self.seg_data_loader.get_testloader()
             self.test_size = len(self.test_loader) * self.configer.get('test', 'batch_size')
         else:
+<<<<<<< HEAD
             self.test_loader = self.seg_data_loader.get_valloader()
             self.test_size = len(self.test_loader) * self.configer.get('val', 'batch_size')
+=======
+            self.test_loader = None
+            self.test_size = 1
+>>>>>>> 67517f3e4aadd3b6dc1c97fc0b85199041a7cfe5
 
         self.seg_net.eval()
 
@@ -90,7 +93,7 @@ class Tester(object):
 
         return label_dst
 
-    def test(self, data_loader=None):
+    def test(self, ros_processor=None, data_loader=None):
         """
           Validation function during the train phase.
         """
@@ -132,6 +135,7 @@ class Tester(object):
                 X /= sum_prob
                 return X
 
+        sem_img_ros = []
         for j, data_dict in enumerate(self.test_loader):
             inputs = data_dict['img']
             names = data_dict['name']
@@ -222,6 +226,18 @@ class Tester(object):
                         FileHelper.make_dirs(vis_path, is_file=True)
                         ImageHelper.save(color_img_, save_path=vis_path)
 
+<<<<<<< HEAD
+=======
+                    if self.use_ros:
+                        ''' 
+                        Get cv2 image, with each channel indicating:
+                        - semantic prediction
+                        '''
+                        sem_img_ = ImageHelper.convert_from_image_to_cv2(color_img_)
+                        sem_img_ros.append(sem_img_)
+                        
+
+>>>>>>> 67517f3e4aadd3b6dc1c97fc0b85199041a7cfe5
                     # # visualize
                     # from lib.datasets.tools.transforms import DeNormalize
                     # mean = self.configer.get('normalize', 'mean')
@@ -287,6 +303,9 @@ class Tester(object):
 
         # Print the log info & reset the states.
         Log.info('Test Time {batch_time.sum:.3f}s'.format(batch_time=self.batch_time))
+        
+        if self.use_ros:
+            return sem_img_ros
 
     def offset_test(self, inputs, offset_h_maps, offset_w_maps, scale=1):
         if isinstance(inputs, torch.Tensor):

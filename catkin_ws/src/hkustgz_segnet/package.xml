@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>openpcdet</name>
+  <name>hkustgz_segnet</name>
   <version>0.0.0</version>
-  <description>The openpcdet package</description>
+  <description>The hkustgz_segnet package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->

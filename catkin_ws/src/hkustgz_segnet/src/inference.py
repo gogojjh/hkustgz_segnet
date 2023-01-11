@@ -2,22 +2,26 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import argparse
-import os
-import random
-import time
-from datetime import date
-
-import torch
-import torch.backends.cudnn as cudnn
-import wandb
-import warnings
+import sys
+sys.path.append('/home/hkustgz_segnet')
 
 from lib.utils.tools.logger import Logger as Log
 from lib.utils.tools.configer import Configer
-from lib.utils.distributed import get_world_size, get_rank, is_distributed
+from segmentor.tester import Tester
+import rospy
+import warnings
+import torch.backends.cudnn as cudnn
+import torch
+from datetime import date
+import time
+import random
+import os
+import argparse
+import warnings
 
 warnings.filterwarnings('ignore')
+
+CONFIG_PATH = '/home/hkustgz_segnet/configs/cityscapes/H_48_D_4_prob_proto.json'
 
 
 def str2bool(v):
@@ -220,35 +224,22 @@ if __name__ == "__main__":
         elif configer.get('phase') == 'test_offset':
             from segmentor.tester_offset import Tester
             model = Tester(configer)
+        elif configer.get('phase') == 'test_ros':
+            from ros_processor import ROSProcessor
+            tester = Tester(configer)
+            model = ROSProcessor(configer, tester)
     else:
         Log.error('Method: {} is not valid.'.format(configer.get('task')))
         exit(1)
 
-    wb_proj_name = configer.get('checkpoints', 'checkpoints_name')
-    today = date.today()
-    wb_name = today.strftime("%d/%m/%Y") + '_server' + str(configer.get('run', 'server'))
+    if configer.get('phase') == 'test_ros':
+        rospy.init_node('hkustgz_segnet_node')
+        # call callback and pub semantic image topic
+        model.init_ros()
+        
+        rospy.spin()
 
-    if is_distributed():
-        if get_rank() == 0:
-            wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
-                       name=wb_name, mode=configer.get('wandb', 'mode'),
-                       settings=wandb.Settings(start_method='fork'))
-            wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
-            wandb.save(args_parser.configs)
-
-    else:
-        wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
-                   name=wb_name, mode=configer.get('wandb', 'mode'),
-                   settings=wandb.Settings(start_method='fork'))
-        wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
-        wandb.save(args_parser.configs)
-
-    if configer.get('phase') == 'train':
-        model.train()
-        wandb.finish()
-    elif configer.get('phase').startswith('test') and configer.get('network', 'resume') is not None:
-        model.test()
-        wandb.finish()
+        # wandb.finish()
     else:
         Log.error('Phase: {} is not valid.'.format(configer.get('phase')))
         exit(1)

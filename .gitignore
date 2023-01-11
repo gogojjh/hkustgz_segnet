@@ -7,7 +7,14 @@
 *.label
 *.pt
 *.pth
+*.log
 
 wandb
 log
 .vscode
+catkin_ws/build
+catkin_ws/devel
+catkin_ws/logs
+catkin_ws/.vscode
+catkin_ws/.catkin_tools
+
