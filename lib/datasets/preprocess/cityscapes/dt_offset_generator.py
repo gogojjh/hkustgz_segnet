@@ -13,7 +13,11 @@ import multiprocessing as mp
 import numpy.linalg as linalg
 import matplotlib.pyplot as plt
 import multiprocessing.pool as mpp
-from scipy.ndimage.morphology import distance_transform_edt, distance_transform_cdt
+# from scipy.ndimage.morphology import distance_transform_edt, distance_transform_cdt
+from scipy.ndimage import distance_transform_edt, distance_transform_cdt
+
+import matplotlib.pyplot as plt
+plt.switch_backend('agg')
 
 script_path = osp.abspath(osp.join(osp.dirname(__file__)))
 os.chdir(osp.join(script_path, '..', '..', '..', '..'))
@@ -109,24 +113,43 @@ def process(inp):
             {"dir_deg": dir_deg_map, "depth": depth_map, 'deg_reduce': deg_reduce},
             do_compression=False,
         )
+        
+def flatten_list(ori_list):
+    flattened_list = []
+    for i in ori_list:
+        if isinstance(i, list):
+            for m in i:
+                assert isinstance(m, tuple)
+                flattened_list.append(m)
+    
+    return flattened_list
+            
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--datadir", dest='datadir', default=osp.join(DATA_ROOT, 'cityscapes'))
-parser.add_argument("--outname", default='offset_gt/dt_offset')
-parser.add_argument('--split', nargs='+', default=['val', 'train'])
-parser.add_argument("--ksize", type=int, default=5)
-parser.add_argument('--metric', default='euc', choices=['euc', 'taxicab'])
-args = parser.parse_args()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--datadir", dest='datadir', default=osp.join(DATA_ROOT, 'cityscapes'))
+    parser.add_argument("--outname", default='offset_gt/dt_offset')
+    parser.add_argument('--split', nargs='+', default=['val', 'train'])
+    parser.add_argument("--ksize", type=int, default=5)
+    parser.add_argument('--metric', default='euc', choices=['euc', 'taxicab'])
+    args = parser.parse_args()
 
-ksize = args.ksize
+    ksize = args.ksize
 
-sobel_x, sobel_y = (sobel_kernel((ksize, ksize), i) for i in (0, 1))
-sobel_ker = torch.cat([sobel_y, sobel_x], dim=0).view(2, 1, ksize, ksize).float()
+    sobel_x, sobel_y = (sobel_kernel((ksize, ksize), i) for i in (0, 1))
+    sobel_ker = torch.cat([sobel_y, sobel_x], dim=0).view(2, 1, ksize, ksize).float()
 
-for dataset in args.split:
-    indir = osp.join(args.datadir, dataset, 'label')
-    outdir = osp.join(args.datadir, dataset, args.outname)
-    os.makedirs(outdir, exist_ok=True)
-    args_to_apply = [(indir, outdir, osp.basename(basename)) for basename in glob(osp.join(indir, "*.png"))]
-    mpp.Pool(processes=mp.cpu_count() // 2).map(process, args_to_apply)
+    for dataset in args.split:
+        indir = osp.join(args.datadir, dataset, 'label')
+        outdir = osp.join(args.datadir, dataset, args.outname)
+        os.makedirs(outdir, exist_ok=True)
+        # args_to_apply = [(indir, outdir, osp.basename(basename)) for basename in glob(osp.join(indir, "*/*.png"))]
+        args_to_apply = []
+        for seq in os.listdir(indir):
+            seq_indir = os.path.join(indir, seq)
+            args_to_apply.append([(seq_indir, outdir, osp.basename(basename)) for basename in glob(osp.join(indir, "*/*.png"))])
+        # args_to_apply = [x for x in args_to_apply]
+        args_to_apply = flatten_list(args_to_apply)
+            
+        mpp.Pool(processes=mp.cpu_count() // 2).map(process, args_to_apply)
 
