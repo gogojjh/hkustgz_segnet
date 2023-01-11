@@ -144,12 +144,15 @@ if __name__ == '__main__':
         outdir = osp.join(args.datadir, dataset, args.outname)
         os.makedirs(outdir, exist_ok=True)
         # args_to_apply = [(indir, outdir, osp.basename(basename)) for basename in glob(osp.join(indir, "*/*.png"))]
-        args_to_apply = []
-        for seq in os.listdir(indir):
-            seq_indir = os.path.join(indir, seq)
-            args_to_apply.append([(seq_indir, outdir, osp.basename(basename)) for basename in glob(osp.join(indir, "*/*.png"))])
-        # args_to_apply = [x for x in args_to_apply]
-        args_to_apply = flatten_list(args_to_apply)
+        
+        args_to_apply = [(os.path.join(indir, osp.basename(basename).split('_')[0]), outdir, osp.basename(basename)) for basename in glob(osp.join(indir, "*/*.png"))]
+        
+        # args_to_apply = []
+        # for seq in os.listdir(indir):
+        #     seq_indir = os.path.join(indir, seq)
+        #     args_to_apply.append([(seq_indir, outdir, osp.basename(basename)) for basename in glob(osp.join(indir, "*/*.png"))])
+        # # args_to_apply = [x for x in args_to_apply]
+        # args_to_apply = flatten_list(args_to_apply)
             
         mpp.Pool(processes=mp.cpu_count() // 2).map(process, args_to_apply)
 
