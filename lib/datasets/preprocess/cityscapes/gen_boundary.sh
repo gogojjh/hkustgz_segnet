@@ -1,1 +1,1 @@
-python3 -u -m debugpy --listen 5678 --wait-for-client dt_offset_generator.py --datadir "/data/Cityscapes"
+python3 -u -m debugpy --listen 5678 --wait-for-client edge_generator.py

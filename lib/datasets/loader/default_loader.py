@@ -36,6 +36,8 @@ class DefaultLoader(data.Dataset):
         size_mode = self.configer.get(dataset, 'data_transformer')['size_mode']
         self.is_stack = size_mode != 'diverse_size'
 
+        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
+        
         Log.info('{} {}'.format(dataset, len(self.img_list)))
 
     def __len__(self):
@@ -69,6 +71,10 @@ class DefaultLoader(data.Dataset):
 
         if self.label_transform is not None:
             labelmap = self.label_transform(labelmap)
+            
+        #! load edge map if use_boundary is set as True
+        if self.use_boundary:
+            edgemap = 
 
         meta = dict(
             ori_img_size=img_size,
@@ -117,6 +123,7 @@ class DefaultLoader(data.Dataset):
         name_list = list()
         image_dir = os.path.join(root_dir, dataset, 'image')
         label_dir = os.path.join(root_dir, dataset, 'label')
+        edge_label_dir = os.path.join(root_dir, dataset, 'label_edge_void')
 
         # only change the ground-truth labels of training set
         if self.configer.exists('data', 'label_edge2void'):
@@ -152,11 +159,16 @@ class DefaultLoader(data.Dataset):
             label_name = image_name.replace(
                 'leftImg8bit', 'gtFine_labelIds') + '.png'
             label_path = os.path.join(label_dir, '{}'.format(seq_name), label_name)
+            edge_label_name = image_name.replace(
+                'leftImg8bit', 'gtFine_color') + '.png'
+            edge_label_path = os.path.join(edge_label_dir, '{}'.format(seq_name), edge_label_name)
             # Log.info('{} {} {}'.format(image_name, img_path, label_path))
             if not os.path.exists(label_path) or not os.path.exists(img_path):
                 Log.error('Label Path: {} {} not exists.'.format(
                     label_path, img_path))
                 continue
+            #todo
+            if self.use_boundary and not os.path.
 
             img_list.append(img_path)
             label_list.append(label_path)

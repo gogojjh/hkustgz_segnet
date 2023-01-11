@@ -73,13 +73,8 @@ class Tester(object):
             self.test_loader = self.seg_data_loader.get_testloader()
             self.test_size = len(self.test_loader) * self.configer.get('test', 'batch_size')
         else:
-<<<<<<< HEAD
-            self.test_loader = self.seg_data_loader.get_valloader()
-            self.test_size = len(self.test_loader) * self.configer.get('val', 'batch_size')
-=======
             self.test_loader = None
             self.test_size = 1
->>>>>>> 67517f3e4aadd3b6dc1c97fc0b85199041a7cfe5
 
         self.seg_net.eval()
 
@@ -226,8 +221,6 @@ class Tester(object):
                         FileHelper.make_dirs(vis_path, is_file=True)
                         ImageHelper.save(color_img_, save_path=vis_path)
 
-<<<<<<< HEAD
-=======
                     if self.use_ros:
                         ''' 
                         Get cv2 image, with each channel indicating:
@@ -237,7 +230,6 @@ class Tester(object):
                         sem_img_ros.append(sem_img_)
                         
 
->>>>>>> 67517f3e4aadd3b6dc1c97fc0b85199041a7cfe5
                     # # visualize
                     # from lib.datasets.tools.transforms import DeNormalize
                     # mean = self.configer.get('normalize', 'mean')

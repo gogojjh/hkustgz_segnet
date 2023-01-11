@@ -164,7 +164,8 @@
 		"prob_ppc_weight": 0.1,
 		"confidence_loss_weight": 0.1,
 		"proj_dim": 720,
-		"use_gt_proto_learning": true
+		"use_gt_proto_learning": true,
+		"use_boundary": true
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": false,
@@ -189,14 +190,11 @@
 	},
 	"run": {
 		"server": 2
-<<<<<<< HEAD
-=======
 	},
 	"ros": {
 		"use_ros": true,
 		"image_topic": "/camera1/image_color/compressed",
 		"sem_image_topic": "/sem_camera1/image_color/compressed",
 		"msg_type": "sensor_msgs/CompressedImage"
->>>>>>> 67517f3e4aadd3b6dc1c97fc0b85199041a7cfe5
 	}
 }
