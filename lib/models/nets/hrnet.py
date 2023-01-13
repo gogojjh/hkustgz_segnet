@@ -251,8 +251,6 @@ class HRNet_W48_Proto(nn.Module):
             contrast_logits, contrast_target = self.prototype_learning(
                 _c, out_seg, gt_seg, masks)
             return {'seg': out_seg, 'logits': contrast_logits, 'target': contrast_target}
-        
-        elif self.use_ros and self.configer.get('phase') == 'test_ros'
 
         return out_seg
 

@@ -38,20 +38,20 @@ class ROSProcessor():
     def init_ros(self):
         if self.compressed_image:
             self.img_sub = rospy.Subscriber(
-            self.img_topic, CompressedImage, self._image_callback, queue_size=1, buff_size=2*24)
+            self.img_topic, CompressedImage, self._image_callback, queue_size=1, buff_size=52428800)
         else: 
             self.img_sub = rospy.Subscriber(
-            self.img_topic, Image, self._image_callback, queue_size=1, buff_size=2*24)
+            self.img_topic, Image, self._image_callback, queue_size=1, buff_size=52428800)
         # self.sem_img_pub = rospy.Publisher(self.sem_img_topic, Image, queue_size=20)
-        self.sem_img_pub = rospy.Publisher(self.sem_img_topic, CompressedImage, queue_size=20)
-        self.uncer_img_pub = rospy.Publisher(self.uncer_img_topic, CompressedImage, queue_size=20)
+        self.sem_img_pub = rospy.Publisher(self.sem_img_topic, CompressedImage, queue_size=1)
+        self.uncer_img_pub = rospy.Publisher(self.uncer_img_topic, CompressedImage, queue_size=1)
         
     def pub_semimg_msg(self, sem_img):
         bridge = CvBridge()
 
         try:
             # self.sem_img_pub.publish(bridge.cv2_to_imgmsg(sem_img, 'mono8'))
-            self.sem_img_pub.publish(bridge.cv2_to_compressed_imgmsg(sem_img, 'mono8'))
+            self.sem_img_pub.publish(bridge.cv2_to_compressed_imgmsg(sem_img))
             Log.info('pub sem img topic')
         except CvBridgeError as e:
             Log.error(e)
@@ -61,7 +61,7 @@ class ROSProcessor():
         
         try:
             # self.uncer_img_pub.publish(bridge.cv2_to_imgmsg(confidence_img, 'mono8'))
-            self.uncer_img_pub.publish(bridge.cv2_to_compressed_imgmsg(confidence_img, desired_encoding='passthrough'))
+            self.uncer_img_pub.publish(bridge.cv2_to_compressed_imgmsg(confidence_img))
             Log.info('pub sem img topic')
         except CvBridgeError as e:
             Log.error(e)

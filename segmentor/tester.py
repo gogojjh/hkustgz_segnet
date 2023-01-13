@@ -17,7 +17,6 @@ import os
 import time
 import timeit
 import cv2
-import cv2.cv as cv
 import collections
 
 import torch
@@ -78,6 +77,12 @@ class Tester(object):
             self.test_size = 1
 
         self.seg_net.eval()
+        
+    def get_ros_batch_data(self, data_dict):
+        ''' 
+        This function is called everytime when ros callback is called.
+        '''
+        self.test_loader = data_dict
 
     def __relabel(self, label_map):
         height, width = label_map.shape
@@ -120,7 +125,7 @@ class Tester(object):
             raise RuntimeError("Unsupport colors")
 
         save_prob = False
-        if self.configer.get('test', 'save_prob'):
+        if self.configer.get('test', 'save_prob') or self.configer.get('ros', 'use_ros'):
             save_prob = self.configer.get('test', 'save_prob')
 
             def softmax(X, axis=0):
@@ -189,20 +194,25 @@ class Tester(object):
 
                     label_img = np.asarray(np.argmax(logits, axis=-1), dtype=np.uint8)
                     
+                    #! use gpu for faster speed
                     # get the top 3 largest softmax class-wise prediction confidence
                     if self.configer.get('ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
-                        confidence_img = np.zeros([label_img.shape(0), label_img.shape[1], 3], dtype=np.uint16)
-                        logits = softmax(logits, axis=-1)
-                        top3_ind = np.argsort(logits, axis=-1)[:, -3:]
+                        logits = torch.from_numpy(logits).cuda()
+                        m = nn.Softmax(dim=-1)
+                        logits = m(logits)
+                        confidence_img = torch.zeros([label_img.shape[0], label_img.shape[1], 3], dtype=torch.int64)
+                        val, ind = torch.topk(logits, k=3, dim=-1) # [h, w, 3]
                         for i in range(3):
                             ''' 
                             logits: [0, 1]
                             class id: int
                             confidence img: (class id[i] + logit[i]) * 1000
                             '''
-                            confidence_img[:, :, i] = int((logits[top3_ind[:, i]] + i) * 1000)
-                        confidence_img = cv2.imread(confidence_img, cv2.IMREAD_UNCHANGED)
-                        confidence_img = cv2.cvtColor(confidence_img, cv2.CV_16U)
+                            #[h, w, num_cls]([h, w])
+                            confidence_img[:, :, i] = ((val[:, :, i] + ind[:, :, i]) * 1000).long()
+                        confidence_img = confidence_img.cpu().numpy() # int64
+                        confidence_img = confidence_img.astype(np.uint16)
+                        # confidence_img = cv2.cvtColor(confidence_img, cv2.CV_16U)
                         uncer_img_ros.append(confidence_img)
                         
                     if self.configer.exists('data', 'reduce_zero_label') and self.configer.get('data', 'reduce_zero_label'):
@@ -239,7 +249,7 @@ class Tester(object):
                         FileHelper.make_dirs(vis_path, is_file=True)
                         ImageHelper.save(color_img_, save_path=vis_path)
 
-                    if self.use_ros:
+                    if self.configer.get('ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
                         ''' 
                         Publish semantic image rosmsg
                         Publish the uncertainty image:
@@ -249,8 +259,8 @@ class Tester(object):
                         # label_img: numpy array with trianing id
                         # gray_sem_img = Image.fromarray(label_img, 'L')
                         # sem_img_ = ImageHelper.np2cv(label_img, mode=cv2.COLOR_RGB2GRAY)
-                        sem_img_ = cv2.imwrite(label_img)
-                        sem_img_ros.append(sem_img_)
+                        # sem_img_ = cv2.cvtColor(label_img)
+                        sem_img_ros.append(label_img)
                         
                         
                         
@@ -321,7 +331,7 @@ class Tester(object):
         # Print the log info & reset the states.
         Log.info('Test Time {batch_time.sum:.3f}s'.format(batch_time=self.batch_time))
         
-        if self.use_ros:
+        if self.configer.get('ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
             return sem_img_ros, uncer_img_ros
 
     def offset_test(self, inputs, offset_h_maps, offset_w_maps, scale=1):

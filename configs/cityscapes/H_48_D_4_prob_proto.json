@@ -80,7 +80,7 @@
 		"multi_grid": [1, 1, 1],
 		"model_name": "base_ocnet",
 		"stride": 8,
-		"bn_type": "torchsyncbn",
+		"bn_type": "torchbn",
 		"factors": [[8, 8]],
 		"loss_weights": {
 			"corr_loss": 0.01,
@@ -155,7 +155,7 @@
 		"use_prototype": true,
 		"update_prototype": true,
 		"warmup_iters": 0,
-		"similarity_measure": "wasserstein",
+		"similarity_measure": "fast_mls",
 		"use_probability": true,
 		"multi_proxy": false,
 		"sinkhorn_epsilon": 0.05,
