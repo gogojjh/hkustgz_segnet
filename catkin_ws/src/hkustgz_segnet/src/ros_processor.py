@@ -12,7 +12,8 @@ class ROSProcessor():
     def __init__(self, configer, tester):
         self.configer = configer
         self.img_topic = self.configer.get('ros','image_topic')
-        self.pub_img_topic = self.configer.get('ros', 'sem_image_topic')
+        self.sem_img_topic = self.configer.get('ros', 'sem_image_topic')
+        self.uncer_img_topic = self.configer.get('ros', 'uncer_image_topic')
         self.msg_type = self.configer.get('ros', 'msg_type')
 
         self.img_transform = trans.Compose([
@@ -33,17 +34,7 @@ class ROSProcessor():
             self.compressed_image = False
 
         self.model = tester
-        
-    def pub_semimg_msg(self, sem_img):
-        bridge = CvBridge()
-
-        try:
-            self.sem_img_pub.publish(bridge.cv2_to_imgmsg(sem_img, 'bgr8'))
-            # self.sem_img_pub.publish(bridge.cv2_to_compressed_imgmsg(sem_img, 'bgr8'))
-            Log.info('pub sem img topic')
-        except CvBridgeError as e:
-            Log.error(e)
-
+    
     def init_ros(self):
         if self.compressed_image:
             self.img_sub = rospy.Subscriber(
@@ -51,16 +42,40 @@ class ROSProcessor():
         else: 
             self.img_sub = rospy.Subscriber(
             self.img_topic, Image, self._image_callback, queue_size=1, buff_size=2*24)
-        self.sem_img_pub = rospy.Publisher(self.pub_img_topic, Image, queue_size=20)
+        # self.sem_img_pub = rospy.Publisher(self.sem_img_topic, Image, queue_size=20)
+        self.sem_img_pub = rospy.Publisher(self.sem_img_topic, CompressedImage, queue_size=20)
+        self.uncer_img_pub = rospy.Publisher(self.uncer_img_topic, CompressedImage, queue_size=20)
+        
+    def pub_semimg_msg(self, sem_img):
+        bridge = CvBridge()
 
+        try:
+            # self.sem_img_pub.publish(bridge.cv2_to_imgmsg(sem_img, 'mono8'))
+            self.sem_img_pub.publish(bridge.cv2_to_compressed_imgmsg(sem_img, 'mono8'))
+            Log.info('pub sem img topic')
+        except CvBridgeError as e:
+            Log.error(e)
+    
+    def pub_uncerimg_msg(self, confidence_img):
+        bridge = CvBridge()
+        
+        try:
+            # self.uncer_img_pub.publish(bridge.cv2_to_imgmsg(confidence_img, 'mono8'))
+            self.uncer_img_pub.publish(bridge.cv2_to_compressed_imgmsg(confidence_img, desired_encoding='passthrough'))
+            Log.info('pub sem img topic')
+        except CvBridgeError as e:
+            Log.error(e)
+            
     def _test(self, data_dict):
         self.model.get_ros_batch_data(data_dict)  # seg test dataloader as the data_dict from ros
 
-        sem_img_ros = self.model.test()  # test phase of the model
+        sem_img_ros, uncer_img_ros = self.model.test()  # test phase of the model
         
         assert len(sem_img_ros) == 1
+        assert len(uncer_img_ros) == 1
         
         self.pub_semimg_msg(sem_img_ros[0])
+        self.pub_uncerimg_msg(uncer_img_ros[0])
 
     def _prepare_data_dict(self, img, timestamp):
         ''' 

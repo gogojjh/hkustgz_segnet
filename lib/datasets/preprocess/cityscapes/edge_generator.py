@@ -103,7 +103,7 @@ def label_nedge2void(label_path, edge_path, dest_label_path):
 
         label = np.array(Image.open(os.path.join(label_path, label_file)).convert('P'))
         edge = np.array(Image.open(os.path.join(edge_path, edge_file)).convert('P'))
-
+        #! In the ori_label, the pixels with 255 are still 255 
         label[edge == 0] = 255 # edge: black, non-edge: white(void)
         label_update = Image.fromarray(label)
         
@@ -140,8 +140,8 @@ if __name__ == "__main__":
     label_path = "/data/Cityscapes/val/label/"
     edge_path = "/data/Cityscapes/val/edge/"
     for seq in os.listdir(label_path):
-        generate_train_val_edge(os.path.join(label_path, seq), os.path.join(edge_path, seq), 5)
-        # label_nedge2void_path = "/data/Cityscapes/train/label_non_edge_void/"
-        # label_nedge2void(os.path.join(label_path, seq), os.path.join(edge_path, seq), os.path.join(label_nedge2void_path, seq))
+        # generate_train_val_edge(os.path.join(label_path, seq), os.path.join(edge_path, seq), 5)
+        label_nedge2void_path = "/data/Cityscapes/val/label_non_edge_void/"
+        label_nedge2void(os.path.join(label_path, seq), os.path.join(edge_path, seq), os.path.join(label_nedge2void_path, seq))
 
     # calculate_edge(edge_path)

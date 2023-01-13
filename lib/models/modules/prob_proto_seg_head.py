@@ -1,9 +1,6 @@
-import os
-import pdb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 import torch.distributed as dist
 from torch.distributions import constraints
 from torch.distributions.distribution import Distribution
@@ -235,7 +232,7 @@ class ProbProtoSegHead(nn.Module):
     def prototype_learning(self, sim_mat, out_seg, gt_seg, _c, _c_var):
         """
         Prototype selection and update
-        _c: (normalized) feature embin_channels
+        _c: (normalized) feature embedding
         each pixel corresponds to a mix to multiple protoyptes
         "Prototype selectiprototype_learninglamda * tr(T * log(T) - 1 * 1_T)_t)
         M = 1 - C, M: cost matrx, C: similarity matrix
@@ -401,8 +398,7 @@ class ProbProtoSegHead(nn.Module):
         if self.pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
             gt_seg = F.interpolate(
                 gt_semantic_seg.float(), size=gt_size, mode='nearest').view(-1)
-
-            # TODO: ========== contrast target here does not use gt!! ============
+            
             contrast_target = self.prototype_learning(
                 sim_mat, out_seg, gt_seg, x, x_var)
 

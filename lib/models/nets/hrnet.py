@@ -68,8 +68,10 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
+        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
+        self.use_ros = self.configer.get('ros', 'use_ros')
 
-    def forward(self, x_, gt_semantic_seg=None, pretrain_prototype=False):
+    def forward(self, x_, gt_semantic_seg=None, boundary_maps= None, pretrain_prototype=False):
         x = self.backbone(x_)
         _, _, h, w = x[0].size()  # 128, 256
 
@@ -249,6 +251,8 @@ class HRNet_W48_Proto(nn.Module):
             contrast_logits, contrast_target = self.prototype_learning(
                 _c, out_seg, gt_seg, masks)
             return {'seg': out_seg, 'logits': contrast_logits, 'target': contrast_target}
+        
+        elif self.use_ros and self.configer.get('phase') == 'test_ros'
 
         return out_seg
 

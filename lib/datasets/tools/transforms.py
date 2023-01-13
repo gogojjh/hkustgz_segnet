@@ -91,6 +91,7 @@ class ToLabel(object):
 class ReLabel(object):
     """
       255 indicate the background, relabel 255 to some value.
+      For boundary map: 255 indicates non-edge.
     """
     def __init__(self, olabel, nlabel):
         self.olabel = olabel

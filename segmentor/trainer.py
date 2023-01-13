@@ -224,8 +224,11 @@ class Trainer(object):
                     self.configer.get('iters'),
                     self.scheduler, self.optimizer, backbone_list=[0, ]
                 )
-
-            (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
+            boundary_maps = None
+            if self.configer.get('protoseg', 'use_boundary'):
+                (inputs, targets, boundary_maps), batch_size = self.data_helper.prepare_data(data_dict)
+            else:    
+                (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
 
             self.data_time.update(time.time() - start_time)
 
@@ -236,8 +239,7 @@ class Trainer(object):
                 else:
                     pretrain_prototype = True if self.configer.get(
                         'iters') < self. configer.get('protoseg', 'warmup_iters') else False
-                    outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...],
-                                           pretrain_prototype=pretrain_prototype)
+                    outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...], boundary_maps=boundary_maps, pretrain_prototype=pretrain_prototype)
 
             self.foward_time.update(time.time() - foward_start_time)
 
@@ -269,9 +271,6 @@ class Trainer(object):
                         loss['prob_ppd_loss']) / get_world_size()
                     display_loss = reduce_tensor(
                         backward_loss) / get_world_size()
-                    if self.configer.get('loss', 'confidence_loss'):
-                        confidence_loss = reduce_tensor(
-                            loss['confidence_loss']) / get_world_size()
             else:
                 # backward_loss = display_loss = self.pixel_loss(
                 #     outputs, targets)
@@ -313,49 +312,26 @@ class Trainer(object):
             # Print the log info & reset the states.
             if self.configer.get('iters') % self.configer.get('solver', 'display_iter') == 0 and \
                     (not is_distributed() or get_rank() == 0):
-                if self.configer.get('loss', 'confidence_loss'):
-                    Log.info(
-                        'Train Epoch: {0}\tTrain Iteration: {1}\t'
-                        'Time {batch_time.sum:.3f}s / {2}iters, ({batch_time.avg:.3f})\t'
-                        'Forward Time {foward_time.sum:.3f}s / {2}iters, ({foward_time.avg:.3f})\t'
-                        'Backward Time {backward_time.sum:.3f}s / {2}iters, ({backward_time.avg:.3f})\t'
-                        'Loss Time {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
-                        'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
-                        'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
-                        'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                        'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f}, prob_ppd_loss={prob_ppd_loss:.5f}, confidence_loss={confidence_loss:.5f}'.
-                        format(
-                            self.configer.get('epoch'),
-                            self.configer.get('iters'),
-                            self.configer.get('solver', 'display_iter'),
-                            self.module_runner.get_lr(self.optimizer),
-                            self.module_runner.get_lr(self.var_optimizer),
-                            batch_time=self.batch_time, foward_time=self.foward_time,
-                            backward_time=self.backward_time, loss_time=self.loss_time,
-                            data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
-                            prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss,
-                            confidence_loss=confidence_loss))
-                else:
-                    Log.info(
-                        'Train Epoch: {0}\tTrain Iteration: {1}\t'
-                        'Time {batch_time.sum:.3f}s / {2}iters, ({batch_time.avg:.3f})\t'
-                        'Forward Time {foward_time.sum:.3f}s / {2}iters, ({foward_time.avg:.3f})\t'
-                        'Backward Time {backward_time.sum:.3f}s / {2}iters, ({backward_time.avg:.3f})\t'
-                        'Loss Time {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
-                        'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
-                        'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
-                        'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                        'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f}, prob_ppd_loss={prob_ppd_loss:.5f}'.
-                        format(
-                            self.configer.get('epoch'),
-                            self.configer.get('iters'),
-                            self.configer.get('solver', 'display_iter'),
-                            self.module_runner.get_lr(self.optimizer),
-                            self.module_runner.get_lr(self.var_optimizer),
-                            batch_time=self.batch_time, foward_time=self.foward_time,
-                            backward_time=self.backward_time, loss_time=self.loss_time,
-                            data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
-                            prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss))
+                Log.info(
+                    'Train Epoch: {0}\tTrain Iteration: {1}\t'
+                    'Time {batch_time.sum:.3f}s / {2}iters, ({batch_time.avg:.3f})\t'
+                    'Forward Time {foward_time.sum:.3f}s / {2}iters, ({foward_time.avg:.3f})\t'
+                    'Backward Time {backward_time.sum:.3f}s / {2}iters, ({backward_time.avg:.3f})\t'
+                    'Loss Time {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
+                    'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
+                    'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
+                    'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
+                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f}, prob_ppd_loss={prob_ppd_loss:.5f}'.
+                    format(
+                        self.configer.get('epoch'),
+                        self.configer.get('iters'),
+                        self.configer.get('solver', 'display_iter'),
+                        self.module_runner.get_lr(self.optimizer),
+                        self.module_runner.get_lr(self.var_optimizer),
+                        batch_time=self.batch_time, foward_time=self.foward_time,
+                        backward_time=self.backward_time, loss_time=self.loss_time,
+                        data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
+                        prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss))
 
                 self.batch_time.reset()
                 self.foward_time.reset()

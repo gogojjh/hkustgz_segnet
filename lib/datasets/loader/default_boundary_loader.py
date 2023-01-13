@@ -24,18 +24,20 @@ from lib.extensions.parallel.data_container import DataContainer
 from lib.utils.tools.logger import Logger as Log
 
 
-class DefaultLoader(data.Dataset):
+class DefaultBoundaryLoader(data.Dataset):
     def __init__(self, root_dir, aug_transform=None, dataset=None,
                  img_transform=None, label_transform=None, configer=None):
         self.configer = configer
         self.aug_transform = aug_transform
         self.img_transform = img_transform
         self.label_transform = label_transform
-        self.img_list, self.label_list, self.name_list = self.__list_dirs(
+        self.img_list, self.label_list, self.name_list, self.edge_label_list = self.__list_dirs(
             root_dir, dataset)
         size_mode = self.configer.get(dataset, 'data_transformer')['size_mode']
         self.is_stack = size_mode != 'diverse_size'
 
+        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
+        
         Log.info('{} {}'.format(dataset, len(self.img_list)))
 
     def __len__(self):
@@ -50,6 +52,7 @@ class DefaultLoader(data.Dataset):
         img_size = ImageHelper.get_size(img)
         labelmap = ImageHelper.read_image(self.label_list[index],
                                           tool=self.configer.get('data', 'image_tool'), mode='P')
+        boundary_map = ImageHelper.read_image(self.edge_label_list[index], tool=self.configer.get        ('data', 'image_tool'), mode='P') #! 0: non-edge, 255： edge, but contains void class
         if self.configer.exists('data', 'label_list'):
 
             labelmap = self._encode_label(labelmap)
@@ -60,7 +63,7 @@ class DefaultLoader(data.Dataset):
         ori_target[ori_target == 255] = -1
 
         if self.aug_transform is not None:
-            img, labelmap = self.aug_transform(img, labelmap=labelmap)
+            img, labelmap, boundary_map = self.aug_transform(img, labelmap=labelmap, boundary_map=boundary_map)
 
         border_size = ImageHelper.get_size(img)
 
@@ -69,6 +72,7 @@ class DefaultLoader(data.Dataset):
 
         if self.label_transform is not None:
             labelmap = self.label_transform(labelmap)
+            boundary_map = self.label_transform(boundary_map)
 
         meta = dict(
             ori_img_size=img_size,
@@ -78,6 +82,7 @@ class DefaultLoader(data.Dataset):
         return dict(
             img=DataContainer(img, stack=self.is_stack),
             labelmap=DataContainer(labelmap, stack=self.is_stack),
+            boundarymap=DataContainer(boundary_map, stack=self.is_stack),
             meta=DataContainer(meta, stack=False, cpu_only=True),
             name=DataContainer(
                 self.name_list[index], stack=False, cpu_only=True),
@@ -115,8 +120,10 @@ class DefaultLoader(data.Dataset):
         img_list = list()
         label_list = list()
         name_list = list()
+        edge_label_list = list()
         image_dir = os.path.join(root_dir, dataset, 'image')
         label_dir = os.path.join(root_dir, dataset, 'label')
+        edge_label_dir = os.path.join(root_dir, dataset, 'label_non_edge_void')
 
         # only change the ground-truth labels of training set
         if self.configer.exists('data', 'label_edge2void'):
@@ -152,15 +159,22 @@ class DefaultLoader(data.Dataset):
             label_name = image_name.replace(
                 'leftImg8bit', 'gtFine_labelIds') + '.png'
             label_path = os.path.join(label_dir, '{}'.format(seq_name), label_name)
+            edge_label_name = image_name.replace(
+                'leftImg8bit', 'gtFine_color') + '.png'
+            edge_label_path = os.path.join(edge_label_dir, '{}'.format(seq_name), edge_label_name)
             # Log.info('{} {} {}'.format(image_name, img_path, label_path))
             if not os.path.exists(label_path) or not os.path.exists(img_path):
                 Log.error('Label Path: {} {} not exists.'.format(
                     label_path, img_path))
                 continue
+            if self.use_boundary and not os.path.exists(edge_label_path):
+                Log.error('Edge Label Path: {} not exists.'.format(edge_label_path))
+                continue
 
             img_list.append(img_path)
             label_list.append(label_path)
             name_list.append(image_name)
+            edge_label_list.append(edge_label_path)
 
         if dataset == 'train' and self.configer.get('data', 'include_val'):
             Log.info("Use validation dataset for training.")
@@ -280,7 +294,7 @@ class DefaultLoader(data.Dataset):
                 label_list.append(label_path)
                 name_list.append(image_name)
 
-        return img_list, label_list, name_list
+        return img_list, label_list, name_list, edge_label_list
 
 
 class CSDataTestLoader(data.Dataset):

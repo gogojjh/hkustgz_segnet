@@ -155,6 +155,14 @@ class ImageHelper(object):
     @staticmethod
     def img2np(img):
         return np.array(img)
+    
+    @staticmethod
+    def np2cv(arr, mode=cv2.COLOR_RGB2BGR):
+        return cv2.cvtColor(arr, mode)
+    
+    @staticmethod
+    def img2cv(img, mode=cv2.COLOR_RGB2BGR):
+        return cv2.cvtColor(np.array(img), mode)
 
     @staticmethod
     def tonp(img):

@@ -23,6 +23,7 @@ from lib.datasets.loader.default_loader import DefaultLoader, CSDataTestLoader
 from lib.datasets.loader.ade20k_loader import ADE20KLoader
 from lib.datasets.loader.lip_loader import LipLoader
 from lib.datasets.loader.offset_loader import DTOffsetLoader
+from lib.datasets.loader.default_boundary_loader import DefaultBoundaryLoader
 from lib.datasets.tools.collate import collate
 from lib.utils.tools.logger import Logger as Log
 
@@ -123,6 +124,12 @@ class DataLoader(object):
             """
             Log.info('use ADE20KLoader (diverse input shape) for train...')
             klass = ADE20KLoader
+        elif self.configer.get('protoseg', 'use_boundary'):
+            ''' 
+            Load additional boundary maps compared with default loader.
+            '''
+            Log.info('use the DefaultBoundaryLoader for train...')
+            klass = DefaultBoundaryLoader
         else:
             """
             Default manner:
@@ -155,8 +162,16 @@ class DataLoader(object):
             """
             Log.info('use distance transform based offset loader for val ...')
             klass = DTOffsetLoader
+            
+        elif self.configer.get('method') == 'fcn_segmentor' and self.configer.get('protoseg', 'use_boundary'):
+            ''' 
+            Load additional boundary maps compared with default loader.
+            '''
+            Log.info('use the DefaultBoundaryLoader for train...')
+            klass = DefaultBoundaryLoader
+        
 
-        elif self.configer.get('method') == 'fcn_segmentor':
+        elif self.configer.get('method') == 'fcn_segmentor' and self.configer.get('protoseg', 'use_boundary') == False:
             """
             default manner:
             load the ground-truth label.

@@ -17,6 +17,7 @@ import os
 import time
 import timeit
 import cv2
+import cv2.cv as cv
 import collections
 
 import torch
@@ -131,6 +132,7 @@ class Tester(object):
                 return X
 
         sem_img_ros = []
+        uncer_img_ros = []
         for j, data_dict in enumerate(self.test_loader):
             inputs = data_dict['img']
             names = data_dict['name']
@@ -186,12 +188,28 @@ class Tester(object):
                         np.save(prob_path, softmax(logits, axis=-1))
 
                     label_img = np.asarray(np.argmax(logits, axis=-1), dtype=np.uint8)
-                    if self.configer.exists('data', 'reduce_zero_label') and self.configer.get('data',
-                                                                                               'reduce_zero_label'):
+                    
+                    # get the top 3 largest softmax class-wise prediction confidence
+                    if self.configer.get('ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
+                        confidence_img = np.zeros([label_img.shape(0), label_img.shape[1], 3], dtype=np.uint16)
+                        logits = softmax(logits, axis=-1)
+                        top3_ind = np.argsort(logits, axis=-1)[:, -3:]
+                        for i in range(3):
+                            ''' 
+                            logits: [0, 1]
+                            class id: int
+                            confidence img: (class id[i] + logit[i]) * 1000
+                            '''
+                            confidence_img[:, :, i] = int((logits[top3_ind[:, i]] + i) * 1000)
+                        confidence_img = cv2.imread(confidence_img, cv2.IMREAD_UNCHANGED)
+                        confidence_img = cv2.cvtColor(confidence_img, cv2.CV_16U)
+                        uncer_img_ros.append(confidence_img)
+                        
+                    if self.configer.exists('data', 'reduce_zero_label') and self.configer.get('data', 'reduce_zero_label'):
                         label_img = label_img + 1
                         label_img = label_img.astype(np.uint8)
                     if self.configer.exists('data', 'label_list'):
-                        label_img_ = self.__relabel(label_img)
+                        label_img_ = self.__relabel(label_img) # convert trianing id to ori id
                     else:
                         label_img_ = label_img
                     label_img_ = Image.fromarray(label_img_, 'P')
@@ -223,11 +241,18 @@ class Tester(object):
 
                     if self.use_ros:
                         ''' 
-                        Get cv2 image, with each channel indicating:
-                        - semantic prediction
+                        Publish semantic image rosmsg
+                        Publish the uncertainty image:
+                        - with top 3 largest uncertainties
+                        - each channel: 1000 *(training class id(int) + prediciton confidence(0-1))  
                         '''
-                        sem_img_ = ImageHelper.convert_from_image_to_cv2(color_img_)
+                        # label_img: numpy array with trianing id
+                        # gray_sem_img = Image.fromarray(label_img, 'L')
+                        # sem_img_ = ImageHelper.np2cv(label_img, mode=cv2.COLOR_RGB2GRAY)
+                        sem_img_ = cv2.imwrite(label_img)
                         sem_img_ros.append(sem_img_)
+                        
+                        
                         
 
                     # # visualize
@@ -297,7 +322,7 @@ class Tester(object):
         Log.info('Test Time {batch_time.sum:.3f}s'.format(batch_time=self.batch_time))
         
         if self.use_ros:
-            return sem_img_ros
+            return sem_img_ros, uncer_img_ros
 
     def offset_test(self, inputs, offset_h_maps, offset_w_maps, scale=1):
         if isinstance(inputs, torch.Tensor):

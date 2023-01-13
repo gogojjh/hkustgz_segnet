@@ -25,6 +25,7 @@ class DataHelper:
         self.trainer = trainer
         self.conditions = configer.conditions
         self.vis_uncertainty = self.configer.get('uncertainty_visualizer', 'vis_uncertainty')
+        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
 
     def input_keys(self):
         env_value = _get_list_from_env('input_keys')
@@ -40,16 +41,19 @@ class DataHelper:
         return inputs
 
     def name_keys(self):
-        if self.vis_uncertainty:
-            names = ['name']
+        names = ['name']
 
-            return names
+        return names
+    
+    def boundary_keys(self):
+        boundary_maps = ['boundarymap']
+        
+        return boundary_maps
         
     def img_keys(self):
-        if self.vis_uncertainty:
-            imgs = ['img']
+        imgs = ['img']
             
-            return imgs
+        return imgs
 
     def target_keys(self):
 
@@ -140,6 +144,14 @@ class DataHelper:
             names = [data_dict[k] for k in name_keys]
             img_keys = self.img_keys()
             imgs = [data_dict[k] for k in img_keys]
+            Log.info_once('Image name keys: {}'.format(name_keys))
+            Log.info_once('Image keys: {}'.format(img_keys))
+        
+        if self.use_boundary and self.configer.get('phase') != 'test':
+            boundary_keys = self.boundary_keys()
+            boundary_maps = [data_dict[k] for k in boundary_keys]
+            Log.info_once('Boundary map keys: {}'.format(boundary_keys))
+            
 
         if self.conditions.use_ground_truth:
             input_keys += target_keys
@@ -157,6 +169,12 @@ class DataHelper:
                 self._prepare_sequence(targets, force_list=False),
                 self._prepare_sequence(names, force_list=True, name_seq=True),
                 self._prepare_sequence(imgs, force_list=True, img_seq=True)
+            ]
+        elif self.use_boundary and self.configer.get('phase') != 'test':
+            sequences = [
+                self._prepare_sequence(inputs, force_list=True),
+                self._prepare_sequence(targets, force_list=False),
+                self._prepare_sequence(boundary_maps, force_list=True)
             ]
         else:
             sequences = [
