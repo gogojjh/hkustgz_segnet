@@ -89,9 +89,10 @@ In [H_48_D_4_prob_proto.json](./configs/cityscapes/H_48_D_4_prob_proto.json)
 "ros": {
 		"use_ros": true,
 		"image_topic": "/camera1/image_color/compressed",
-		"sem_image_topic": "/sem_camera1/image_color/compressed",
+		"sem_image_topic": "/semantic_image",
+		"uncer_image_topic": "/uncertainty_image",
 		"msg_type": "sensor_msgs/CompressedImage"
-        }
+	}
 ```
 
 ## Usages of different folders:

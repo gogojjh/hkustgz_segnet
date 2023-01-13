@@ -1,0 +1,1 @@
+/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/custom_imagemsg/share/common-lisp/ros/custom_imagemsg/msg/custom_imagemsg-msg.asd

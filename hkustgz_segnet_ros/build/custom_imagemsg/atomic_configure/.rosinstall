@@ -1,0 +1,2 @@
+- setup-file:
+    local-name: /home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/custom_imagemsg/setup.sh

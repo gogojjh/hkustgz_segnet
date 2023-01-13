@@ -1,0 +1,1 @@
+/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/custom_imagemsg/lib/python3/dist-packages/custom_imagemsg/msg/__init__.py

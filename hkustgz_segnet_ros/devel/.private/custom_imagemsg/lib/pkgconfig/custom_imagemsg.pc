@@ -1,0 +1,8 @@
+prefix=/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/custom_imagemsg
+
+Name: custom_imagemsg
+Description: Description of custom_imagemsg
+Version: 0.0.0
+Cflags: -I/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/custom_imagemsg/include
+Libs: -L${prefix}/lib 
+Requires: roscpp rospy std_msgs message_runtime

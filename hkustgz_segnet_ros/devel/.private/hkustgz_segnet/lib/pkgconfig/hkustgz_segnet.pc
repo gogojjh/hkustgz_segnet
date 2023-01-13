@@ -1,0 +1,8 @@
+prefix=/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/hkustgz_segnet
+
+Name: hkustgz_segnet
+Description: Description of hkustgz_segnet
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

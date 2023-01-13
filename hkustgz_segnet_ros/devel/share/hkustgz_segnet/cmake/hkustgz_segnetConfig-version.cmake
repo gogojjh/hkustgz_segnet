@@ -1,0 +1,1 @@
+/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/hkustgz_segnet/share/hkustgz_segnet/cmake/hkustgz_segnetConfig-version.cmake

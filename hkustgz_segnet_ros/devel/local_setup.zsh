@@ -1,0 +1,1 @@
+/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/catkin_tools_prebuild/local_setup.zsh

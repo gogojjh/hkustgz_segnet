@@ -1,0 +1,1 @@
+/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/custom_imagemsg/share/gennodejs/ros/custom_imagemsg/_index.js

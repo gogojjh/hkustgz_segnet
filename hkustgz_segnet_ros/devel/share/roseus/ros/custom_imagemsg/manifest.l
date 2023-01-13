@@ -1,0 +1,1 @@
+/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/custom_imagemsg/share/roseus/ros/custom_imagemsg/manifest.l
