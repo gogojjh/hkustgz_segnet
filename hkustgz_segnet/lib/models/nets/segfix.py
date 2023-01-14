@@ -55,6 +55,7 @@ class SegFix_HRNet(nn.Module):
                       stride=1,
                       padding=0,
                       bias=False))
+        # boundary head
         self.mask_head = nn.Sequential(
             nn.Conv2d(in_channels,
                       mid_channels,
@@ -78,6 +79,7 @@ class SegFix_HRNet(nn.Module):
 
         feat1 = x[0]
         for i in range(1, len(x)):
+            # in case feature map sizes inside a batch are different?
             x[i] = F.interpolate(x[i],
                                  size=(h, w),
                                  mode='bilinear',
