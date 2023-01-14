@@ -224,9 +224,9 @@ class Trainer(object):
                     self.configer.get('iters'),
                     self.scheduler, self.optimizer, backbone_list=[0, ]
                 )
-            boundary_maps = None
+            gt_boundary = None
             if self.configer.get('protoseg', 'use_boundary'):
-                (inputs, targets, boundary_maps), batch_size = self.data_helper.prepare_data(data_dict)
+                (inputs, targets, gt_boundary), batch_size = self.data_helper.prepare_data(data_dict)
             else:    
                 (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
 
@@ -239,7 +239,7 @@ class Trainer(object):
                 else:
                     pretrain_prototype = True if self.configer.get(
                         'iters') < self. configer.get('protoseg', 'warmup_iters') else False
-                    outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...], boundary_maps=boundary_maps, pretrain_prototype=pretrain_prototype)
+                    outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...], gt_boundary=gt_boundary, pretrain_prototype=pretrain_prototype)
 
             self.foward_time.update(time.time() - foward_start_time)
 
@@ -261,7 +261,7 @@ class Trainer(object):
                     return reduced_inp
 
                 with torch.cuda.amp.autocast():
-                    loss = self.pixel_loss(outputs, targets)
+                    loss = self.pixel_loss(outputs, targets, gt_boundary=gt_boundary)
                     backward_loss = loss['loss']
                     seg_loss = reduce_tensor(
                         loss['seg_loss']) / get_world_size()
@@ -275,7 +275,7 @@ class Trainer(object):
                 # backward_loss = display_loss = self.pixel_loss(
                 #     outputs, targets)
                 loss_tuple = self.pixel_loss(
-                    outputs, targets)
+                    outputs, targets, gt_boundary=gt_boundary)
 
                 backward_loss = display_loss = loss_tuple['loss']
                 seg_loss = loss_tuple['seg_loss']

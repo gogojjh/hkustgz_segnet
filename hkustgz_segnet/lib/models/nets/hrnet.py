@@ -22,6 +22,7 @@ from lib.models.modules.contrast import momentum_update, l2_normalize, Projectio
 from lib.models.modules.uncertainty_head import UncertaintyHead
 from lib.models.modules.sinkhorn import distributed_sinkhorn
 from lib.models.modules.prob_proto_seg_head import ProbProtoSegHead
+from lib.models.modules.boundary_head import BoundaryHead
 
 from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
@@ -44,6 +45,8 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         self.pretrain_prototype = self.configer.get(
             'protoseg', 'pretrain_prototype')
         self.use_probability = self.configer.get('protoseg', 'use_probability')
+        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
+        self.use_ros = self.configer.get('ros', 'use_ros')
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
@@ -65,13 +68,16 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         self.proj_head = ProjectionHead(in_channels, self.proj_dim)
 
         self.prob_seg_head = ProbProtoSegHead(configer=configer)
+        
+        self.boundary_head = BoundaryHead(configer=configer,
+                                          in_channels=self.proj_dim,
+                                          mid_channels=self.configer.get('protoseg', 'boundary_head_mid_channel'))
 
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
-        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
-        self.use_ros = self.configer.get('ros', 'use_ros')
+        self.boundary_norm = nn.LayerNorm(2)
 
-    def forward(self, x_, gt_semantic_seg=None, boundary_maps= None, pretrain_prototype=False):
+    def forward(self, x_, gt_semantic_seg=None, gt_boundary= None, pretrain_prototype=False):
         x = self.backbone(x_)
         _, _, h, w = x[0].size()  # 128, 256
 
@@ -83,7 +89,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         feat4 = F.interpolate(x[3], size=(
             h, w), mode="bilinear", align_corners=True)
 
-        feats = torch.cat([feat1, feat2, feat3, feat4], 1)
+        feats = torch.cat([feat1, feat2, feat3, feat4], 1) # sent to boundary head
 
         c = self.cls_head(feats)  # 720
         c = self.proj_head(c)  # 256
@@ -95,16 +101,26 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         c = rearrange(c, 'b c h w -> (b h w) c')
         c = self.feat_norm(c)  # ! along channel dimension
         c = l2_normalize(c)  # ! l2_norm along num_class dimension
-
-        if self.use_probability:
-            c = rearrange(c, '(b h w) c -> b c h w',
+        
+        c = rearrange(c, '(b h w) c -> b c h w',
                           h=gt_size[0], w=gt_size[1])
+
+        boundary_pred = None
+        if self.use_boundary:
+            boundary_pred = self.boundary_head(c) # [b 2 h w]
+            boundary_pred = rearrange(boundary_pred, 'b c h w -> (b h w) c') # [(b h w) 2]
+            boundary_pred = self.boundary_norm(boundary_pred)
+            boundary_pred = l2_normalize(boundary_pred) # [(b h w) 2]
+            
+        
+        if self.use_probability:
             c_var = self.uncertainty_head(c)  # ! b c h w, log(sigma^2)
             c_var = torch.exp(c_var)  # ! variance x_var should > 0!
-
-            preds = self.prob_seg_head(c, c_var, gt_semantic_seg=gt_semantic_seg)
-
+            
+            preds = self.prob_seg_head(c, c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred, gt_boundary=gt_boundary)
+        
             return preds
+        
         else:
             return
 
@@ -226,7 +242,8 @@ class HRNet_W48_Proto(nn.Module):
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
         c = self.cls_head(feats)
 
-        c = self.proj_head(c)
+        # we use prototypes for classification, so input of proj head is c instead of feats
+        c = self.proj_head(c) 
         _c = rearrange(c, 'b c h w -> (b h w) c')
         _c = self.feat_norm(_c)  # ! along channel dimension
         _c = l2_normalize(_c)  # ! along num_class dimension

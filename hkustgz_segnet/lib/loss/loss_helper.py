@@ -397,6 +397,7 @@ class SegFixLoss(nn.Module):
         pred_mask, pred_direction = inputs
 
         seg_label_map, distance_map, angle_map = targets[0], targets[1], targets[2]
+        # pixels which satisfy min_thres < dist < max_thres are chosen as boundary pixels
         gt_mask = DTOffsetHelper.distance_to_mask_label(distance_map, seg_label_map, return_tensor=True)
 
         gt_size = gt_mask.shape[1:]

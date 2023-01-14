@@ -157,7 +157,6 @@
 		"warmup_iters": 0,
 		"similarity_measure": "fast_mls",
 		"use_probability": true,
-		"multi_proxy": false,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 0.1,
@@ -165,7 +164,8 @@
 		"confidence_loss_weight": 0.1,
 		"proj_dim": 720,
 		"use_gt_proto_learning": true,
-		"use_boundary": true
+		"use_boundary": true,
+		"boundary_head_mid_channel": 256
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": false,

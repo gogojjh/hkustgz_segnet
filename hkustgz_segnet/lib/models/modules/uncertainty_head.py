@@ -21,7 +21,7 @@ class UncertaintyHead(nn.Module):   # feature -> log(sigma^2)
         nn.init.kaiming_normal_(self.fc1)
         nn.init.kaiming_normal_(self.fc2)
 
-    def forward(self, x: torch.Tensor):  # [b c h w]
+    def forward(self, x):  # [b c h w]
         x = x.permute(0, 2, 3, 1)  # [b h w c]
         x = F.linear(x, F.normalize(self.fc1, dim=-1))  # [b h w c]
         x = x.permute(0, 3, 1, 2)  # [b h w c]-> [b c h w]

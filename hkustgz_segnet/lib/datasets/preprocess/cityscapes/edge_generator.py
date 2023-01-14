@@ -104,7 +104,7 @@ def label_nedge2void(label_path, edge_path, dest_label_path):
         label = np.array(Image.open(os.path.join(label_path, label_file)).convert('P'))
         edge = np.array(Image.open(os.path.join(edge_path, edge_file)).convert('P'))
         #! In the ori_label, the pixels with 255 are still 255 
-        label[edge == 0] = 255 # edge: black, non-edge: white(void)
+        label[edge == 0] = 255 # edge: black 0, non-edge: white(void) 255
         label_update = Image.fromarray(label)
         
         if not os.path.exists(dest_label_path):

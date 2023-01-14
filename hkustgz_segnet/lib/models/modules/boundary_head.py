@@ -32,5 +32,8 @@ class BoundaryHead(nn.Module):
                       padding=0,
                       bias=False))
         
+    def forward(self, x):
+        x = self.boundary_head(x) # [b 2 h w]
         
+        return x
         
