@@ -37,7 +37,7 @@ class DefaultBoundaryLoader(data.Dataset):
         self.is_stack = size_mode != 'diverse_size'
 
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
-        
+
         Log.info('{} {}'.format(dataset, len(self.img_list)))
 
     def __len__(self):
@@ -52,7 +52,9 @@ class DefaultBoundaryLoader(data.Dataset):
         img_size = ImageHelper.get_size(img)
         labelmap = ImageHelper.read_image(self.label_list[index],
                                           tool=self.configer.get('data', 'image_tool'), mode='P')
-        boundary_map = ImageHelper.read_image(self.edge_label_list[index], tool=self.configer.get        ('data', 'image_tool'), mode='P') #! 0: non-edge, 255： edge, but contains void class
+        # 0: non-edge, 255: edge
+        boundary_map = ImageHelper.read_image(self.edge_label_list[index], tool=self.configer.get(
+            'data', 'image_tool'), mode='P')  # ! 0: non-edge, 255： edge, but contains void class
         if self.configer.exists('data', 'label_list'):
 
             labelmap = self._encode_label(labelmap)
@@ -63,7 +65,8 @@ class DefaultBoundaryLoader(data.Dataset):
         ori_target[ori_target == 255] = -1
 
         if self.aug_transform is not None:
-            img, labelmap, boundary_map = self.aug_transform(img, labelmap=labelmap, boundary_map=boundary_map)
+            img, labelmap, boundary_map = self.aug_transform(
+                img, labelmap=labelmap, boundary_map=boundary_map)
 
         border_size = ImageHelper.get_size(img)
 
@@ -73,6 +76,7 @@ class DefaultBoundaryLoader(data.Dataset):
         if self.label_transform is not None:
             labelmap = self.label_transform(labelmap)
             boundary_map = self.label_transform(boundary_map)
+            # 0:non-edge, 255: edge -> 0: non-edge, 1: edge
 
         meta = dict(
             ori_img_size=img_size,
@@ -123,7 +127,7 @@ class DefaultBoundaryLoader(data.Dataset):
         edge_label_list = list()
         image_dir = os.path.join(root_dir, dataset, 'image')
         label_dir = os.path.join(root_dir, dataset, 'label')
-        edge_label_dir = os.path.join(root_dir, dataset, 'label_non_edge_void')
+        edge_label_dir = os.path.join(root_dir, dataset, 'edge')
 
         # only change the ground-truth labels of training set
         if self.configer.exists('data', 'label_edge2void'):
@@ -167,7 +171,8 @@ class DefaultBoundaryLoader(data.Dataset):
                 Log.error('Label Path: {} {} not exists.'.format(
                     label_path, img_path))
                 continue
-            if self.use_boundary and not os.path.exists(edge_label_path):
+            if self.configer.get(
+                    'protoseg', 'use_boundary') and not os.path.exists(edge_label_path):
                 Log.error('Edge Label Path: {} not exists.'.format(edge_label_path))
                 continue
 

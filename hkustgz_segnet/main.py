@@ -79,7 +79,7 @@ if __name__ == "__main__":
     parser.add_argument('--save_iters', default=None, type=int,
                         dest='checkpoints:save_iters', help='The saving iters of checkpoint model.')
     parser.add_argument('--save_epoch', default=None, type=int,
-                        dest='checkpoints:save_epoch', help='The saving epoch of checkpoint model.')
+                        dest='checkpo nts:save_epoch', help='The saving epoch of checkpoint model.')
 
     # ***********  Params for model.  **********
     parser.add_argument('--model_name', default=None, type=str,

@@ -1,12 +1,12 @@
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-## Created by: Donny You, RainbowSecret, JingyiXie
-## Microsoft Research
-## yuyua@microsoft.com
-## Copyright (c) 2019
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Created by: Donny You, RainbowSecret, JingyiXie
+# Microsoft Research
+# yuyua@microsoft.com
+# Copyright (c) 2019
 ##
-## This source code is licensed under the MIT-style license found in the
-## LICENSE file in the root directory of this source tree 
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# This source code is licensed under the MIT-style license found in the
+# LICENSE file in the root directory of this source tree
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 from __future__ import absolute_import
 from __future__ import division
@@ -96,7 +96,9 @@ class DataLoader(object):
         return loader, sampler
 
     def get_trainloader(self):
-        if self.configer.exists('data', 'use_edge') and self.configer.get('data', 'use_edge') == 'ce2p':
+        if self.configer.exists(
+                'data', 'use_edge') and self.configer.get(
+                'data', 'use_edge') == 'ce2p':
             """
             ce2p manner:
             load both the ground-truth label and edge.
@@ -155,21 +157,22 @@ class DataLoader(object):
     def get_valloader(self, dataset=None):
         dataset = 'val' if dataset is None else dataset
 
-        if self.configer.exists('data', 'use_dt_offset') or self.configer.exists('data', 'pred_dt_offset'):
+        if self.configer.exists(
+                'data', 'use_dt_offset') or self.configer.exists(
+                'data', 'pred_dt_offset'):
             """
             dt-offset manner:
             load both the ground-truth label and offset (based on distance transform).
             """
             Log.info('use distance transform based offset loader for val ...')
             klass = DTOffsetLoader
-            
+
         elif self.configer.get('method') == 'fcn_segmentor' and self.configer.get('protoseg', 'use_boundary'):
             ''' 
             Load additional boundary maps compared with default loader.
             '''
             Log.info('use the DefaultBoundaryLoader for train...')
             klass = DefaultBoundaryLoader
-        
 
         elif self.configer.get('method') == 'fcn_segmentor' and self.configer.get('protoseg', 'use_boundary') == False:
             """
@@ -196,7 +199,9 @@ class DataLoader(object):
 
     def get_testloader(self, dataset=None):
         dataset = 'test' if dataset is None else dataset
-        if self.configer.exists('data', 'use_sw_offset') or self.configer.exists('data', 'pred_sw_offset'):
+        if self.configer.exists(
+                'data', 'use_sw_offset') or self.configer.exists(
+                'data', 'pred_sw_offset'):
             Log.info('use sliding window based offset loader for test ...')
             test_loader = data.DataLoader(
                 SWOffsetTestLoader(root_dir=self.configer.get('data', 'data_dir'), dataset=dataset,

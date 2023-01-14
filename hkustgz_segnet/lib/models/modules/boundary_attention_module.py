@@ -10,15 +10,15 @@ from lib.models.tools.module_helper import ModuleHelper
 from einops import rearrange, repeat
 
 
-class BoundaryAttentionModule(nn.Moudule):
+class BoundaryAttentionModule(nn.Module):
     def __init__(self, configer):
-        super(BoundaryAttentionModule).__init__()
+        super(BoundaryAttentionModule, self).__init__()
         self.configer = configer
-        
-        self.proj_dim = self.configer.get('contrast', 'proj_dim')
+
+        self.proj_dim = self.configer.get('protoseg', 'proj_dim')
         self.mid_channels = 64
         self.out_channels = 256
-        
+
         # to let dim of boundary map equal to that of uncertainty/feature map
         self.key_conv = nn.Sequential(
             nn.Conv2d(2,
@@ -37,69 +37,56 @@ class BoundaryAttentionModule(nn.Moudule):
                       stride=1,
                       padding=0,
                       bias=False))
-        
+
         self.query_conv = nn.Conv2d(self.proj_dim,
                                     self.out_channels,
                                     kernel_size=1,
                                     stride=1,
                                     padding=0,
                                     bias=False)
-        
+
         self.value_conv = nn.Conv2d(self.proj_dim,
                                     self.proj_dim,
                                     kernel_size=1,
                                     stride=1,
                                     padding=0,
                                     bias=False)
-        
+
         self.gamma = nn.Parameter(torch.zeros(1))
-        
+
     def forward(self, boundary_map, uncertainty_map):
         ''' 
         Similar to Position Attention Module in 
         "Dual Attention Network for Scene Segmentation".
-    
+
         Use boundary prediction to let the boundary areas in uncertainty map 
         with high uncertianty, and mask the non-edge areas in semantic prediction
         to learn the prototype of boundary pixels.
-        
+
         Boundary prediction is learned by supervised cross-entropy loss.
-        
+
         all inputs: [b proj_dim/2 h w]
         '''
-        b_size, c_size, h_size, w_size = uncertainty_map.size() # c: proj_dim
-        proj_key = self.key_conv(boundary_map) # [b mid_channel h w] key
-        proj_query = self.query_conv(uncertainty_map) # query [b mid_channel h w] 
+        b_size, c_size, h_size, w_size = uncertainty_map.size()  # c: proj_dim
+        proj_key = self.key_conv(boundary_map)  # [b mid_channel h w] key
+        proj_query = self.query_conv(uncertainty_map)  # query [b mid_channel h w]
         # [b (h w) mid_channel]
-        proj_query = proj_query.view(b_size, -1, h_size*w_size).permute(0, 2, 1) 
-        proj_key = proj_key.view(b_size, -1, h_size*w_size) # [b mid_channel (h w)]
-        
-        proj_value = self.value_conv(uncertainty_map) 
-        proj_value = proj_value.view(b_size, -1, h_size*w_size) #value [b self.proj_dim (h w)] 
-        
+        proj_query = proj_query.view(b_size, -1, h_size*w_size).permute(0, 2, 1)
+        proj_key = proj_key.view(b_size, -1, h_size*w_size)  # [b mid_channel (h w)]
+
+        proj_value = self.value_conv(uncertainty_map)
+        proj_value = proj_value.view(b_size, -1, h_size*w_size)  # value [b self.proj_dim (h w)]
+
         # if uncertainty high + probability in boundary map high -> more likely to be boundary
         # [b (h w) mid_channel] * [b mid_channel (h w)] = [b (h w) (h w)]
-        energy = torch.bmm(proj_query, proj_key) 
-        attention = F.softmax(energy, 1) # softmax on (h w) channel
-        
+        energy = torch.bmm(proj_query, proj_key)
+        attention = F.softmax(energy, 1)  # softmax on (h w) channel
+
         # [b self.proj_dim (h w)]  * [b (h w/no softmax) (h w/softmax)] = [b self.proj_dim (h w/softmax)]
         out = torch.bmm(proj_value, attention.permute(0, 2, 1))
         # [b c h w] here h and w results from softmax(position attention)
-        out = out.view(b_size, c_size, h_size, w_size) 
-        
-        out = self.gamma * out + uncertainty_map # [b c h w]
-        
-        return out
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
+        out = out.view(b_size, c_size, h_size, w_size)
 
-        
+        out = self.gamma * out + uncertainty_map  # [b c h w]
+
+        return out

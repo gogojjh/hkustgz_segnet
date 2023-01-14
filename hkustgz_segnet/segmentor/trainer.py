@@ -227,7 +227,9 @@ class Trainer(object):
             gt_boundary = None
             if self.configer.get('protoseg', 'use_boundary'):
                 (inputs, targets, gt_boundary), batch_size = self.data_helper.prepare_data(data_dict)
-            else:    
+                # todo ========================================
+                # boundary_map[boundary_map == 255] = 1
+            else:
                 (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
 
             self.data_time.update(time.time() - start_time)
@@ -239,7 +241,11 @@ class Trainer(object):
                 else:
                     pretrain_prototype = True if self.configer.get(
                         'iters') < self. configer.get('protoseg', 'warmup_iters') else False
-                    outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...], gt_boundary=gt_boundary, pretrain_prototype=pretrain_prototype)
+                    # todo ========================================
+                    outputs = self.seg_net(
+                        *inputs, gt_semantic_seg=targets[:, None, ...],
+                        gt_boundary=gt_boundary[:, ...],
+                        pretrain_prototype=pretrain_prototype)
 
             self.foward_time.update(time.time() - foward_start_time)
 

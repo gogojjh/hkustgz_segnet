@@ -80,7 +80,7 @@
 		"multi_grid": [1, 1, 1],
 		"model_name": "base_ocnet",
 		"stride": 8,
-		"bn_type": "torchbn",
+		"bn_type": "torchsyncbn",
 		"factors": [[8, 8]],
 		"loss_weights": {
 			"corr_loss": 0.01,

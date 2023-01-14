@@ -18,32 +18,30 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
-
 class BoundaryLoss(nn.Module, ABC):
     ''' 
     Cross entropy loss between boundary prediction and boundary gt.
     '''
+
     def __init__(self, configer):
-        super(BoundaryLoss).__init__()
+        super(BoundaryLoss, self).__init__()
         self.configer = configer
-        self.ce_loss = FSCELoss(self.configer)
-            
+
         self.ignore_label = -1
         if self.configer.exists(
                 'loss', 'params') and 'ce_ignore_index' in self.configer.get(
                 'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
-            
+
         self.proto_norm = nn.LayerNorm(2)
-        
+
     def forward(self, boundary_pred, boundary_gt):
         boundary_pred = self.proto_norm(boundary_pred)
-        #todo: check ignore_label in boundary_gt is 1 or 255!
+        # todo: check ignore_label in boundary_gt is 1 or 255!
         boundary_loss = F.cross_entropy(boundary_pred, boundary_gt, ignore_index=self.ignore_label)
-        
-        
-        
+
+        return boundary_loss
 
 
 class ConfidenceLoss(nn.Module, ABC):
@@ -244,7 +242,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
         if self.configer.get('loss', 'confidence_loss'):
             self.confidence_loss = ConfidenceLoss(configer=configer)
             self.confidence_loss_weight = self.configer.get('protoseg', 'confidence_loss_weight')
-        
+
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
         if self.use_boundary:
             self.boundary_loss = BoundaryLoss(configer=configer)
@@ -261,17 +259,18 @@ class PixelProbContrastLoss(nn.Module, ABC):
             assert 'seg' in preds
             assert 'logits' in preds
             assert 'target' in preds
-            
+
             if self.use_boundary and gt_boundary is not None:
                 assert 'boundary' in preds
-                
-                boundary_pred = preds['boundary'] # [b 2 h w]
-                boundary_pred = F.interpolate(input=boundary_pred, 
+
+                boundary_pred = preds['boundary']  # [b 2 h w]
+                boundary_pred = F.interpolate(input=boundary_pred,
                                               size=(h, w),
                                               mode='bilinear',
                                               align_corners=True)
-                
+
                 boundary_loss = self.boundary_loss(boundary_pred, gt_boundary)
+                Log.info('boundary_loss: {}'.format(boundary_loss))
 
             seg = preds['seg']  # [b c h w]
             contrast_logits = preds['logits']
