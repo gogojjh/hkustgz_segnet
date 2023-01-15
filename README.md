@@ -7,6 +7,7 @@ Semantic Segmentation for Semantic HKUSTGZ Dataset.
 ### Docker Image
 
 ```
+docker login -u iidcramlab -p ramlab-123
 docker pull janeandrebecca/hkustgz_segnet_ros
 ```
 
@@ -127,3 +128,9 @@ $DATA_ROOT
 │   │   ├── image
 │   │   └── label
 ```
+
+## Current Results
+
+Training data: Cityscapes
+Test data: HKUSTGZ
+![image](docs/media/1669971886354309510.png)

@@ -80,7 +80,7 @@
 		"multi_grid": [1, 1, 1],
 		"model_name": "base_ocnet",
 		"stride": 8,
-		"bn_type": "torchsyncbn",
+		"bn_type": "torchbn",
 		"factors": [[8, 8]],
 		"loss_weights": {
 			"corr_loss": 0.01,
@@ -165,7 +165,7 @@
 		"confidence_loss_weight": 0.1,
 		"proj_dim": 720,
 		"use_gt_proto_learning": true,
-		"use_boundary": true,
+		"use_boundary": false,
 		"boundary_head_mid_channel": 256
 	},
 	"uncertainty_visualizer": {
@@ -187,7 +187,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 2

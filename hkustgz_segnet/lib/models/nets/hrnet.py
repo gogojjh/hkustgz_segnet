@@ -78,7 +78,6 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
-        self.boundary_norm = nn.LayerNorm(2)
 
     def forward(self, x_, gt_semantic_seg=None, gt_boundary= None, pretrain_prototype=False):
         x = self.backbone(x_)
@@ -112,7 +111,6 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         if self.use_boundary:
             boundary_pred = self.boundary_head(c) # [b 2 h w]
             # boundary_pred = rearrange(boundary_pred, 'b c h w -> (b h w) c') # [(b h w) 2]
-            # boundary_pred = self.boundary_norm(boundary_pred)
         
         if self.use_probability:
             c_var = self.uncertainty_head(c)  # ! b c h w, log(sigma^2)
