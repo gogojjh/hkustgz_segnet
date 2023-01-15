@@ -98,6 +98,11 @@ def collate(batch, trans_dict):
                 labelmap = batch[i]['labelmap'].data.unsqueeze(0).unsqueeze(0).float()
                 labelmap = F.interpolate(labelmap, scaled_size_hw, mode='nearest').long().squeeze(0).squeeze(0)
                 batch[i]['labelmap'] = DataContainer(labelmap, stack=True)
+            
+            if 'boundarymap' in data_keys:
+                boundarymap = batch[i]['boundarymap'].data.unsqueeze(0).unsqueeze(0).float()
+                boundarymap = F.interpolate(boundarymap, scaled_size_hw, mode='nearest').long().squeeze(0).squeeze(0)
+                batch[i]['boundarymap'] = DataContainer(boundarymap, stack=True)
 
             if 'maskmap' in data_keys:
                 maskmap = batch[i]['maskmap'].data.unsqueeze(0).unsqueeze(0).float()
@@ -144,6 +149,9 @@ def collate(batch, trans_dict):
 
             if 'labelmap' in data_keys:
                 batch[i]['labelmap'] = DataContainer(F.pad(batch[i]['labelmap'].data, pad=pad, value=-1), stack=batch[i]['labelmap'].stack)
+                
+            if 'boundarymap' in data_keys:
+                batch[i]['boundarymap'] = DataContainer(F.pad(batch[i]['boundarymap'].data, pad=pad, value=-1), stack=batch[i]['boundarymap'].stack)
 
             if 'maskmap' in data_keys:
                 batch[i]['maskmap'] = DataContainer(F.pad(batch[i]['maskmap'].data, pad=pad, value=0), stack=batch[i]['maskmap'].stack)

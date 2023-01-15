@@ -127,9 +127,6 @@ class ProbProtoSegHead(nn.Module):
             self.proto_var = nn.Parameter(torch.ones(
                 self.num_classes, self.num_prototype, self.proj_dim), requires_grad=False)
 
-        if self.use_boundary:
-            self.boundary_attention_module = BoundaryAttentionModule(configer=configer)
-
         self.use_gt_proto_learning = self.configer.get('protoseg', 'use_gt_proto_learning')
 
     def compute_similarity(self, x, x_var):
@@ -248,18 +245,13 @@ class ProbProtoSegHead(nn.Module):
 
         gt_boundary: 0: non-edge, 1: edge    
         """
-        # largest score inside a class
-        pred_seg = torch.max(out_seg, dim=1)[1]  # [b*h*w]
-
-        mask = (gt_seg == pred_seg.view(-1))  # [b*h*w] bool
-
         #! pixel-to-prototype online clustering
         protos = self.prototypes.data.clone()
         proto_var = self.proto_var.data.clone()
-        # to store predictions of proto in each class
-        proto_target = gt_seg.clone().float()
-        sim_mat = sim_mat.permute(0, 2, 1)  # [n m c]
 
+        sim_mat = sim_mat.permute(0, 2, 1)  # [n m c]
+        
+        
         if self.use_boundary and gt_boundary is not None:
             non_edge_proto_num = self.num_prototype - 1
 
@@ -269,13 +261,23 @@ class ProbProtoSegHead(nn.Module):
             _c_var_ori = _c_var.clone()
             # 0: non-edge, 255: edge
             non_boundary_mask = gt_boundary == 0
-            sim_mat = sim_mat[non_boundary_mask, :, :-2]  # [non_edge_num, c, (m-1)]
+            sim_mat = sim_mat[non_boundary_mask, :-1, ...]  # [non_edge_num, (m-1), c]
             _c_var = _c_var[non_boundary_mask, ...]
             _c = _c[non_boundary_mask, ...]
             gt_seg = gt_seg[non_boundary_mask]
+            
+            # largest score inside a class
+            pred_seg = torch.max(out_seg, dim=1)[1]  # [b*h*w]
+            mask = (gt_seg == pred_seg.view(-1)[non_boundary_mask])  # [b*h*w] bool
+            
+            proto_target = gt_seg_ori.clone().float()
 
         else:
             non_edge_proto_num = self.num_prototype
+            proto_target = gt_seg.clone().float()
+            # largest score inside a class
+            pred_seg = torch.max(out_seg, dim=1)[1]  # [b*h*w]
+            mask = (gt_seg == pred_seg.view(-1))  # [b*h*w] bool
 
         for i in range(self.num_classes):
             if i == 255:
@@ -283,16 +285,12 @@ class ProbProtoSegHead(nn.Module):
 
             #!====================== boundary prototype learning and update ======================#
             #! get edge/non-edge pixel embeddings based on gt_boundary
-                # todo 0: edge, 255: non-edge
 
-            boundary_cls_mask = torch.logical_and(gt_boundary == 0, gt_seg == i)  # [b*h*w]
+            boundary_cls_mask = torch.logical_and(gt_boundary == 0, gt_seg_ori == i)  # [b*h*w]
 
             if torch.count_nonzero(boundary_cls_mask) > 0:
                 boundary_c_cls = _c_ori[boundary_cls_mask]
                 boundary_c_var_cls = _c_var_ori[boundary_cls_mask]
-
-                boundary_proto = self.boundary_prototypes.data.clone()
-                boundary_proto_var = self.boundary_proto_var.data.clone()
 
                 if self.update_prototype:
                     # [embed_dim]
@@ -424,12 +422,14 @@ class ProbProtoSegHead(nn.Module):
                 proto_target[torch.logical_and(gt_seg_ori == i, non_boundary_mask)] = indexs.float(
                 ) + (self.num_prototype * i)  # n samples -> n*m labels
                 # edge pixels
-                proto_target[torch.logical_and(gt_seg_ori == i, torch.logical_not(non_boundary_mask))] = (
-                    self.num_prototype - 1).float() + (self.num_prototype * i)  # n samples -> n*m labels
+                proto_target[torch.logical_and(gt_seg_ori == i, torch.logical_not(non_boundary_mask))] = float(
+                    self.num_prototype - 1) + (self.num_prototype * i)  # n samples -> n*m labels
 
         self.prototypes = nn.Parameter(
             l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
         self.proto_var = nn.Parameter(proto_var, requires_grad=False)
+        
+        del gt_seg, gt_seg_ori, _c, _c_var, _c_var_ori, gt_boundary, sim_mat, non_boundary_mask, pred_seg, mask
 
         if dist.is_available() and dist.is_initialized():  # distributed learning
             protos = self.prototypes.data.clone()
@@ -454,17 +454,6 @@ class ProbProtoSegHead(nn.Module):
         w_size = x.shape[3]
         gt_size = x.size()[2:]
 
-        if boundary_pred is not None and self.use_boundary:
-            ''' 
-            Use boundary map to let uncertainty of boundary pixels larger.
-            '''
-            boundary_pred = rearrange(boundary_pred, '(b h w) c -> b c h w',
-                                      b=b_size, h=h_size)
-            x_var = self.boundary_attention_module(boundary_pred, x_var)  # [b proj_dim h w]
-
-            # todo rescale variance
-            x_var = torch.sigmoid(x)
-
         x = rearrange(x, 'b c h w -> (b h w) c')
         x_var = rearrange(x_var, 'b c h w -> (b h w) c')
 
@@ -486,7 +475,7 @@ class ProbProtoSegHead(nn.Module):
                 gt_boundary.float(), size=gt_size, mode='nearest').view(-1)
 
         if self.pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
-            gt_seg = F.interpolate(
+            gt_seg = F.interpolate( 
                 gt_semantic_seg.float(), size=gt_size, mode='nearest').view(-1)
 
             contrast_target = self.prototype_learning(

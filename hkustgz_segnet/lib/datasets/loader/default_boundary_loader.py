@@ -26,11 +26,13 @@ from lib.utils.tools.logger import Logger as Log
 
 class DefaultBoundaryLoader(data.Dataset):
     def __init__(self, root_dir, aug_transform=None, dataset=None,
-                 img_transform=None, label_transform=None, configer=None):
+                 img_transform=None, label_transform=None, boundary_label_transform=None,
+                 configer=None):
         self.configer = configer
         self.aug_transform = aug_transform
         self.img_transform = img_transform
         self.label_transform = label_transform
+        self.boundary_label_transform = boundary_label_transform
         self.img_list, self.label_list, self.name_list, self.edge_label_list = self.__list_dirs(
             root_dir, dataset)
         size_mode = self.configer.get(dataset, 'data_transformer')['size_mode']
@@ -55,8 +57,8 @@ class DefaultBoundaryLoader(data.Dataset):
         # 0: non-edge, 255: edge
         boundary_map = ImageHelper.read_image(self.edge_label_list[index], tool=self.configer.get(
             'data', 'image_tool'), mode='P')  # ! 0: non-edge, 255： edge, but contains void class
+        
         if self.configer.exists('data', 'label_list'):
-
             labelmap = self._encode_label(labelmap)
         if self.configer.exists('data', 'reduce_zero_label'):
             labelmap = self._reduce_zero_label(labelmap)
@@ -75,9 +77,9 @@ class DefaultBoundaryLoader(data.Dataset):
 
         if self.label_transform is not None:
             labelmap = self.label_transform(labelmap)
-            boundary_map = self.label_transform(boundary_map)
             # 0:non-edge, 255: edge -> 0: non-edge, 1: edge
-
+            boundary_map = self.boundary_label_transform(boundary_map)
+            
         meta = dict(
             ori_img_size=img_size,
             border_size=border_size,

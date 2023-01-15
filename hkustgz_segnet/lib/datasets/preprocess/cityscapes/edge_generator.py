@@ -57,6 +57,9 @@ def generate_train_val_edge(label_path, edge_path, kernel_size=10):
         label = np.array(Image.open(os.path.join(label_path, label_file)).convert('P'))
         edge = generate_edge(label, kernel_size)
         
+        assert edge.shape[-1] == label.shape[-1]
+        assert edge.shape[-2] == label.shape[-2]
+        
         im_edge = Image.fromarray(edge, 'P')
 
         edge_file = label_file.replace('label', 'edge')
@@ -135,13 +138,13 @@ def calculate_edge(edge_path):
 
 
 if __name__ == "__main__":
-    # label_path = "/data/Cityscapes/train/label/"
-    # edge_path = "/data/Cityscapes/train/edge/"
-    label_path = "/data/Cityscapes/val/label/"
-    edge_path = "/data/Cityscapes/val/edge/"
+    label_path = "/data/Cityscapes/train/label/"
+    edge_path = "/data/Cityscapes/train/edge/"
+    # label_path = "/data/Cityscapes/val/label/"
+    # edge_path = "/data/Cityscapes/val/edge/"
     for seq in os.listdir(label_path):
-        # generate_train_val_edge(os.path.join(label_path, seq), os.path.join(edge_path, seq), 5)
-        label_nedge2void_path = "/data/Cityscapes/val/label_non_edge_void/"
-        label_nedge2void(os.path.join(label_path, seq), os.path.join(edge_path, seq), os.path.join(label_nedge2void_path, seq))
+        generate_train_val_edge(os.path.join(label_path, seq), os.path.join(edge_path, seq), 5)
+        # label_nedge2void_path = "/data/Cityscapes/val/label_non_edge_void/"
+        # label_nedge2void(os.path.join(label_path, seq), os.path.join(edge_path, seq), os.path.join(label_nedge2void_path, seq))
 
     # calculate_edge(edge_path)

@@ -25,6 +25,7 @@ class BoundaryHead(nn.Module):
                                 bn_type=self.configer.get(
                                     'network', 'bn_type'
                                 )),
+            nn.Dropout2d(0.10),
             nn.Conv2d(mid_channels,
                       num_masks,
                       kernel_size=1,

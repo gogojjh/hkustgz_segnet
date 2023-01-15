@@ -23,6 +23,7 @@ from lib.models.modules.uncertainty_head import UncertaintyHead
 from lib.models.modules.sinkhorn import distributed_sinkhorn
 from lib.models.modules.prob_proto_seg_head import ProbProtoSegHead
 from lib.models.modules.boundary_head import BoundaryHead
+from lib.models.modules.boundary_attention_module import BoundaryAttentionModule
 
 from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
@@ -69,9 +70,11 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
         self.prob_seg_head = ProbProtoSegHead(configer=configer)
         
-        self.boundary_head = BoundaryHead(configer=configer,
-                                          in_channels=self.proj_dim,
-                                          mid_channels=self.configer.get('protoseg', 'boundary_head_mid_channel'))
+        if self.use_boundary:
+            self.boundary_head = BoundaryHead(configer=configer,
+                                            in_channels=self.proj_dim,
+                                            mid_channels=self.configer.get('protoseg', 'boundary_head_mid_channel'))
+            # self.boundary_attention_module = BoundaryAttentionModule(configer=configer)
 
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
@@ -79,7 +82,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
 
     def forward(self, x_, gt_semantic_seg=None, gt_boundary= None, pretrain_prototype=False):
         x = self.backbone(x_)
-        _, _, h, w = x[0].size()  # 128, 256
+        b, _, h, w = x[0].size()  # 128, 256
 
         feat1 = x[0]
         feat2 = F.interpolate(x[1], size=(
@@ -108,14 +111,24 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         boundary_pred = None
         if self.use_boundary:
             boundary_pred = self.boundary_head(c) # [b 2 h w]
-            boundary_pred = rearrange(boundary_pred, 'b c h w -> (b h w) c') # [(b h w) 2]
-            boundary_pred = self.boundary_norm(boundary_pred)
-            boundary_pred = l2_normalize(boundary_pred) # [(b h w) 2]
-            
+            # boundary_pred = rearrange(boundary_pred, 'b c h w -> (b h w) c') # [(b h w) 2]
+            # boundary_pred = self.boundary_norm(boundary_pred)
         
         if self.use_probability:
             c_var = self.uncertainty_head(c)  # ! b c h w, log(sigma^2)
             c_var = torch.exp(c_var)  # ! variance x_var should > 0!
+            
+            if self.use_boundary:
+                ''' 
+                Use boundary map to let uncertainty of boundary pixels larger.
+                '''
+                # boundary_pred = rearrange(boundary_pred, '(b h w) c -> b c h w',
+                #                       b=b, h=h)
+                # boundary_pred = F.softmax(boundary_pred, 1)
+                #todo ====== solve large attention net issue ======
+                # x_var = self.boundary_attention_module(boundary_pred, c_var)  # [b proj_dim h w]
+                # todo rescale variance
+                # x_var = torch.sigmoid(x_var)
             
             preds = self.prob_seg_head(c, c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred, gt_boundary=gt_boundary)
         

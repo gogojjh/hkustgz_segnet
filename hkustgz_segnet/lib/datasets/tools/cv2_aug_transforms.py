@@ -42,6 +42,7 @@ class _BaseTransform(object):
 
         ret_dict = collections.defaultdict(lambda: None)
         for name in self.DATA_ITEMS:
+            
             func_name = '_process_' + name
             x = data_dict[name]
 
@@ -107,8 +108,10 @@ class Padding(_BaseTransform):
     def _process_angle_map(self, x, *args):
         return self._pad(x, 0, *args)
 
+    # def _process_boundary_map(self, x, *args):
+    #     return self._pad(x, 0, *args)
     def _process_boundary_map(self, x, *args):
-        return self._pad(x, 0, *args)
+        return self._pad(x, 255, *args)
 
     def _process_multi_label_direction_map(self, x, *args):
         return self._pad(x, 0, *args)
@@ -179,8 +182,20 @@ class RandomHFlip(_BaseTransform):
         ret_angle_map = cv2.flip(ret_angle_map, 1)
         return ret_angle_map
 
-    def _process_boundary_map(self, x):
-        return cv2.flip(x, 1)
+    # def _process_boundary_map(self, x):
+    #     return cv2.flip(x, 1)
+    def _process_boundary_map(self, boundary_map):
+        boundary_map = cv2.flip(boundary_map, 1)
+        # to handle datasets with left/right annatations
+        if self.swap_pair is not None:
+            assert isinstance(self.swap_pair, (tuple, list))
+            temp = boundary_map.copy()
+            for pair in self.swap_pair:
+                assert isinstance(pair, (tuple, list)) and len(pair) == 2
+                boundary_map[temp == pair[0]] = pair[1]
+                boundary_map[temp == pair[1]] = pair[0]
+
+        return boundary_map
 
     def _process_multi_label_direction_map(self, multi_label_direction_map):
         perm = [4, 3, 2, 1, 0, 7, 6, 5]
@@ -387,6 +402,8 @@ class RandomResize(_BaseTransform):
     def _process_angle_map(self, x, converted_size, *args):
         return cv2.resize(x, converted_size, interpolation=cv2.INTER_NEAREST)
 
+    # def _process_boundary_map(self, x, converted_size, *args):
+    #     return cv2.resize(x, converted_size, interpolation=cv2.INTER_NEAREST)
     def _process_boundary_map(self, x, converted_size, *args):
         return cv2.resize(x, converted_size, interpolation=cv2.INTER_NEAREST)
 
@@ -464,6 +481,9 @@ class RandomRotate(_BaseTransform):
         return self._warp(x, self.mean, *args).astype(np.uint8)
 
     def _process_labelmap(self, x, *args):
+        return self._warp(x, (255, 255, 255), *args).astype(np.uint8)
+    
+    def _process_boundary_map(self, x, *args):
         return self._warp(x, (255, 255, 255), *args).astype(np.uint8)
 
     def _process_maskmap(self, x, *args):

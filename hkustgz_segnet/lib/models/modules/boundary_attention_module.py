@@ -31,6 +31,7 @@ class BoundaryAttentionModule(nn.Module):
                                 bn_type=self.configer.get(
                                     'network', 'bn_type'
                                 )),
+            nn.Dropout2d(0.10),
             nn.Conv2d(self.mid_channels,
                       self.out_channels,
                       kernel_size=1,

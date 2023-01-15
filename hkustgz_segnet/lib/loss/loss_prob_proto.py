@@ -34,11 +34,10 @@ class BoundaryLoss(nn.Module, ABC):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
-        self.proto_norm = nn.LayerNorm(2)
-
-    def forward(self, boundary_pred, boundary_gt):
-        boundary_pred = self.proto_norm(boundary_pred)
-        # todo: check ignore_label in boundary_gt is 1 or 255!
+    def forward(self, boundary_pred, boundary_gt, sem_gt):
+        mask = sem_gt == self.ignore_label # [b h w]
+        boundary_gt[mask] = self.ignore_label
+        
         boundary_loss = F.cross_entropy(boundary_pred, boundary_gt, ignore_index=self.ignore_label)
 
         return boundary_loss
@@ -63,7 +62,6 @@ class ConfidenceLoss(nn.Module, ABC):
 
         self.num_classes = self.configer.get('data', 'num_classes')
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
-        self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
 
     def forward(self, sim_mat):
         # sim_mat: [n (c m)]
@@ -246,6 +244,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
         if self.use_boundary:
             self.boundary_loss = BoundaryLoss(configer=configer)
+            self.boundary_loss_weight = self.configer.get('protoseg', 'boundary_loss_weight')
 
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
@@ -254,7 +253,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
     def forward(self, preds, target, gt_boundary=None):
         h, w = target.size(1), target.size(2)
-
+        
         if isinstance(preds, dict):
             assert 'seg' in preds
             assert 'logits' in preds
@@ -262,15 +261,16 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             if self.use_boundary and gt_boundary is not None:
                 assert 'boundary' in preds
+                
+                h_bound, w_bound = gt_boundary.size(1), gt_boundary.size(2) 
 
                 boundary_pred = preds['boundary']  # [b 2 h w]
                 boundary_pred = F.interpolate(input=boundary_pred,
-                                              size=(h, w),
+                                              size=(h_bound, w_bound),
                                               mode='bilinear',
                                               align_corners=True)
 
-                boundary_loss = self.boundary_loss(boundary_pred, gt_boundary)
-                Log.info('boundary_loss: {}'.format(boundary_loss))
+                boundary_loss = self.boundary_loss(boundary_pred, gt_boundary, target)
 
             seg = preds['seg']  # [b c h w]
             contrast_logits = preds['logits']
@@ -299,11 +299,16 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
                 return {'loss': loss,
                         'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'confidence_loss': confidence_loss}
+            elif self.use_boundary:
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.boundary_loss_weight * boundary_loss
 
-            loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
+                return {'loss': loss,
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'boundary_loss': boundary_loss}
+            else:
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
 
-            return {'loss': loss,
-                    'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
+                return {'loss': loss,
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(

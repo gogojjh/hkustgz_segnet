@@ -113,7 +113,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 200,
+		"test_interval": 2000,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -155,12 +155,13 @@
 		"use_prototype": true,
 		"update_prototype": true,
 		"warmup_iters": 0,
-		"similarity_measure": "fast_mls",
+		"similarity_measure": "wasserstein",
 		"use_probability": true,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 0.1,
 		"prob_ppc_weight": 0.1,
+		"boundary_loss_weight": 1.0,
 		"confidence_loss_weight": 0.1,
 		"proj_dim": 720,
 		"use_gt_proto_learning": true,
@@ -186,7 +187,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 2

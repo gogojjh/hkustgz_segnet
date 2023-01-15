@@ -48,6 +48,10 @@ class DataLoader(object):
         self.label_transform = trans.Compose([
             trans.ToLabel(),
             trans.ReLabel(255, -1), ])
+        
+        self.boundary_label_transform = trans.Compose([
+            trans.ToLabel(),
+            trans.ReLabel(255, 1), ]) # 0->0: non-edge, 255->1: edge
 
     def get_dataloader_sampler(self, klass, split, dataset):
 
@@ -56,14 +60,24 @@ class DataLoader(object):
         root_dir = self.configer.get('data', 'data_dir')
         if isinstance(root_dir, list) and len(root_dir) == 1:
             root_dir = root_dir[0]
-
-        kwargs = dict(
-            dataset=dataset,
-            aug_transform=(self.aug_train_transform if split == 'train' else self.aug_val_transform),
-            img_transform=self.img_transform,
-            label_transform=self.label_transform,
-            configer=self.configer
-        )
+            
+        if self.configer.get('protoseg', 'use_boundary'):
+            kwargs = dict(
+                dataset=dataset,
+                aug_transform=(self.aug_train_transform if split == 'train' else self.aug_val_transform),
+                img_transform=self.img_transform,
+                label_transform=self.label_transform,
+                boundary_label_transform = self.boundary_label_transform,
+                configer=self.configer
+            )
+        else: 
+            kwargs = dict(
+                dataset=dataset,
+                aug_transform=(self.aug_train_transform if split == 'train' else self.aug_val_transform),
+                img_transform=self.img_transform,
+                label_transform=self.label_transform,
+                configer=self.configer
+            )
 
         if isinstance(root_dir, str):
             loader = klass(root_dir, **kwargs)

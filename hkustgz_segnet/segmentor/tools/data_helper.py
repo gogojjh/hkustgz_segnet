@@ -174,7 +174,7 @@ class DataHelper:
             sequences = [
                 self._prepare_sequence(inputs, force_list=True),
                 self._prepare_sequence(targets, force_list=False),
-                self._prepare_sequence(boundary_maps, force_list=True)
+                self._prepare_sequence(boundary_maps, force_list=False)
             ]
         else:
             sequences = [
