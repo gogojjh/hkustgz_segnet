@@ -264,65 +264,64 @@ class Tester(object):
                         sem_img_ros.append(sem_img)
                         
 
-                    # # visualize
-                    # from lib.datasets.tools.transforms import DeNormalize
-                    # mean = self.configer.get('normalize', 'mean')
-                    # std = self.configer.get('normalize', 'std')
-                    # div_value = self.configer.get('normalize', 'div_value')
-                    # org_img = DeNormalize(div_value, mean, std)(inputs[k])
-                    # org_img = org_img.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
-                    # org_img = cv2.cvtColor(org_img, cv2.COLOR_BGR2RGB)
+                    # =============== visualie ===============　#
+                    from lib.datasets.tools.transforms import DeNormalize
+                    mean = self.configer.get('normalize', 'mean')
+                    std = self.configer.get('normalize', 'std')
+                    div_value = self.configer.get('normalize', 'div_value')
+                    org_img = DeNormalize(div_value, mean, std)(inputs[k])
+                    org_img = org_img.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+                    org_img = cv2.cvtColor(org_img, cv2.COLOR_BGR2RGB)
 
 
                     # # colorize the label-map
-                    # if os.environ.get('save_gt_label'):
-                    #     if self.configer.exists('data', 'reduce_zero_label') and self.configer.get('data',
-                    #                                                                                'reduce_zero_label'):
-                    #         label_img = labels[k] + 1
-                    #         label_img = np.asarray(label_img, dtype=np.uint8)
-                    #
-                    #     label_img = cv2.resize(label_img, (org_img.shape[1], org_img.shape[0]),
-                    #                            interpolation=cv2.INTER_NEAREST)
-                    #     color_img_ = Image.fromarray(label_img)
-                    #     color_img_.putpalette(colors)
-                    #     color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
-                    #
-                    #     sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
-                    #     sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
-                    #
-                    #     for i in range(0, 200):
-                    #         mask = np.zeros_like(label_img)
-                    #         mask[label_img == i] = 1
-                    #
-                    #         contours = cv2.findContours(mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
-                    #         cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
-                    #                          1, cv2.LINE_AA)
-                    #
-                    #     vis_path = os.path.join(self.save_dir, "gt_vis_overlay/", '{}.png'.format(names[k]))
-                    #     FileHelper.make_dirs(vis_path, is_file=True)
-                    #     ImageHelper.save(sys_img_part, save_path=vis_path)
-                    #
-                    # else:
-                    #     label_img = cv2.resize(label_img, (org_img.shape[1], org_img.shape[0]), interpolation=cv2.INTER_NEAREST)
-                    #     color_img_ = Image.fromarray(label_img)
-                    #     color_img_.putpalette(colors)
-                    #     color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
-                    #
-                    #     sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
-                    #
-                    #     sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
-                    #
-                    #     for i in range(0, 200):
-                    #         mask = np.zeros_like(label_img)
-                    #         mask[label_img == i] = 1
-                    #
-                    #         contours = cv2.findContours(mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
-                    #         cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
-                    #                          1, cv2.LINE_AA)
-                    #
-                    #     vis_path = os.path.join(self.save_dir, "vis_overlay/", '{}.png'.format(names[k]))
-                    #     FileHelper.make_dirs(vis_path, is_file=True)
-                    #     ImageHelper.save(sys_img_part, save_path=vis_path)
+                    if os.environ.get('save_gt_label'):
+                        if self.configer.exists('data', 'reduce_zero_label') and self.configer.get('data',                                                                 'reduce_zero_label'):
+                            label_img = labels[k] + 1
+                            label_img = np.asarray(label_img, dtype=np.uint8)
+                    
+                        label_img = cv2.resize(label_img, (org_img.shape[1], org_img.shape[0]),
+                                               interpolation=cv2.INTER_NEAREST)
+                        color_img_ = Image.fromarray(label_img)
+                        color_img_.putpalette(colors)
+                        color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
+                    
+                        sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
+                        sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
+                    
+                        for i in range(0, 200):
+                            mask = np.zeros_like(label_img)
+                            mask[label_img == i] = 1
+                    
+                            contours = cv2.findContours(mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
+                            cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
+                                             1, cv2.LINE_AA)
+                    
+                        vis_path = os.path.join(self.save_dir, "gt_vis_overlay/", '{}.png'.format(names[k]))
+                        FileHelper.make_dirs(vis_path, is_file=True)
+                        ImageHelper.save(sys_img_part, save_path=vis_path)
+                    
+                    else:
+                        label_img = cv2.resize(label_img, (org_img.shape[1], org_img.shape[0]), interpolation=cv2.INTER_NEAREST)
+                        color_img_ = Image.fromarray(label_img)
+                        color_img_.putpalette(colors)
+                        color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
+                    
+                        sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
+                    
+                        sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
+                    
+                        for i in range(0, 200):
+                            mask = np.zeros_like(label_img)
+                            mask[label_img == i] = 1
+                    
+                            contours = cv2.findContours(mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
+                            cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
+                                             1, cv2.LINE_AA)
+                    
+                        vis_path = os.path.join(self.save_dir, "vis_overlay/", '{}.png'.format(names[k]))
+                        FileHelper.make_dirs(vis_path, is_file=True)
+                        ImageHelper.save(sys_img_part, save_path=vis_path)
 
             self.batch_time.update(time.time() - start_time)
             start_time = time.time()
