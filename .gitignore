@@ -11,10 +11,10 @@
 *.cmake
 
 .vscode
-/src/segnet/log
+/segnet/log
 /.catkin_tools
 /build
 /devel
 /logs
-/src/segnet/wandb
+/segnet/wandb
 

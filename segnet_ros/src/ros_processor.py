@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/home/hkustgz_segnet/src/segnet')
+sys.path.append('/home/hkustgz_segnet/segnet')
 import lib.datasets.tools.transforms as trans
 from lib.datasets.tools.collate import collate
 from lib.extensions.parallel.data_container import DataContainer
@@ -17,10 +17,7 @@ class ROSProcessor():
         self.configer = configer
         self.img_topic = self.configer.get('ros','image_topic')
         self.sem_img_topic = self.configer.get('ros', 'sem_image_topic')
-        self.uncer_img_topic1 = self.configer.get('ros', 'uncer_image_topic1')
-        self.uncer_img_topic2 = self.configer.get('ros', 'uncer_image_topic2')
-        self.uncer_img_topic3 = self.configer.get('ros', 'uncer_image_topic3')
-        self.uncer_img_topic_list = [self.uncer_img_topic1, self.uncer_img_topic2, self.uncer_img_topic3]
+        self.uncer_img_topic = self.configer.get('ros', 'uncer_image_topic')
         self.msg_type = self.configer.get('ros', 'msg_type')
 
         self.img_transform = trans.Compose([
@@ -50,42 +47,22 @@ class ROSProcessor():
             self.img_sub = rospy.Subscriber(
             self.img_topic, Image, self._image_callback, queue_size=1, buff_size=52428800)
         self.sem_img_pub = rospy.Publisher(self.sem_img_topic, Image, queue_size=1)
-        self.uncer_img_pub_list = []
-        for i in range(3):
-            self.uncer_img_pub_list.append(rospy.Publisher(self.uncer_img_topic_list[i], Image, queue_size=1))
+        self.uncer_img_pub = rospy.Publisher(self.uncer_img_topic, Image, queue_size=1)
         
     def pub_semimg_msg(self, sem_img, ori_header):
         bridge = CvBridge()
 
         try:
             self.sem_img_pub.publish(bridge.cv2_to_imgmsg(sem_img, 'mono8', header=ori_header))
-            # self.sem_img_pub.publish(bridge.cv2_to_compressed_imgmsg(sem_img))
             Log.info('pub sem img topic')
         except CvBridgeError as e:
             Log.error(e)
-            
-    # def CvToRos(self, img):
-    #     msg = CustomImage()
-    #     msg.header.stamp = rospy.Time.now()
-    #     msg.width        = img.shape[1]
-    #     msg.height       = img.shape[0]
-    #     channel          = 1
-    #     if len(img.shape) is 3:
-    #         channel = img.shape[2]
-    #     msg.encoding = 'mono16'
-    #     msg.is_bigendian = 0
-    #     msg.step = msg.width * channel
-    #     # msg.data = img.tostring()
-    #     msg.data = img.tobytes()
-        
-    #     return msg
 
     def pub_uncerimg_msg(self, uncer_img, i, ori_header):
         bridge = CvBridge()
         
         try:
-            # self.uncer_img_pub_list[i].publish(self.CvToRos(uncer_img))
-            self.uncer_img_pub_list[i].publish(bridge.cv2_to_imgmsg(uncer_img, encoding="mono16",
+            self.uncer_img_pub.publish(bridge.cv2_to_imgmsg(uncer_img, encoding="mono8",
                                                                     header=ori_header))
             Log.info('pub sem img topic')
         except CvBridgeError as e:
@@ -147,14 +124,14 @@ class ROSProcessor():
                 if self.configer.get('data', 'input_mode') == 'BGR':
                     img = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
                     if mode == 'rgb':
-                        cv_image = ImageHelper.bgr2rgb(img)
+                        img = ImageHelper.bgr2rgb(img)
                 if self.configer.get('data', 'input_mode') == 'RGB':
                     img = self.bridge.imgmsg_to_cv2(msg, 'rgb8')
             else:
                 if self.configer.get('data', 'input_mode') == 'BGR':
                     img = self.bridge.compressed_imgmsg_to_cv2(msg, 'bgr8')
                     if mode == 'rgb':
-                        cv_image = ImageHelper.bgr2rgb(img)
+                        img = ImageHelper.bgr2rgb(img)
                 if self.configer.get('data', 'input_mode') == 'RGB':
                     img = self.bridge.compressed_imgmsg_to_cv2(msg, 'rgb8')
         except CvBridgeError as e:

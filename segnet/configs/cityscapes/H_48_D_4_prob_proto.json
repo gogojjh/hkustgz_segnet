@@ -196,9 +196,7 @@
 		"use_ros": true,
 		"image_topic": "/camera1/image_color/compressed",
 		"sem_image_topic": "/semantic_image",
-		"uncer_image_topic1": "/uncertainty_image1",
-		"uncer_image_topic2": "/uncertainty_image2",
-		"uncer_image_topic3": "/uncertainty_image3",
+		"uncer_image_topic1": "/uncertainty_image",
 		"msg_type": "sensor_msgs/CompressedImage"
 	}
 }

@@ -201,22 +201,20 @@ class Tester(object):
                         m = nn.Softmax(dim=-1)
                         logits = m(logits)
                         val, ind = torch.topk(logits, k=3, dim=-1) # [h, w, 3]
-                        uncer_img_list = []
+                        uncer_img = torch.zeros([label_img.shape[0], label_img.shape[1], 3], dtype=torch.int64)
                         for i in range(3):
                             ''' 
                             logits: [0, 1]
                             class id: int
-                            confidence img: (class id[i] + logit[i]) * 1000
+                            confidence img: (class id[i] + logit[i]) * 100
                             '''
                             #[h, w, num_cls]([h, w])
-                            uncer_img = torch.zeros([label_img.shape[0], label_img.shape[1]], dtype=torch.int64)
-                            uncer_img = ((val[:, :, i] + ind[:, :, i]) * 1000).long()
-                            uncer_img = uncer_img.cpu().numpy() # int64
-                            uncer_img = uncer_img.astype(np.uint16)
-                            # uncer_img = cv2.cvtColor(uncer_img, cv2.CV_16UC1)
-                            uncer_img_list.append(uncer_img)
-    
-                        uncer_img_ros.append(uncer_img_list)
+                            uncer_img[:, :, i] = ((val[:, :, i] + ind[:, :, i]) * 100).long()
+                            
+                        uncer_img = uncer_img.cpu().numpy() # int64
+                        uncer_img = uncer_img.astype(np.uint8)
+                        # uncer_img = cv2.cvtColor(uncer_img, cv2.CV_16UC1)
+                        uncer_img_ros.append(uncer_img)
                         
                     if self.configer.exists('data', 'reduce_zero_label') and self.configer.get('data', 'reduce_zero_label'):
                         label_img = label_img + 1
