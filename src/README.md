@@ -63,7 +63,7 @@ docker run -it --gpus all --shm-size 204g -v /data/rygeng:/data -v /home/rygeng:
 ## Train/Validation/Test without ROS
 
 ```
-cd /home/hkustgz_segnet/scripts/cityscapes/hrnet
+cd /home/hkustgz_segnet/src/segnet/scripts/cityscapes/hrnet
 # train
 sh run_h_48_d_4_prob_proto.sh train "fast_mls" "/data" "/save_data"
 # test
@@ -76,10 +76,12 @@ Please refer to [openseg](https://github.com/openseg-group/openseg.pytorch) for 
 
 ```
 roscore
-cd /home/hkustgz_segnet/catkin_ws
+
+cd /home/hkustgz_segnet/src/segnet_ros
+catkin build segnet_ros
 source devel/setup.zsh
-cd /home/hkustgz_segnet/catkin_ws/src/hkustgz_segnet/launch
-roslaunch hkustgz_segnet hkustgz_segnet.launch
+cd /home/hkustgz_segnet/src/segnet_ros/launch
+roslaunch segnet_ros segnet_ros.launch
 ```
 
 ### Config for ROS
