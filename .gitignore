@@ -8,13 +8,13 @@
 *.pt
 *.pth
 *.log
+*.cmake
 
-wandb
-log
 .vscode
-catkin_ws/build
-catkin_ws/devel
-catkin_ws/logs
-catkin_ws/.vscode
-catkin_ws/.catkin_tools
+/src/segnet/log
+/.catkin_tools
+/build
+/devel
+/logs
+/src/segnet/wandb
 

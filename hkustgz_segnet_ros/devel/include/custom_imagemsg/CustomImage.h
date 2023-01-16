@@ -1,1 +1,0 @@
-/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/custom_imagemsg/include/custom_imagemsg/CustomImage.h

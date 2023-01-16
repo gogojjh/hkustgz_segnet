@@ -1,1 +1,0 @@
-/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/hkustgz_segnet/lib/pkgconfig/hkustgz_segnet.pc

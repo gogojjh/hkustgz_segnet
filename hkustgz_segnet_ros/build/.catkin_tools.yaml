@@ -1,6 +1,0 @@
-devel_space: /home/hkustgz_segnet/hkustgz_segnet_ros/devel
-install: false
-install_space: /home/hkustgz_segnet/hkustgz_segnet_ros/install
-profile: default
-source_space: /home/hkustgz_segnet/hkustgz_segnet_ros/src
-workspace: /home/hkustgz_segnet/hkustgz_segnet_ros
