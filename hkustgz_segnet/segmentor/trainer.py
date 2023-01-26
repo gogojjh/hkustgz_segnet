@@ -117,6 +117,8 @@ class Trainer(object):
         self.with_proto = True if self.configer.exists("protoseg") else False
 
         self.uncer_visualizer = UncertaintyVisualizer(configer=self.configer)
+        
+        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
 
     @staticmethod
     def group_weight(module):
@@ -225,7 +227,7 @@ class Trainer(object):
                     self.scheduler, self.optimizer, backbone_list=[0, ]
                 )
             gt_boundary = None
-            if self.configer.get('protoseg', 'use_boundary'):
+            if self.use_boundary:
                 (inputs, targets, gt_boundary), batch_size = self.data_helper.prepare_data(data_dict)
             else:
                 (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
@@ -239,9 +241,11 @@ class Trainer(object):
                 else:
                     pretrain_prototype = True if self.configer.get(
                         'iters') < self. configer.get('protoseg', 'warmup_iters') else False
+                    if gt_boundary is not None:
+                        gt_boundary = gt_boundary[:, None, ...]
                     outputs = self.seg_net(
                         *inputs, gt_semantic_seg=targets[:, None, ...],
-                        gt_boundary=gt_boundary[:, None, ...],
+                        gt_boundary=gt_boundary,
                         pretrain_prototype=pretrain_prototype)
 
             self.foward_time.update(time.time() - foward_start_time)
@@ -274,9 +278,11 @@ class Trainer(object):
                         loss['prob_ppd_loss']) / get_world_size()
                     display_loss = reduce_tensor(
                         backward_loss) / get_world_size()
-                    if self.configer.get('protoseg', 'use_boundary'):
+                    if self.use_boundary:
                         boundary_loss = reduce_tensor(
-                        loss['boundary_loss']) / get_world_size()
+                            loss['boundary_loss']) / get_world_size()
+                    kl_loss = reduce_tensor(
+                            loss['kl_loss']) / get_world_size()
             else:
                 # backward_loss = display_loss = self.pixel_loss(
                 #     outputs, targets)
@@ -327,7 +333,7 @@ class Trainer(object):
                     'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
                     'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
                     'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f}, prob_ppd_loss={prob_ppd_loss:.5f} boundary_loss={boundary_loss:.5f}'.
+                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f}, prob_ppd_loss={prob_ppd_loss:.5f} kl_loss={kl_loss:.5f}'.
                     format(
                         self.configer.get('epoch'),
                         self.configer.get('iters'),
@@ -337,7 +343,7 @@ class Trainer(object):
                         batch_time=self.batch_time, foward_time=self.foward_time,
                         backward_time=self.backward_time, loss_time=self.loss_time,
                         data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
-                        prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss, boundary_loss=boundary_loss))
+                        prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss, kl_loss=kl_loss))
 
                 self.batch_time.reset()
                 self.foward_time.reset()
@@ -383,7 +389,7 @@ class Trainer(object):
                 if is_distributed():
                     dist.barrier()  # Synchronize all processes
                 Log.info('{} images processed\n'.format(j))
-            
+
             gt_boundary = None
 
             if self.configer.get('dataset') == 'lip':
@@ -468,10 +474,11 @@ class Trainer(object):
                             # [b h w] [1, 256, 512]
                             # uncertainty = outputs['uncertainty']
                             h, w = targets.size(1), targets.size(2)
-                            uncertainty = outputs['seg']  # [b c h w]
+                            uncertainty = outputs['uncertainty']  # [b h w]
                             uncertainty = F.interpolate(
-                                input=uncertainty, size=(h, w),
-                                mode='bilinear', align_corners=True)
+                                input=uncertainty.unsqueeze(1), size=(h, w),
+                                mode='bilinear', align_corners=True) # [b, 1, h, w]
+                            uncertainty = uncertainty.squeeze(1)
                             if (self.configer.get('iters') % (self.configer.get(
                                     'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
                                 vis_interval_img = self.configer.get(
@@ -479,9 +486,8 @@ class Trainer(object):
                                 batch_size = uncertainty.shape[0]
                                 if vis_interval_img <= batch_size:
                                     for i in range(0, vis_interval_img, batch_size):
-                                        uncer_img = torch.amax(uncertainty[i], dim=0)
                                         self.uncer_visualizer.vis_uncertainty(
-                                            uncer_img, name='{}'.format(names[i]))
+                                            uncertainty[i], name='{}'.format(names[i]))
 
                                         pred = outputs['seg']  # [b c h w]
                                         pred = torch.argmax(
@@ -525,7 +531,8 @@ class Trainer(object):
                 self.__val(
                     data_loader=self.data_loader.get_valloader(dataset='train'))
                 return
-            # return
+
+        # return
 
         # if self.configer.get('network', 'resume') is not None and self.configer.get('network', 'resume_val'):
         #     self.__val(data_loader=self.data_loader.get_valloader(dataset='val'))

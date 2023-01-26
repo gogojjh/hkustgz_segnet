@@ -80,7 +80,7 @@
 		"multi_grid": [1, 1, 1],
 		"model_name": "base_ocnet",
 		"stride": 8,
-		"bn_type": "torchbn",
+		"bn_type": "torchsyncbn",
 		"factors": [[8, 8]],
 		"loss_weights": {
 			"corr_loss": 0.01,
@@ -96,7 +96,7 @@
 		"rewrite": true
 	},
 	"lr": {
-		"base_lr": 0.003,
+		"base_lr": 0.01,
 		"metric": "iters",
 		"lr_policy": "lambda_poly",
 		"step": {
@@ -105,7 +105,7 @@
 		}
 	},
 	"var_lr": {
-		"base_lr": 0.003,
+		"base_lr": 0.01,
 		"lr_policy": "warmup_cosine",
 		"metric": "iters",
 		"warmup_steps": 1000,
@@ -113,7 +113,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 2000,
+		"test_interval": 200,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -150,23 +150,28 @@
 		"mean_gamma": 0.999,
 		"cov_gamma": 0.999,
 		"num_prototype": 10,
+		"num_local_prototype": 5,
 		"pretrain_prototype": false,
 		"use_rmi": false,
 		"use_prototype": true,
 		"update_prototype": true,
 		"warmup_iters": 0,
-		"similarity_measure": "wasserstein",
-		"use_probability": true,
+		"similarity_measure": "cosine",
+		"use_probability": false,
+		"use_uncertainty": true,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
-		"prob_ppd_weight": 0.1,
-		"prob_ppc_weight": 0.1,
-		"boundary_loss_weight": 1.0,
+		"prob_ppd_weight": 0.05,
+		"prob_ppc_weight": 0.05,
+		"boundary_loss_weight": 0.5,
 		"confidence_loss_weight": 0.1,
+		"kl_loss_weight": 1.0,
 		"proj_dim": 720,
 		"use_gt_proto_learning": true,
-		"use_boundary": false,
-		"boundary_head_mid_channel": 256
+		"use_boundary": true,
+		"boundary_head_mid_channel": 256,
+		"bin_size_h": 8,
+		"bin_size_w": 4
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": false,
