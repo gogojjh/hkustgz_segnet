@@ -1,5 +1,0 @@
-hkustgz_segnet
-/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/hkustgz_segnet/cmake.lock /home/hkustgz_segnet/hkustgz_segnet_ros/devel/./cmake.lock
-/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/hkustgz_segnet/lib/pkgconfig/hkustgz_segnet.pc /home/hkustgz_segnet/hkustgz_segnet_ros/devel/lib/pkgconfig/hkustgz_segnet.pc
-/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/hkustgz_segnet/share/hkustgz_segnet/cmake/hkustgz_segnetConfig.cmake /home/hkustgz_segnet/hkustgz_segnet_ros/devel/share/hkustgz_segnet/cmake/hkustgz_segnetConfig.cmake
-/home/hkustgz_segnet/hkustgz_segnet_ros/devel/.private/hkustgz_segnet/share/hkustgz_segnet/cmake/hkustgz_segnetConfig-version.cmake /home/hkustgz_segnet/hkustgz_segnet_ros/devel/share/hkustgz_segnet/cmake/hkustgz_segnetConfig-version.cmake
