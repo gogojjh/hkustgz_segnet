@@ -25,7 +25,8 @@ class BayesianUncertaintyHead(nn.Module):
     def reparameterize(self, mu, logvar, k=1):
         sample_z = []
         for _ in range(k):
-            std = logvar.mul(0.5).exp_()  # '_': inplace operation mul():dot product
+            # '_': inplace operation mul():dot product [b, 1, 128, 256]
+            std = logvar.mul(0.5).exp_()  
             eps = std.data.new(std.size()).normal_() # mu + epsilon * var
             sample_z.append(eps.mul(std).add_(mu))
         sample_z = torch.cat(sample_z, dim=1)
@@ -36,7 +37,7 @@ class BayesianUncertaintyHead(nn.Module):
         mean = self.mean_conv(x)
         std = self.std_conv(x)
         
-        prob_x = self.reparameterize(mean, std, 1) # for loss calculation
+        prob_x = self.reparameterize(mean, std, 1) # for loss calculation [1, 1, h/128, w/256]
         prob_out2 = self.reparameterize(mean, std, 50) # for calculating uncertainty
         prob_out2 = torch.sigmoid(prob_out2)
         

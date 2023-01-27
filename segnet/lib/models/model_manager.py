@@ -25,7 +25,7 @@ from lib.models.nets.ideal_ocrnet import IdealSpatialOCRNet, IdealSpatialOCRNetB
 
 # HRNet
 from lib.models.nets.hrnet import HRNet_W48, HRNet_W48_CONTRAST
-from lib.models.nets.hrnet import HRNet_W48_OCR, HRNet_W48_OCR_B, HRNet_W48_OCR_B_HA, HRNet_W48_OCR_CONTRAST, HRNet_W48_MEM, HRNet_W48_Proto, HRNet_W48_Prob_Contrast_Proto, HRNet_W48_Prob_Bound_Proto
+from lib.models.nets.hrnet import HRNet_W48_OCR, HRNet_W48_OCR_B, HRNet_W48_OCR_B_HA, HRNet_W48_OCR_CONTRAST, HRNet_W48_MEM, HRNet_W48_Proto, HRNet_W48_Prob_Contrast_Proto
 
 # OCNet
 from lib.models.nets.ocnet import BaseOCNet, AspOCNet
@@ -80,12 +80,7 @@ SEG_MODEL_DICT = {
     'ms_ocr': MscaleOCR,
     'hrnet_w48_ocr_b_ha': HRNet_W48_OCR_B_HA,
     'hrnet_w48_proto': HRNet_W48_Proto,
-    'hr_w48_prob_proto': HRNet_W48_Prob_Contrast_Proto,
-<<<<<<< HEAD:hkustgz_segnet/lib/models/model_manager.py
-    'hr_w48_prob_bound_proto': HRNet_W48_Prob_Bound_Proto
-=======
-    'hr_w48_prob_proto_mem': HRNet_W48_Prob_Contrast_Proto_Mem,
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/model_manager.py
+    'hr_w48_prob_proto': HRNet_W48_Prob_Contrast_Proto
 }
 
 

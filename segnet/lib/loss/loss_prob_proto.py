@@ -18,6 +18,108 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
+class FocalLoss(nn.Module, ABC):
+    ''' focal loss '''
+    def __init__(self, configer):
+        super(FocalLoss, self).__init__()
+        self.configer = configer
+
+        self.gamma = self.configer.get('loss', 'focal_gamma')
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+        self.crit = nn.BCEWithLogitsLoss(reduction='none')
+
+    def binary_focal_loss(self, input, target, valid_mask):
+        input = input[valid_mask]
+        target = target[valid_mask]
+        pt = torch.where(target == 1, input, 1 - input)
+        ce_loss = self.crit(input, target)
+        loss = torch.pow(1 - pt, self.gamma) * ce_loss
+        loss = loss.mean()
+        return loss
+        
+    def	forward(self, input, target):
+        valid_mask = (target != self.ignore_label)
+        K = target.shape[0]
+        total_loss = 0
+        for i in range(K):
+            # total_loss += self.binary_focal_loss(input[:,i], target[:,i], valid_mask[:,i])
+            total_loss += self.binary_focal_loss(input[i], target[i], valid_mask[i])
+        return total_loss / K
+
+
+class PatchClsLoss(nn.Module, ABC):
+    ''' 
+    'Partial Class Activation Attention for Semantic Segmentation'
+    '''
+    def __init__(self, configer):
+        super(PatchClsLoss, self).__init__()
+        self.configer = configer
+        
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.bin_size_h = self.configer.get('protoseg', 'bin_size_h')
+        self.bin_size_w = self.configer.get('protoseg', 'bin_size_w')
+        
+        self.seg_criterion = FocalLoss(configer=configer)
+            
+    def get_onehot_label(self, label):
+        # label: [b h w] 
+        # deal with the void class
+        assert self.ignore_label == -1
+        label = label + 1
+        label = F.one_hot(label, num_classes=self.num_classes+1).to(torch.float32) # [b h w num_cls+1]
+        label = label.permute(0, 3, 1, 2) #! [b num_cls+1 h w] cls 0 is ignore class
+        
+        return label
+            
+    def get_patch_label(self, label_onehot, th=0.01):
+        ''' 
+        label_onehot: [b num_cls h w]
+        For each patch, there is a unique class label which dominates this patch pixels.
+        '''
+        # [b num_cls+1 bin_size bin_size]
+        #! since ignore label is negative, it is possible that pooled resulta are below 0.
+        cls_percentage = F.adaptive_avg_pool2d(label_onehot, (self.bin_size_h, self.bin_size_w))
+        cls_label = torch.where(cls_percentage>0, torch.ones_like(cls_percentage), torch.zeros_like(cls_percentage)) # float cls_label to integer cls_label
+        cls_label[(cls_percentage<th)&(cls_percentage>0)] = self.ignore_label # [0, 1, -1]?
+        
+        return cls_label
+        
+            
+    def forward(self, patch_cls_score, target):
+        ''' 
+        patch_cls_score: [b, num_cls, bin_num_h, bin_num_w]
+        '''
+        b= target.shape[0]
+        valid_mask = target != self.ignore_label
+        
+        label_onehot = self.get_onehot_label(target) # [b h w num_cls+1]
+        patch_cls_gt = self.get_patch_label(label_onehot) # [b num_cls+1 bin_size bin_size]
+        # [num_cls+1 b*bin_size*bin_size]
+        patch_cls_gt = rearrange(patch_cls_gt, 'b c h w -> c (b h w)') 
+        #! remove the patch whose gt is 0(void class)
+        valid_mask = patch_cls_gt[0, ...] == 0 # [b*bin_num*bin_num]
+        valid_mask = repeat(valid_mask, 'n -> c n', c=self.num_classes+1)
+        patch_cls_gt = patch_cls_gt[valid_mask]
+        patch_cls_gt = patch_cls_gt.view(self.num_classes+1, -1)
+        patch_cls_score = rearrange(patch_cls_score, 'b c h w -> c (b h w)') 
+        patch_cls_score = patch_cls_score[valid_mask[1:, ...]]
+        patch_cls_score = patch_cls_score.view(self.num_classes, -1)
+        focal_loss = self.seg_criterion(patch_cls_score, patch_cls_gt[1:, ...])
+        
+        return focal_loss
+        
+    
 class BoundaryLoss(nn.Module, ABC):
     ''' 
     Cross entropy loss between boundary prediction and boundary gt.
@@ -146,6 +248,7 @@ class AleatoricUncertaintyLoss(nn.Module, ABC):
                 'ce_ignore_index']
 
     def forward(self, x_var, target, pred):  # x_var: [b 1 h w]
+        x_var = torch.mean(x_var, dim=1, keepdim=True)
         x_var = F.interpolate(
             input=x_var, size=(target.shape[1],
                                target.shape[2]),
@@ -235,6 +338,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
         self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
         self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
         self.kl_loss_weight = self.configer.get('protoseg', 'kl_loss_weight')
+        self.aleatoric_loss_weight = self.configer.get('protoseg', 'aleatoric_loss_weight')
 
         self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
 
@@ -243,7 +347,12 @@ class PixelProbContrastLoss(nn.Module, ABC):
         
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
         if self.use_uncertainty:
+            self.prob_seg_loss_weight = self.configer.get('protoseg', 'prob_seg_loss_weight')
             self.kl_loss = KLLoss(configer=configer)
+            self.aleatoric_loss = AleatoricUncertaintyLoss(configer=configer)
+        self.use_attention = self.configer.get('protoseg', 'use_attention')
+        if self.use_attention:
+            self.patch_cls_loss = PatchClsLoss(configer=configer)
 
         # initialize scheudler for uncer_loss_weight
         self.rampdown_scheduler = RampdownScheduler(
@@ -310,28 +419,28 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 prob_ppd_loss = seg_loss * 0
                 
             if self.use_uncertainty:
-                assert 'x_mean' in preds
-                assert 'x_var' in preds
-                x_mean = preds['x_mean']
-                x_var = preds['x_var']
+                assert 'prob_x' in preds
+                assert 'uncertainty' in preds
+                assert 'prob_pred' in preds
+                # x_mean = preds['x_mean']
+                # x_var = preds['x_var']
+                # uncertainty = preds['uncertainty']
+                # prob_x = preds['prob_x']
+                prob_pred = preds['prob_pred']
                 
-                x_mean = F.interpolate(input=x_mean, size=(
+                prob_pred = F.interpolate(input=prob_pred, size=(
                 h, w), mode='bilinear', align_corners=True)
-                x_var = F.interpolate(input=x_var, size=(
-                h, w), mode='bilinear', align_corners=True)
+                prob_seg_loss = self.seg_criterion(prob_pred, target)
                 
-                kl_loss = self.kl_loss(x_mean, x_var, target)
+            if self.use_attention:
+                patch_cls_score = preds['patch_cls_score']
+                patch_cls_loss = self.patch_cls_loss(patch_cls_score, target)
                 
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.kl_loss_weight * kl_loss
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + patch_cls_loss + self.prob_seg_loss_weight * prob_seg_loss
 
                 return {'loss': loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'kl_loss': kl_loss}
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss, 'prob_seg_loss': prob_seg_loss}
 
-            if self.use_boundary:
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.boundary_loss_weight * boundary_loss
-
-                return {'loss': loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'boundary_loss': boundary_loss}
             else:
                 loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
 

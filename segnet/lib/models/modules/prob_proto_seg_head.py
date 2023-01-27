@@ -30,6 +30,9 @@ class ProbProtoSegHead(nn.Module):
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
         self.proj_dim = self.configer.get('protoseg', 'proj_dim')
+        self.use_attention = self.configer.get('protoseg', 'use_attention')
+        if self.use_attention:
+            self.proj_dim = 2 * self.proj_dim
         self.pretrain_prototype = self.configer.get(
             'protoseg', 'pretrain_prototype')
         self.mean_gamma = self.configer.get('protoseg', 'mean_gamma')
@@ -145,6 +148,8 @@ class ProbProtoSegHead(nn.Module):
             #! ignore_label are still -1, and not being modified
             proto_target[gt_seg == i] = indexs.float(
             ) + (self.num_prototype * i)  # n samples -> n*m labels
+            
+            del c_q, c_k_tile, c_k, m_q, m_k_tile, m_k, indexs, q
 
         self.prototypes = nn.Parameter(
             l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
@@ -182,12 +187,6 @@ class ProbProtoSegHead(nn.Module):
         edge_protos = protos[:, -1, :] # [c k]
 
         sim_mat = sim_mat.permute(0, 2, 1)  # [n m c]
-<<<<<<< HEAD:hkustgz_segnet/lib/models/modules/prob_proto_seg_head.py
-=======
-
-        if self.use_boundary and gt_boundary is not None:
-            non_edge_proto_num = self.num_prototype - 1
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/modules/prob_proto_seg_head.py
 
         non_edge_proto_num = self.num_prototype - 1
 
@@ -201,19 +200,8 @@ class ProbProtoSegHead(nn.Module):
         sim_mat = sim_mat[non_boundary_mask, :-1, ...]  # [non_edge_num, (m-1), c]
         if self.use_prototype and _c_var is not None:
             _c_var = _c_var[non_boundary_mask, ...]
-<<<<<<< HEAD:hkustgz_segnet/lib/models/modules/prob_proto_seg_head.py
         _c = _c[non_boundary_mask, ...]
         gt_seg = gt_seg[non_boundary_mask]
-=======
-            _c = _c[non_boundary_mask, ...]
-            gt_seg = gt_seg[non_boundary_mask]
-
-            # largest score inside a class
-            pred_seg = torch.max(out_seg, dim=1)[1]  # [b*h*w]
-            mask = (gt_seg == pred_seg.view(-1)[non_boundary_mask])  # [b*h*w] bool
-
-            proto_target = gt_seg_ori.clone().float()
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/modules/prob_proto_seg_head.py
 
         # largest score inside a class
         pred_seg = torch.max(out_seg, dim=1)[1]  # [b*h*w]
@@ -302,14 +290,8 @@ class ProbProtoSegHead(nn.Module):
         
         self.prototypes = nn.Parameter(
             l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
-<<<<<<< HEAD:hkustgz_segnet/lib/models/modules/prob_proto_seg_head.py
 
         del gt_seg, gt_seg_ori, _c, gt_boundary, sim_mat, non_boundary_mask, pred_seg, mask
-=======
-        self.proto_var = nn.Parameter(proto_var, requires_grad=False)
-
-        del gt_seg, gt_seg_ori, _c, _c_var, _c_var_ori, gt_boundary, sim_mat, non_boundary_mask, pred_seg, mask
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/modules/prob_proto_seg_head.py
 
         if dist.is_available() and dist.is_initialized():  # distributed learning
             protos = self.prototypes.data.clone()
@@ -322,15 +304,8 @@ class ProbProtoSegHead(nn.Module):
             self.prototypes = nn.Parameter(protos, requires_grad=False)
 
         return proto_target  # [n]
-<<<<<<< HEAD:hkustgz_segnet/lib/models/modules/prob_proto_seg_head.py
     
     def forward(self, x, gt_semantic_seg=None, boundary_pred=None, gt_boundary=None):
-=======
-
-    # todo ===================== adaptive momentum proto updte(boundary/non-boundary proto)
-
-    def forward(self, x, x_var, gt_semantic_seg=None, boundary_pred=None, gt_boundary=None):
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/modules/prob_proto_seg_head.py
         ''' 
         boundary_pred: [(b h w) 2]
         '''
@@ -367,10 +342,12 @@ class ProbProtoSegHead(nn.Module):
                     sim_mat, out_seg, gt_seg, x)
 
             sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
+            
+            prototypes = self.prototypes.data.clone()
 
             if boundary_pred is not None and self.use_boundary:
-                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, "boundary": boundary_pred}
+                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, "boundary": boundary_pred, 'prototypes': prototypes}
             else:
-                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
+                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'prototypes': prototypes}
 
         return out_seg

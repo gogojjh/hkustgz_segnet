@@ -23,194 +23,12 @@ from lib.models.modules.uncertainty_head import UncertaintyHead
 from lib.models.modules.sinkhorn import distributed_sinkhorn
 from lib.models.modules.prob_proto_seg_head import ProbProtoSegHead
 from lib.models.modules.boundary_head import BoundaryHead
-from hkustgz_segnet.lib.models.modules.bayesian_uncertainty_head import BayesianUncertaintyHead
+from lib.models.modules.bayesian_uncertainty_head import BayesianUncertaintyHead
+# from lib.models.modules.attention_head import AttentionHead
+from lib.models.modules.caa_head import CAAHead
 
 from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
-
-
-<<<<<<< HEAD:hkustgz_segnet/lib/models/nets/hrnet.py
-class HRNet_W48_Prob_Bound_Proto(nn.Module):
-=======
-class HRNet_W48_Prob_Contrast_Proto_Mem(nn.Module):
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/nets/hrnet.py
-    """
-    deep high-resolution representation learning for human pose estimation, CVPR2019
-    """
-
-    def __init__(self, configer):
-<<<<<<< HEAD:hkustgz_segnet/lib/models/nets/hrnet.py
-        super(HRNet_W48_Prob_Bound_Proto, self).__init__()
-=======
-        super(HRNet_W48_Prob_Contrast_Proto, self).__init__()
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/nets/hrnet.py
-        self.configer = configer
-        self.num_classes = self.configer.get('data', 'num_classes')
-        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
-        # prototype config
-        self.use_prototype = self.configer.get('protoseg', 'use_prototype')
-        self.update_prototype = self.configer.get(
-            'protoseg', 'update_prototype')
-        self.pretrain_prototype = self.configer.get(
-            'protoseg', 'pretrain_prototype')
-        self.use_probability = self.configer.get('protoseg', 'use_probability')
-<<<<<<< HEAD:hkustgz_segnet/lib/models/nets/hrnet.py
-        self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
-=======
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/nets/hrnet.py
-        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
-        self.use_ros = self.configer.get('ros', 'use_ros')
-
-        self.backbone = BackboneSelector(configer).get_backbone()
-
-        in_channels = 720
-        self.proj_dim = self.configer.get('protoseg', 'proj_dim')
-
-        self.cls_head = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels,
-                      kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(
-                in_channels, bn_type=self.configer.get('network', 'bn_type')),
-            nn.Dropout2d(0.10)
-        )
-<<<<<<< HEAD:hkustgz_segnet/lib/models/nets/hrnet.py
-        
-        if self.use_uncertainty:
-            self.uncertainty_head = BayesianUncertaintyHead(configer=configer)
-
-        self.proj_head = ProjectionHead(in_channels, self.proj_dim)
-        
-        self.prob_seg_head = ProbProtoSegHead(configer=configer)
-
-        if self.use_boundary:
-            self.boundary_head = BoundaryHead(
-                configer=configer, in_channels=self.proj_dim, mid_channels=self.configer.get(
-                    'protoseg', 'boundary_head_mid_channel'))
-=======
-
-        self.uncertainty_head = UncertaintyHead(
-            in_feat=self.configer.get('protoseg', 'proj_dim'),
-            out_feat=self.configer.get('protoseg', 'proj_dim'))  # predict variance of each gaussian
-
-        self.proj_head = ProjectionHead(in_channels, self.proj_dim)
-
-        self.prob_seg_head = ProbProtoSegHead(configer=configer)
-        
-        if self.use_boundary:
-            self.boundary_head = BoundaryHead(configer=configer,
-                                            in_channels=self.proj_dim,
-                                            mid_channels=self.configer.get('protoseg', 'boundary_head_mid_channel'))
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/nets/hrnet.py
-            # self.boundary_attention_module = BoundaryAttentionModule(configer=configer)
-
-        self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
-        self.mask_norm = nn.LayerNorm(self.num_classes)
-<<<<<<< HEAD:hkustgz_segnet/lib/models/nets/hrnet.py
-        self.bound_norm = nn.LayerNorm(2)
-
-    def forward(self, x_, gt_semantic_seg=None, gt_boundary=None, pretrain_prototype=False):
-=======
-        
-        # memory for storing prototypes of past frames
-        # self.register_buffer('old_protos', torch.zeros(
-        #     self.num_classes, self.
-        # ))
-
-    def forward(self, x_, gt_semantic_seg=None, gt_boundary= None, pretrain_prototype=False):
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/nets/hrnet.py
-        x = self.backbone(x_)
-        b, _, h, w = x[0].size()  # 128, 256
-
-        feat1 = x[0]
-        feat2 = F.interpolate(x[1], size=(
-            h, w), mode="bilinear", align_corners=True)
-        feat3 = F.interpolate(x[2], size=(
-            h, w), mode="bilinear", align_corners=True)
-        feat4 = F.interpolate(x[3], size=(
-            h, w), mode="bilinear", align_corners=True)
-
-<<<<<<< HEAD:hkustgz_segnet/lib/models/nets/hrnet.py
-        feats = torch.cat([feat1, feat2, feat3, feat4], 1)  # sent to boundary head
-
-        c = self.cls_head(feats)  # 720
-        c = self.proj_head(c)  
-
-        del feats, feat1, feat2, feat3, feat4
-
-=======
-        feats = torch.cat([feat1, feat2, feat3, feat4], 1) # sent to boundary head
-
-        c = self.cls_head(feats)  # 720
-        c = self.proj_head(c)  # 256
-
-        del feats, feat1, feat2, feat3, feat4
-
-        #! seghead
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/nets/hrnet.py
-        gt_size = c.size()[2:]
-        c = rearrange(c, 'b c h w -> (b h w) c')
-        c = self.feat_norm(c)  # ! along channel dimension
-        c = l2_normalize(c)  # ! l2_norm along num_class dimension
-<<<<<<< HEAD:hkustgz_segnet/lib/models/nets/hrnet.py
-
-        c = rearrange(c, '(b h w) c -> b c h w',
-                      h=gt_size[0], w=gt_size[1])
-
-        boundary_pred = None
-        if self.use_boundary:
-            boundary_map = self.boundary_head(c)  # [b 2 h w]
-            boundary_map = rearrange(boundary_map, 'b c h w -> (b h w) c') # [(b h w) 2]
-            boundary_map = self.bound_norm(boundary_map)
-            boundary_map = rearrange(boundary_map, '(b h w) c -> b c h w',
-                      h=gt_size[0], w=gt_size[1])
-
-        if self.use_uncertainty:
-            # masked_c: the most uncertain pixels are masked out
-            # prob_c: only sample once for loss calculation to promote diversity
-            uncertainty, prob_c, conv_uncertainty, mean, var = self.uncertainty_head(c)
-            
-        preds = self.prob_seg_head(
-            c, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
-            gt_boundary=gt_boundary)
-        if self.use_uncertainty and self.configer.get('phase') == 'train':
-            preds['prob_x'] = prob_c
-            preds['x_mean'] = mean
-            preds['x_var'] = var
-
-        return preds
-=======
-        
-        c = rearrange(c, '(b h w) c -> b c h w',
-                          h=gt_size[0], w=gt_size[1])
-
-        boundary_pred = None
-        if self.use_boundary:
-            boundary_pred = self.boundary_head(c) # [b 2 h w]
-            # boundary_pred = rearrange(boundary_pred, 'b c h w -> (b h w) c') # [(b h w) 2]
-        
-        if self.use_probability:
-            c_var = self.uncertainty_head(c)  # ! b c h w, log(sigma^2)
-            c_var = torch.exp(c_var)  # ! variance x_var should > 0!
-            
-            if self.use_boundary:
-                ''' 
-                Use boundary map to let uncertainty of boundary pixels larger.
-                '''
-                # boundary_pred = rearrange(boundary_pred, '(b h w) c -> b c h w',
-                #                       b=b, h=h)
-                # boundary_pred = F.softmax(boundary_pred, 1)
-                #todo ====== solve large attention net issue ======
-                # x_var = self.boundary_attention_module(boundary_pred, c_var)  # [b proj_dim h w]
-                # todo rescale variance
-                # x_var = torch.sigmoid(x_var)
-            
-            preds = self.prob_seg_head(c, c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred, gt_boundary=gt_boundary)
-        
-            return preds
-        
-        else:
-            return
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/lib/models/nets/hrnet.py
 
 
 class HRNet_W48_Prob_Contrast_Proto(nn.Module):
@@ -229,9 +47,10 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             'protoseg', 'update_prototype')
         self.pretrain_prototype = self.configer.get(
             'protoseg', 'pretrain_prototype')
-        self.use_probability = self.configer.get('protoseg', 'use_probability')
+        self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
         self.use_ros = self.configer.get('ros', 'use_ros')
+        self.use_attention = self.configer.get('protoseg', 'use_attention')
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
@@ -245,10 +64,14 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
                 in_channels, bn_type=self.configer.get('network', 'bn_type')),
             nn.Dropout2d(0.10)
         )
-        if self.use_probability:
+        if self.use_uncertainty:
             self.uncertainty_head = UncertaintyHead(
                 in_feat=self.configer.get('protoseg', 'proj_dim'),
                 out_feat=self.configer.get('protoseg', 'proj_dim'))  # predict variance of each gaussian
+            kernel = torch.ones((7,7))
+            kernel = torch.FloatTensor(kernel).unsqueeze(0).unsqueeze(0)
+            #kernel = np.repeat(kernel, 1, axis=0)
+            self.weight = nn.Parameter(data=kernel, requires_grad=False)
 
         self.proj_head = ProjectionHead(in_channels, self.proj_dim)
 
@@ -258,10 +81,23 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
             self.boundary_head = BoundaryHead(
                 configer=configer, in_channels=self.proj_dim, mid_channels=self.configer.get(
                     'protoseg', 'boundary_head_mid_channel'))
-            # self.boundary_attention_module = BoundaryAttentionModule(configer=configer)
+        
+        if self.use_attention:
+            self.attention_head = CAAHead(configer=configer)
 
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
+        
+    def reparameterize(self, mu, logvar, k=1):
+        sample_z = []
+        for _ in range(k):
+            # '_': inplace operation mul():dot product [b, k, 128, 256]
+            std = logvar.mul(0.5).exp_()  
+            eps = std.data.new(std.size()).normal_() # mu + epsilon * var
+            sample_z.append(eps.mul(std).add_(mu))
+        sample_z = torch.cat(sample_z, dim=1)
+        
+        return sample_z
 
     def forward(self, x_, gt_semantic_seg=None, gt_boundary=None, pretrain_prototype=False):
         x = self.backbone(x_)
@@ -295,22 +131,41 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         if self.use_boundary:
             boundary_pred = self.boundary_head(c)  # [b 2 h w]
             # boundary_pred = rearrange(boundary_pred, 'b c h w -> (b h w) c') # [(b h w) 2]
-
-        c_var = None
-        if self.use_probability:
+        
+        uncertainty = None
+        if self.use_uncertainty:
             c_var = self.uncertainty_head(c)  # ! b c h w, log(sigma^2)
+            #! get uncertainty 
+            prob_c = self.reparameterize(c, c_var, k=1) # [b k h w]
+            uncertainty = self.reparameterize(c, c_var, k=20)
+            uncertainty = torch.sigmoid(uncertainty)
+            uncertainty = uncertainty.var(dim=1, keepdim=True).detach() # [b 1 h w]
+            if self.configer.get('phase') == 'train':
+                # (l-7+2*3)/1+1=l
+                uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
+                uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
+                uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
+            # normalize
+            uncertainty = (uncertainty - uncertainty.min()) / (uncertainty.max() - uncertainty.min())
+            
             c_var = torch.exp(c_var)  # ! variance x_var should > 0!
-
-            # c_var = rearrange(c_var, 'b c h w -> (b h w) c')
-            # c_var = self.feat_norm(c_var)  # ! along channel dimension
-            # c_var = l2_normalize(c_var)  # ! l2_norm along num_class dimension
-
-            # c_var = rearrange(c_var, '(b h w) c -> b c h w',
-            #                   h=gt_size[0], w=gt_size[1])
-
+        
+        if self.use_attention: 
+            atten_c, patch_cls_score = self.attention_head(c, uncertainty)
+            c = torch.cat((c, atten_c), dim=1)
+        
         preds = self.prob_seg_head(
-            c, c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
+            c, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
+        
+        if self.use_uncertainty and self.configer.get('phase') == 'train':
+            prob_pred = self.prob_seg_head(torch.cat((prob_c, atten_c), dim=1))
+            #todo which for aleatoric loss
+            preds['uncertainty'] = c_var
+            preds['prob_x'] = prob_c
+            preds['prob_pred'] = prob_pred
+        if self.use_attention and self.configer.get('phase') == 'train':
+            preds['patch_cls_score'] = patch_cls_score
 
         return preds
 

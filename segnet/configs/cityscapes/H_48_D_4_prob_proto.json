@@ -96,7 +96,7 @@
 		"rewrite": true
 	},
 	"lr": {
-		"base_lr": 0.01,
+		"base_lr": 0.005,
 		"metric": "iters",
 		"lr_policy": "lambda_poly",
 		"step": {
@@ -105,7 +105,7 @@
 		}
 	},
 	"var_lr": {
-		"base_lr": 0.01,
+		"base_lr": 0.005,
 		"lr_policy": "warmup_cosine",
 		"metric": "iters",
 		"warmup_steps": 1000,
@@ -113,7 +113,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 200,
+		"test_interval": 2000,
 		"max_iters": 40000
 	},
 	"optim": {
@@ -135,6 +135,7 @@
 		"confidence_loss": false,
 		"init_shift": 15,
 		"init_negative_scale": 15,
+		"focal_gamma": 2,
 		"params": {
 			"ce_weight": [
 				0.8373, 0.918, 0.866, 1.0345, 1.0166, 0.9969, 0.9754, 1.0489, 0.8786, 1.0023,
@@ -155,9 +156,9 @@
 		"use_rmi": false,
 		"use_prototype": true,
 		"update_prototype": true,
+		"use_attention": true,
 		"warmup_iters": 0,
 		"similarity_measure": "cosine",
-		"use_probability": false,
 		"use_uncertainty": true,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
@@ -166,12 +167,14 @@
 		"boundary_loss_weight": 0.5,
 		"confidence_loss_weight": 0.1,
 		"kl_loss_weight": 1.0,
-		"proj_dim": 720,
+		"prob_seg_loss_weight": 0.1,
+		"aleatoric_loss_weight": 0.1,
+		"proj_dim": 256,
 		"use_gt_proto_learning": true,
-		"use_boundary": true,
+		"use_boundary": false,
 		"boundary_head_mid_channel": 256,
-		"bin_size_h": 8,
-		"bin_size_w": 4
+		"bin_size_h": 4,
+		"bin_size_w": 8
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": false,
@@ -192,7 +195,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 2

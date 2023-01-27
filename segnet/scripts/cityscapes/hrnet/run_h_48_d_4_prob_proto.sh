@@ -14,7 +14,7 @@ BACKBONE="hrnet48"
 CONFIGS="configs/cityscapes/H_48_D_4_prob_proto.json"
 CONFIGS_TEST="configs/cityscapes/H_48_D_4_TEST.json"
 
-MODEL_NAME="hr_w48_prob_bound_proto"
+MODEL_NAME="hr_w48_prob_proto"
 LOSS_TYPE="pixel_prob_prototype_ce_loss"
 CHECKPOINTS_ROOT="${SCRATCH_ROOT}/Cityscapes"
 CHECKPOINTS_NAME="${MODEL_NAME}_lr1x_"$2
@@ -24,11 +24,11 @@ mkdir -p `dirname $LOG_FILE`
 
 PRETRAINED_MODEL="/save_data/hrnetv2_w48_imagenet_pretrained.pth"
 MAX_ITERS=40000
-BATCH_SIZE=32
-BASE_LR=0.01
+BATCH_SIZE=16
+BASE_LR=0.005
 
 if [ "$1"x == "train"x ]; then
-  python3 -u -m debugpy --listen 5678 --wait-for-client main.py --configs ${CONFIGS} \
+  python3 -u main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
                        --gathered n \
@@ -50,11 +50,7 @@ if [ "$1"x == "train"x ]; then
 
 
 elif [ "$1"x == "resume"x ]; then
-<<<<<<< HEAD:hkustgz_segnet/scripts/cityscapes/hrnet/run_h_48_d_4_prob_proto.sh
   python3 -u -m debugpy --listen 5678 --wait-for-client main.py --configs ${CONFIGS} \
-=======
-  python3 -u main.py --configs ${CONFIGS} \
->>>>>>> 91d2d3663ad93e54fc320df1220bed4892d91c91:segnet/scripts/cityscapes/hrnet/run_h_48_d_4_prob_proto.sh
                        --drop_last y \
                        --phase train \
                        --gathered n \
