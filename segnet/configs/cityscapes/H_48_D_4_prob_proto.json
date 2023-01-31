@@ -20,7 +20,7 @@
 		"out_dir": "/save_data/cityscapes"
 	},
 	"val": {
-		"batch_size": 4,
+		"batch_size": 3,
 		"mode": "ss_test",
 		"data_transformer": {
 			"size_mode": "fix_size",
@@ -96,7 +96,7 @@
 		"rewrite": true
 	},
 	"lr": {
-		"base_lr": 0.005,
+		"base_lr": 0.001,
 		"metric": "iters",
 		"lr_policy": "lambda_poly",
 		"step": {
@@ -105,7 +105,7 @@
 		}
 	},
 	"var_lr": {
-		"base_lr": 0.005,
+		"base_lr": 0.001,
 		"lr_policy": "warmup_cosine",
 		"metric": "iters",
 		"warmup_steps": 1000,
@@ -149,7 +149,7 @@
 	},
 	"protoseg": {
 		"mean_gamma": 0.999,
-		"cov_gamma": 0.999,
+		"var_gamma": 0.999,
 		"num_prototype": 10,
 		"num_local_prototype": 5,
 		"pretrain_prototype": false,
@@ -158,7 +158,7 @@
 		"update_prototype": true,
 		"use_attention": true,
 		"warmup_iters": 0,
-		"similarity_measure": "cosine",
+		"similarity_measure": "wasserstein",
 		"use_uncertainty": true,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
@@ -174,7 +174,11 @@
 		"use_boundary": false,
 		"boundary_head_mid_channel": 256,
 		"bin_size_h": 4,
-		"bin_size_w": 8
+		"bin_size_w": 8,
+		"reparam_k": 5,
+		"batch_num": 20,
+		"init_a": 1,
+		"init_b": 0
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": false,
@@ -195,7 +199,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 2

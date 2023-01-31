@@ -94,11 +94,8 @@ class CAAHead(nn.Module):
         
         return x
         
-    def forward(self, x, uncertainty):
-        # residual = x # [B, C, H, W]
-        
-        if uncertainty is not None:
-            x *= (1 - uncertainty) #! uncertainty-aware features
+    def forward(self, x):
+        residual = x # [B, C, H, W]
         #! CAM map
         cam = self.conv_cam(self.dropout(x)) # [B, K, H, W]
         #! for each patch, the overl all(pooling) score for K classes
@@ -137,8 +134,7 @@ class CAAHead(nn.Module):
         out = out.view(B, -1, rH, rW, global_feats.shape[-1]) # [B, bin_num_h * bin_num_w, rH, rW, C]
         out = self.patch_recover(out, self.bin_size_h, self.bin_size_w) # [B, C, H, W]
 
-        # out = residual + self.conv_out(out)
-        out = self.conv_out(out)
+        out = residual + self.conv_out(out)
         
         del x, global_feats, cam
         

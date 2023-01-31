@@ -99,22 +99,21 @@ class PatchClsLoss(nn.Module, ABC):
     def forward(self, patch_cls_score, target):
         ''' 
         patch_cls_score: [b, num_cls, bin_num_h, bin_num_w]
-        '''
-        b= target.shape[0]
-        valid_mask = target != self.ignore_label
-        
+        '''        
         label_onehot = self.get_onehot_label(target) # [b h w num_cls+1]
         patch_cls_gt = self.get_patch_label(label_onehot) # [b num_cls+1 bin_size bin_size]
         # [num_cls+1 b*bin_size*bin_size]
-        patch_cls_gt = rearrange(patch_cls_gt, 'b c h w -> c (b h w)') 
+        # patch_cls_gt = rearrange(patch_cls_gt, 'b c h w -> c (b h w)') 
         #! remove the patch whose gt is 0(void class)
-        valid_mask = patch_cls_gt[0, ...] == 0 # [b*bin_num*bin_num]
-        valid_mask = repeat(valid_mask, 'n -> c n', c=self.num_classes+1)
-        patch_cls_gt = patch_cls_gt[valid_mask]
-        patch_cls_gt = patch_cls_gt.view(self.num_classes+1, -1)
-        patch_cls_score = rearrange(patch_cls_score, 'b c h w -> c (b h w)') 
-        patch_cls_score = patch_cls_score[valid_mask[1:, ...]]
-        patch_cls_score = patch_cls_score.view(self.num_classes, -1)
+        # valid_mask = patch_cls_gt[0, ...] == 0 # [b*bin_num*bin_num]
+        # valid_mask = repeat(valid_mask, 'n -> c n', c=self.num_classes+1)
+        # patch_cls_gt = patch_cls_gt[valid_mask]
+        # patch_cls_gt = patch_cls_gt.view(self.num_classes+1, -1)
+        # patch_cls_score = rearrange(patch_cls_score, 'b c h w -> c (b h w)') 
+        # patch_cls_score = patch_cls_score[valid_mask[1:, ...]]
+        patch_cls_gt = patch_cls_gt[:, 1:, ...]
+        patch_cls_gt = rearrange(patch_cls_gt, 'b n h w -> n (b h w)')
+        patch_cls_score = rearrange(patch_cls_score, 'b n h w -> n (b h w)')  
         focal_loss = self.seg_criterion(patch_cls_score, patch_cls_gt[1:, ...])
         
         return focal_loss
@@ -199,11 +198,12 @@ class ProbPPCLoss(nn.Module, ABC):
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
         self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
 
-    def forward(self, contrast_logits, contrast_target):
+    def forward(self, contrast_logits, contrast_target, w1=None, w2=None):
         contrast_logits = self.proto_norm(contrast_logits)
-
         prob_ppc_loss = F.cross_entropy(
             contrast_logits, contrast_target.long(), ignore_index=self.ignore_label)
+        # if w1 is not None and w2 is not None:
+        #     prob_ppc_loss = w1 * prob_ppc_loss + w2
 
         return prob_ppc_loss
     
@@ -289,6 +289,8 @@ class ProbPPDLoss(nn.Module, ABC):
                 'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
+            
+        self.sim_measure = self.configer.get('protoseg', 'similarity_measure')
 
     def forward(self, contrast_logits, contrast_target):
         contrast_logits = contrast_logits[contrast_target !=
@@ -297,20 +299,11 @@ class ProbPPDLoss(nn.Module, ABC):
 
         logits = torch.gather(contrast_logits, 1,
                               contrast_target[:, None].long()).squeeze(-1)
-
-        if logits.shape[0] == 0:
-            prob_ppd_loss = 0
-            return prob_ppd_loss
-
-        if self.configer.get(
-                'protoseg', 'similarity_measure') == 'fast_mls' or self.configer.get(
-                'protoseg', 'similarity_measure') == 'mls':
-            prob_ppd_loss = torch.mean(torch.exp(-logits))
-        elif self.configer.get(
-                'protoseg', 'similarity_measure') == 'cosine':
+        
+        if self.sim_measure == 'cosine': 
             prob_ppd_loss = (1 - logits).pow(2).mean()
-        else:
-            prob_ppd_loss = torch.mean(-logits)
+        elif self.sim_measure == 'wasserstein' or 'match_prob':
+            prob_ppd_loss = - logits.mean()
 
         return prob_ppd_loss
 
@@ -402,8 +395,15 @@ class PixelProbContrastLoss(nn.Module, ABC):
             seg = preds['seg']  # [b c h w]
             contrast_logits = preds['logits']
             contrast_target = preds['target']  # prototype selection [n]
+            
+            if self.use_uncertainty:
+                loss_weight1 = preds['loss_weight1'] # [n (c m)]
+                loss_weight2 = preds['loss_weight2'] # [n (c m)]
 
-            prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
+                prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target, 
+                                                        loss_weight1, loss_weight2)
+            else: 
+                prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
 
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
@@ -414,32 +414,17 @@ class PixelProbContrastLoss(nn.Module, ABC):
             seg_loss = self.seg_criterion(pred, target)
 
             # prob_ppc_weight = self.get_uncer_loss_weight()
-
-            if prob_ppd_loss == 0:
-                prob_ppd_loss = seg_loss * 0
-                
-            if self.use_uncertainty:
-                assert 'prob_x' in preds
-                assert 'uncertainty' in preds
-                assert 'prob_pred' in preds
-                # x_mean = preds['x_mean']
-                # x_var = preds['x_var']
-                # uncertainty = preds['uncertainty']
-                # prob_x = preds['prob_x']
-                prob_pred = preds['prob_pred']
-                
-                prob_pred = F.interpolate(input=prob_pred, size=(
-                h, w), mode='bilinear', align_corners=True)
-                prob_seg_loss = self.seg_criterion(prob_pred, target)
                 
             if self.use_attention:
                 patch_cls_score = preds['patch_cls_score']
                 patch_cls_loss = self.patch_cls_loss(patch_cls_score, target)
                 
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + patch_cls_loss + self.prob_seg_loss_weight * prob_seg_loss
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + patch_cls_loss 
+                
+                assert not torch.isnan(loss)
 
                 return {'loss': loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss, 'prob_seg_loss': prob_seg_loss}
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss}
 
             else:
                 loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
