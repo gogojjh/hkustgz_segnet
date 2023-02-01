@@ -24,8 +24,8 @@ mkdir -p `dirname $LOG_FILE`
 
 PRETRAINED_MODEL="/save_data/hrnetv2_w48_imagenet_pretrained.pth"
 MAX_ITERS=40000
-BATCH_SIZE=12
-BASE_LR=0.001
+BATCH_SIZE=16
+BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
   python3 -u main.py --configs ${CONFIGS} \
