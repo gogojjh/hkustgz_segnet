@@ -103,14 +103,7 @@ class PatchClsLoss(nn.Module, ABC):
         label_onehot = self.get_onehot_label(target) # [b h w num_cls+1]
         patch_cls_gt = self.get_patch_label(label_onehot) # [b num_cls+1 bin_size bin_size]
         # [num_cls+1 b*bin_size*bin_size]
-        # patch_cls_gt = rearrange(patch_cls_gt, 'b c h w -> c (b h w)') 
-        #! remove the patch whose gt is 0(void class)
-        # valid_mask = patch_cls_gt[0, ...] == 0 # [b*bin_num*bin_num]
-        # valid_mask = repeat(valid_mask, 'n -> c n', c=self.num_classes+1)
-        # patch_cls_gt = patch_cls_gt[valid_mask]
-        # patch_cls_gt = patch_cls_gt.view(self.num_classes+1, -1)
-        # patch_cls_score = rearrange(patch_cls_score, 'b c h w -> c (b h w)') 
-        # patch_cls_score = patch_cls_score[valid_mask[1:, ...]]
+
         patch_cls_gt = patch_cls_gt[:, 1:, ...]
         patch_cls_gt = rearrange(patch_cls_gt, 'b n h w -> n (b h w)')
         patch_cls_score = rearrange(patch_cls_score, 'b n h w -> n (b h w)')  
@@ -198,12 +191,19 @@ class ProbPPCLoss(nn.Module, ABC):
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
         self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
 
-    def forward(self, contrast_logits, contrast_target, w1=None, w2=None):
+    def forward(self, contrast_logits, contrast_target, w1=None, w2=None, proto_confidence=None):  
+        if proto_confidence is not None:
+            # proto_confidence: [(num_cls num_proto)]
+            # contrast_logits: [n c m]
+            proto_confidence = rearrange(proto_confidence, 'c m -> (c m)')
+            contrast_logits = contrast_logits / proto_confidence.unsqueeze(0)
+        
         contrast_logits = self.proto_norm(contrast_logits)
         prob_ppc_loss = F.cross_entropy(
             contrast_logits, contrast_target.long(), ignore_index=self.ignore_label)
-        # if w1 is not None and w2 is not None:
-        #     prob_ppc_loss = w1 * prob_ppc_loss + w2
+        
+        if w1 is not None and w2 is not None:
+            prob_ppc_loss = w1 * prob_ppc_loss + w2
 
         return prob_ppc_loss
     
@@ -300,9 +300,9 @@ class ProbPPDLoss(nn.Module, ABC):
         logits = torch.gather(contrast_logits, 1,
                               contrast_target[:, None].long()).squeeze(-1)
         
-        if self.sim_measure == 'cosine': 
+        if self.sim_measure == 'cosine' or 'match_prob': 
             prob_ppd_loss = (1 - logits).pow(2).mean()
-        elif self.sim_measure == 'wasserstein' or 'match_prob':
+        elif self.sim_measure == 'wasserstein':
             prob_ppd_loss = - logits.mean()
 
         return prob_ppd_loss
@@ -346,6 +346,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
         self.use_attention = self.configer.get('protoseg', 'use_attention')
         if self.use_attention:
             self.patch_cls_loss = PatchClsLoss(configer=configer)
+            self.patch_cls_weight = self.configer.get('protoseg', 'patch_cls_weight')
 
         # initialize scheudler for uncer_loss_weight
         self.rampdown_scheduler = RampdownScheduler(
@@ -365,6 +366,8 @@ class PixelProbContrastLoss(nn.Module, ABC):
         if self.use_boundary:
             self.boundary_loss = BoundaryLoss(configer=configer)
             self.boundary_loss_weight = self.configer.get('protoseg', 'boundary_loss_weight')
+        self.use_temperature = self.configer.get('protoseg', 'use_temperature')
+        self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
 
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
@@ -397,11 +400,16 @@ class PixelProbContrastLoss(nn.Module, ABC):
             contrast_target = preds['target']  # prototype selection [n]
             
             if self.use_uncertainty:
-                loss_weight1 = preds['loss_weight1'] # [n (c m)]
-                loss_weight2 = preds['loss_weight2'] # [n (c m)]
+                proto_confidence = None
+                w1 = None
+                w2 = None
+                if self.use_temperature:
+                    proto_confidence = preds['proto_confidence']
+                if self.weighted_ppd_loss:
+                    w1 = preds['w1']
+                    w2 = preds['w2']
 
-                prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target, 
-                                                        loss_weight1, loss_weight2)
+                prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target, proto_confidence=proto_confidence, w1=w1, w2=w2)
             else: 
                 prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
 
@@ -419,9 +427,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 patch_cls_score = preds['patch_cls_score']
                 patch_cls_loss = self.patch_cls_loss(patch_cls_score, target)
                 
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + patch_cls_loss 
-                
-                assert not torch.isnan(loss)
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.patch_cls_weight * patch_cls_loss 
 
                 return {'loss': loss,
                         'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss}

@@ -124,6 +124,7 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         c_var = None
         if self.use_uncertainty:
             c_var = self.uncertainty_head(c)
+            c_var = torch.exp(c_var)
             c = rearrange(c, 'b c h w -> (b h w) c')
             c = self.feat_norm(c)  # ! along channel dimension
             c = l2_normalize(c)  # ! l2_norm along num_class dimension
@@ -136,8 +137,6 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
         
-        if self.use_uncertainty and self.configer.get('phase') == 'train':
-            preds['uncertainty'] = c_var
         if self.use_attention and self.configer.get('phase') == 'train':
             preds['patch_cls_score'] = patch_cls_score
 
@@ -244,6 +243,7 @@ class HRNet_W48_Prob_Contrast_Proto(nn.Module):
         c_var = None
         if self.use_uncertainty:
             c, c_var = self.bayes_uncertainty_head(c)
+            c_var = torch.exp(c_var)
             c = rearrange(c, 'b c h w -> (b h w) c')
             c = self.feat_norm(c)  # ! along channel dimension
             c = l2_normalize(c)  # ! l2_norm along num_class dimension
