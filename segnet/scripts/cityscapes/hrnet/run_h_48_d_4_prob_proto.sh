@@ -23,8 +23,8 @@ echo "Logging to $LOG_FILE"
 mkdir -p `dirname $LOG_FILE`
 
 PRETRAINED_MODEL="/save_data/hrnetv2_w48_imagenet_pretrained.pth"
-MAX_ITERS=40000
-BATCH_SIZE=16
+MAX_ITERS=80000
+BATCH_SIZE=12
 BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
@@ -64,7 +64,7 @@ elif [ "$1"x == "resume"x ]; then
                        --gpu 0 1 2 3\
                        --checkpoints_root ${CHECKPOINTS_ROOT} \
                        --checkpoints_name ${CHECKPOINTS_NAME} \
-                       --resume_continue y \
+                       --resume_continue n \
                        --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_max_performance.pth \
                        --train_batch_size ${BATCH_SIZE} \
                        --distributed \

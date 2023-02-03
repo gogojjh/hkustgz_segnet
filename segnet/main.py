@@ -96,10 +96,10 @@ if __name__ == "__main__":
                         dest='network:resume', help='The path of checkpoints.')
     parser.add_argument('--resume_strict', type=str2bool, nargs='?', default=True,
                         dest='network:resume_strict', help='Fully match keys or not.')
-    parser.add_argument('--resume_continue', type=str2bool, nargs='?', default=False,
+    parser.add_argument('--resume_continue', type=str2bool, nargs='?', default=True,
                         dest='network:resume_continue', help='Whether to continue training.')
     parser.add_argument(
-        '--resume_eval_train', type=str2bool, nargs='?', default=True, dest='network:resume_train',
+        '--resume_eval_train', type=str2bool, nargs='?', default=False, dest='network:resume_train',
         help='Whether to validate the training set  during resume.')
     parser.add_argument(
         '--resume_eval_val', type=str2bool, nargs='?', default=True, dest='network:resume_val',
@@ -142,7 +142,7 @@ if __name__ == "__main__":
                         dest='logging:stdout_level', help='To set the level to print to screen.')
     parser.add_argument('--log_file', default=None, type=str,
                         dest='logging:log_file', help='The path of log files.')
-    parser.add_argument('--rewrite', type=str2bool, nargs='?', default=True,
+    parser.add_argument('--rewrite', type=str2bool, nargs='?', default=False,
                         dest='logging:rewrite', help='Whether to rewrite files.')
     parser.add_argument('--log_to_file', type=str2bool, nargs='?', default=True,
                         dest='logging:log_to_file', help='Whether to write logging into files.')
@@ -242,6 +242,11 @@ if __name__ == "__main__":
                    settings=wandb.Settings(start_method='fork'))
         wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
         wandb.save(args_parser.configs)
+    
+    #! for resume training    
+    # if configer.get('network', 'resume') is not None:
+    #     configer.update(('phase',), 'train')
+    #     configer.update(('network', 'resume_continue'), True)
 
     if configer.get('phase') == 'train':
         model.train()

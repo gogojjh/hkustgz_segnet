@@ -127,6 +127,7 @@ class ModuleRunner(object):
 
             if self.configer.get('network', 'resume_continue'):
                 self.configer.resume(resume_dict['config_dict'])
+                
 
             Log.info(resume_dict['config_dict'])
 

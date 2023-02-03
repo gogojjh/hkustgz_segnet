@@ -139,6 +139,8 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         
         if self.use_attention and self.configer.get('phase') == 'train':
             preds['patch_cls_score'] = patch_cls_score
+            
+        del c, c_var
 
         return preds
 

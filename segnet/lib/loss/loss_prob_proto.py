@@ -222,12 +222,19 @@ class KLLoss(nn.Module, ABC):
                 'ce_ignore_index']
 
     def forward(self, x_mean, x_var, sem_gt):
-        mask = sem_gt == self.ignore_label # [b h w]
-        x_mean[mask[:, None, ...]] = 0.0
-        x_var[mask[:, None, ...]] = 1.0
+        ''' 
+        x / x_var: [b h w c]
+        '''
+        h, w = x_mean.size(1), x_mean.size(2)
+        sem_gt = F.interpolate(input=sem_gt.unsqueeze(1).float(), size=(
+                h, w), mode='nearest')
         
-        kl_loss = 0.5 * torch.mean(
-            (torch.square(x_mean) + x_var - torch.log(x_var) - 1))
+        mask = sem_gt.squeeze(1) == self.ignore_label # [b h w]
+        x_mean[mask, ...] = 0
+        x_var[mask, ...] = 1
+        
+        kl_loss = 0.5 * (x_mean ** 2 + x_var - torch.log(x_var) - 1).sum(-1)
+        kl_loss = kl_loss.mean()
         
         return kl_loss
 
@@ -422,21 +429,25 @@ class PixelProbContrastLoss(nn.Module, ABC):
             seg_loss = self.seg_criterion(pred, target)
 
             # prob_ppc_weight = self.get_uncer_loss_weight()
+            
+            x_mean = preds['x_mean']
+            x_var = preds['x_var']
+            kl_loss = self.kl_loss(x_mean, x_var, target)
                 
             if self.use_attention:
                 patch_cls_score = preds['patch_cls_score']
                 patch_cls_loss = self.patch_cls_loss(patch_cls_score, target)
                 
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.patch_cls_weight * patch_cls_loss 
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.patch_cls_weight * patch_cls_loss + self.kl_loss_weight * kl_loss
 
                 return {'loss': loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss}
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss, 'kl_loss': kl_loss}
 
             else:
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.kl_loss_weight * kl_loss
 
                 return {'loss': loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'kl_loss': kl_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(

@@ -136,6 +136,6 @@ class CAAHead(nn.Module):
 
         out = residual + self.conv_out(out)
         
-        del x, global_feats, cam
+        del x, global_feats, cam, residual
         
         return out, cls_score

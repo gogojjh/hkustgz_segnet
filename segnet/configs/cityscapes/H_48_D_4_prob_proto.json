@@ -72,7 +72,7 @@
 	},
 	"checkpoints": {
 		"checkpoints_name": "fs_baseocnet_cityscapes_seg",
-		"checkpoints_dir": "./checkpoints/cityscapes",
+		"checkpoints_dir": "/save_data/checkpoints/cityscapes",
 		"save_iters": 1000
 	},
 	"network": {
@@ -91,7 +91,7 @@
 	"logging": {
 		"logfile_level": "info",
 		"stdout_level": "info",
-		"log_file": "./log/cityscapes/fs_baseocnet_cityscapes_seg.log",
+		"log_file": "/save_data/log/cityscapes/fs_baseocnet_cityscapes_seg.log",
 		"log_format": "%(asctime)s %(levelname)-7s %(message)s",
 		"rewrite": true
 	},
@@ -109,12 +109,12 @@
 		"lr_policy": "warmup_cosine",
 		"metric": "iters",
 		"warmup_steps": 1000,
-		"t_total": 45000
+		"t_total": 80000
 	},
 	"solver": {
 		"display_iter": 10,
 		"test_interval": 2000,
-		"max_iters": 40000
+		"max_iters": 80000
 	},
 	"optim": {
 		"optim_method": "sgd",
@@ -166,11 +166,11 @@
 		"prob_ppc_weight": 0.01,
 		"boundary_loss_weight": 0.5,
 		"confidence_loss_weight": 0.1,
-		"kl_loss_weight": 1.0,
+		"kl_loss_weight": 0.05,
 		"prob_seg_loss_weight": 0.1,
 		"aleatoric_loss_weight": 0.1,
 		"patch_cls_weight": 0.2,
-		"proj_dim": 320,
+		"proj_dim": 360,
 		"use_boundary": false,
 		"boundary_head_mid_channel": 720,
 		"bin_size_h": 4,

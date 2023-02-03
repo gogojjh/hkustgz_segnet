@@ -288,6 +288,8 @@ class ProbProtoSegHead(nn.Module):
                         f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                     protos[i, n != 0, :]  = momentum_update(old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                     proto_var[i, n != 0, :] = momentum_update(old_value=proto_var[i, n != 0, :], new_value=f_v[n != 0, :], momentum=self.var_gamma, debug=False)
+                    
+                    del var_q, var_k, f, f_v
                                     
             # each class has a target id between [0, num_proto * c]
             #! ignore_label are still -1, and not being modified
@@ -324,6 +326,7 @@ class ProbProtoSegHead(nn.Module):
         '''
         b_size = x.shape[0]
         h_size = x.shape[2]
+        k_size = x.shape[-1]
         gt_size = x.size()[2:]
 
         self.prototypes.data.copy_(l2_normalize(self.prototypes))
@@ -362,6 +365,8 @@ class ProbProtoSegHead(nn.Module):
             if boundary_pred is not None and self.use_boundary:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, "boundary": boundary_pred, 'prototypes': prototypes}
             elif self.use_uncertainty:
+                x = x.reshape(b_size, h_size, -1, k_size)
+                x_var = x_var.reshape(b_size, h_size, -1, k_size)
                 if self.weighted_ppd_loss:
                     proto_var = self.proto_var.data.clone()
                     loss_weight1 = torch.einsum('nk,cmk->cmn', x_var, proto_var) # [c m n]
@@ -378,7 +383,8 @@ class ProbProtoSegHead(nn.Module):
                     proto_confidence = proto_confidence.mean(-1) # [c m]
                     return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_confidence': proto_confidence}
                 else:
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target,
+                            'x_mean': x, 'x_var': x_var}
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
 

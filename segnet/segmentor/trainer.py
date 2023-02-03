@@ -280,6 +280,8 @@ class Trainer(object):
                         backward_loss) / get_world_size()
                     patch_cls_loss = reduce_tensor(
                         loss['patch_cls_loss']) / get_world_size()
+                    kl_loss = reduce_tensor(
+                        loss['kl_loss']) / get_world_size()
                     if self.use_boundary:
                         boundary_loss = reduce_tensor(
                             loss['boundary_loss']) / get_world_size()
@@ -333,7 +335,7 @@ class Trainer(object):
                     'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
                     'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
                     'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f} prob_ppd_loss={prob_ppd_loss:.5f} patch_cls_loss={patch_cls_loss:.5f}'.
+                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f} prob_ppd_loss={prob_ppd_loss:.5f} patch_cls_loss={patch_cls_loss:.5f} kl_loss={kl_loss:.5f}'.
                     format(
                         self.configer.get('epoch'),
                         self.configer.get('iters'),
@@ -344,7 +346,7 @@ class Trainer(object):
                         backward_time=self.backward_time, loss_time=self.loss_time,
                         data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
                         prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss,
-                        patch_cls_loss=patch_cls_loss))
+                        patch_cls_loss=patch_cls_loss, kl_loss=kl_loss))
 
                 self.batch_time.reset()
                 self.foward_time.reset()
@@ -527,11 +529,11 @@ class Trainer(object):
             if self.configer.get('network', 'resume_val'):
                 self.__val(
                     data_loader=self.data_loader.get_valloader(dataset='val'))
-                return
+                # return
             elif self.configer.get('network', 'resume_train'):
                 self.__val(
                     data_loader=self.data_loader.get_valloader(dataset='train'))
-                return
+                # return
 
         # return
 
