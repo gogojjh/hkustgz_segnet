@@ -313,6 +313,85 @@ class ProbPPDLoss(nn.Module, ABC):
             prob_ppd_loss = - logits.mean()
 
         return prob_ppd_loss
+    
+    
+class BoundaryContrastiveLoss(nn.Module, ABC):
+    ''' 
+    - pixels belonging to boundary prototype(last proto) have high uncertainty because they are likely to predicted as nearby class
+    - This loss is conducted between the pixels around the boundary.
+    '''
+    def __init__(self, configer):
+        super(BoundaryContrastiveLoss, self).__init__()
+        self.configer = configer
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+            
+    def get_boundary_window(self, contrast_logits, sem_gt, boundary_gt, window_size=7):
+        ''' 
+        boundary_gt: [b h w]
+        bound_window: [n_bound 7 7]
+        '''
+        h = boundary_gt.shape[1]
+        w = boundary_gt.shape[2]
+        # boundary_mask = boundary_gt == 1 # [b h w]
+        bound_ind = torch.nonzero(boundary_gt==1, as_tuple=True) # len(4) 
+        
+        # get the nearby pixels in a 7x7 window size
+        ind_b = []
+        ind_h = []
+        ind_w = []
+        h_w = window_size // 2
+        
+        for i in range(h_w):
+            ind_b.append(bound_ind[0]) 
+            ind_h.append(bound_ind[1] - i) 
+            ind_w.append(bound_ind[2] - i) 
+            
+            ind_b.append(bound_ind[0]) 
+            ind_h.append(bound_ind[1] + i) 
+            ind_w.append(bound_ind[2] + i) 
+            
+        ind_b = torch.cat(ind_b)
+        ind_h = torch.cat(ind_h)
+        ind_w = torch.cat(ind_w)
+        
+        h -= 1
+        w -= 1
+        ind_h[ind_h < 0] = 0
+        ind_h[ind_h > h] = h
+        ind_w[ind_w < 0] = 0
+        ind_w[ind_w > w] = w
+        
+        n = ind_h.shape[0]
+        window_ind = torch.zeros_like(ind_b).cuda().float() 
+        window_ind.scatter_(dim=0, index=ind_b, src=contrast_logits)
+        window_ind.scatter_(dim=1, index=ind_h, src=contrast_logits)
+        window_ind.scatter_(dim=2, index=ind_h, src=contrast_logits)
+        
+        return ind_b, ind_h, ind_w
+        
+    
+    def forward(self, contrast_logits, boundary_gt, sem_gt):
+        ''' 
+        sem_gt: [b h w]
+        boundary_gt: [b h w]
+        contrast_logits: [b h w (c m)]
+        '''
+        ind_b, ind_h, ind_w = self.get_boundary_window(contrast_logits, sem_gt, boundary_gt)
+        contrast_target = contrast_target[ind_b, ind_h, ind_w]
+        sem_gt = sem_gt[ind_b, ind_h, ind_w]
+            
+        bound_contrast_loss = F.cross_entropy(contrast_logits, sem_gt, ignore_index=self.ignore_label)
+        
+        return bound_contrast_loss
+        
 
 
 class PixelProbContrastLoss(nn.Module, ABC):
@@ -371,7 +450,8 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
         if self.use_boundary:
-            self.boundary_loss = BoundaryLoss(configer=configer)
+            # self.boundary_loss = BoundaryLoss(configer=configer)
+            self.bound_contrast_loss = BoundaryContrastiveLoss(configer=configer)
             self.boundary_loss_weight = self.configer.get('protoseg', 'boundary_loss_weight')
         self.use_temperature = self.configer.get('protoseg', 'use_temperature')
         self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
@@ -382,29 +462,38 @@ class PixelProbContrastLoss(nn.Module, ABC):
         return uncer_loss_weight
 
     def forward(self, preds, target, gt_boundary=None):
-        h, w = target.size(1), target.size(2)
+        b, h, w = target.size(0), target.size(1), target.size(2)
         
         if isinstance(preds, dict):
             assert 'seg' in preds
             assert 'logits' in preds
             assert 'target' in preds
 
-            if self.use_boundary and gt_boundary is not None:
-                assert 'boundary' in preds
-                
-                h_bound, w_bound = gt_boundary.size(1), gt_boundary.size(2) 
-
-                boundary_pred = preds['boundary']  # [b 2 h w]
-                boundary_pred = F.interpolate(input=boundary_pred,
-                                              size=(h_bound, w_bound),
-                                              mode='bilinear',
-                                              align_corners=True)
-
-                boundary_loss = self.boundary_loss(boundary_pred, gt_boundary, target)
-
             seg = preds['seg']  # [b c h w]
             contrast_logits = preds['logits']
             contrast_target = preds['target']  # prototype selection [n]
+            
+            if self.use_boundary and gt_boundary is not None:
+                h_d = seg.shape[-2]
+                w_d = seg.shape[-1]
+                contrast_logits = contrast_logits.reshape(b, h_d, w_d, -1)
+                contrast_logits = F.interpolate(input=contrast_logits, size=(
+                h, w), mode='bilinear', align_corners=True)
+                
+                self.bound_contrast_loss(contrast_logits, gt_boundary.squeeze(1), target)
+                # boundary prototype contrastive learning
+                
+                # assert 'boundary' in preds
+                
+                # h_bound, w_bound = gt_boundary.size(1), gt_boundary.size(2) 
+
+                # boundary_pred = preds['boundary']  # [b 2 h w]
+                # boundary_pred = F.interpolate(input=boundary_pred,
+                #                               size=(h_bound, w_bound),
+                #                               mode='bilinear',
+                #                               align_corners=True)
+
+                # boundary_loss = self.boundary_loss(boundary_pred, gt_boundary, target)
             
             if self.use_uncertainty:
                 proto_confidence = None

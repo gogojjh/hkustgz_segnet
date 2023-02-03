@@ -264,7 +264,9 @@ class ProbProtoSegHead(nn.Module):
                     n = m_q.shape[0]
                     if not self.avg_update_proto:
                     # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        f_v = 1 / (m_q.transpose(0, 1) @ (1 / ((var_q + 1e-3)) + 1e-3) / n)
+                        #todo debug
+                        # f_v = 1 / (m_q.transpose(0, 1) @ (1 / ((var_q + 1e-3)) + 1e-3) / n)
+                        f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / n + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
                         f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                         f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
@@ -273,7 +275,7 @@ class ProbProtoSegHead(nn.Module):
                         # if self.use_temperature:
                         #     for k in range(self.num_prototype):
                         #             if self.use_temperature:
-                        #                 proto_ind = torch.nonzero((m_q[..., k] != 0), as_tuple=True)
+                        #                 proto_ind = torch.nonzero(m_q[..., k] != 0, as_tuple=True)
                         #                 num = proto_ind[0].shape[0]
                         #                 if num > 0:
                         #                     temp = - init_q[proto_ind[0], k].sum(0) / (num * np.log(num + self.alfa))
@@ -322,7 +324,7 @@ class ProbProtoSegHead(nn.Module):
 
         return proto_target  # [n]
     
-    def prototype_learning_boundary(self, sim_mat, out_seg, gt_seg, _c, gt_boundary=None):
+    def prototype_learning_boundary(self, sim_mat, out_seg, gt_seg, _c, _c_var, gt_boundary=None):
         """
         Prototype selection and update
         _c: (normalized) feature embedding [(b h w) c]
@@ -385,7 +387,8 @@ class ProbProtoSegHead(nn.Module):
                 else: 
                     boundary_c_var_cls = _c_var_ori[boundary_cls_mask]  # [n k]
                     if not self.avg_update_proto:
-                        b_v = 1 / ((1 / ((boundary_c_var_cls + 1e-3)) + 1e-3).sum(0) / n)
+                        n = boundary_c_var_cls.shape[0]
+                        b_v = 1 / ((1 / (boundary_c_var_cls + 1e-3)).sum(0) / n + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
                         b_v = torch.exp(torch.sigmoid(torch.log(b_v)))
                         b = ((b_v.unsqueeze(0) / (boundary_c_var_cls.unsqueeze(1) + 1e-3)) * boundary_c_cls.unsqueeze(1)).sum(0)
@@ -449,12 +452,36 @@ class ProbProtoSegHead(nn.Module):
             # the prototypes that are being selected calcualted by sum
             n = torch.sum(m_q, dim=0)  # [num_proto]
 
-            if self.update_prototype is True and torch.sum(n) > 0:
-                f = m_q.transpose(0, 1) @ c_q  # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                f = F.normalize(f, p=2, dim=-1)
-                new_value = momentum_update(old_value=non_edge_protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
-                non_edge_protos[i, n != 0, :] = new_value
-                
+            if self.update_prototype is True and torch.sum(n) > 0:                
+                if not self.use_uncertainty:
+                    f = m_q.transpose(0, 1) @ c_q  # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
+                    f = F.normalize(f, p=2, dim=-1)
+                    protos[i, n != 0, :]  = momentum_update(old_value=non_edge_protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
+                else:
+                    n = m_q.shape[0]
+                    if not self.avg_update_proto:
+                    # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
+                        #todo debug
+                        # f_v = 1 / (m_q.transpose(0, 1) @ (1 / ((var_q + 1e-3)) + 1e-3) / n)
+                        f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / n + 1e-3)
+                        # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
+                        f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
+                        f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
+                        f = torch.einsum('nm,nmk->mk', m_q, f)
+                        f = F.normalize(f, p=2, dim=-1)
+                    else: 
+                        f = m_q.transpose(0, 1) @ c_q # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
+                        f = F.normalize(f, p=2, dim=-1)
+                        
+                        protos[i, n != 0, :]  = momentum_update(old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
+                        
+                        f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1) @ c_q ** 2) / n - \
+                        (m_q.transpose(0, 1) @ c_q / n) ** 2
+                        #! normalize for f_v
+                        f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
+                    non_edge_protos[i, n != 0, :]  = momentum_update(old_value=non_edge_protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
+                    non_edge_proto_var[i, n != 0, :] = momentum_update(old_value=non_edge_proto_var[i, n != 0, :], new_value=f_v[n != 0, :], momentum=self.var_gamma, debug=False)    
+                    
             # each class has a target id between [0, num_proto * c]
             #! ignore_label are still -1, and not being modified
             # non-edge pixels
@@ -463,9 +490,16 @@ class ProbProtoSegHead(nn.Module):
             # edge pixels
             proto_target[torch.logical_and(gt_seg_ori == i, torch.logical_not(non_boundary_mask))] = float(
                 self.num_prototype - 1) + (self.num_prototype * i)  # n samples -> n*m labels
+            
+            del c_q, c_k_tile, c_k, m_q, m_k_tile, m_k, indexs, q
 
         edge_protos = edge_protos.unsqueeze(1) # [c 1 k]
         protos = torch.cat((non_edge_protos, edge_protos), dim=1) # [c m k]
+        
+        if self.use_uncertainty:
+            edge_proto_var = edge_proto_var.unsqueeze(1) # [c 1 k]
+            proto_var = torch.cat((non_edge_proto_var, edge_proto_var), dim=1) # [c m k]
+            self.proto_var = nn.Parameter(proto_var, requires_grad=False)
         
         self.prototypes = nn.Parameter(
             l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
@@ -481,6 +515,10 @@ class ProbProtoSegHead(nn.Module):
             """
             dist.all_reduce(protos.div_(dist.get_world_size()))
             self.prototypes = nn.Parameter(protos, requires_grad=False)
+            if self.use_uncertainty:
+                proto_var = self.proto_var.data.clone()
+                dist.all_reduce(proto_var.div_(dist.get_world_size()))
+                self.proto_var = nn.Parameter(proto_var, requires_grad=False)
 
         return proto_target  # [n]
     
@@ -517,7 +555,7 @@ class ProbProtoSegHead(nn.Module):
 
             if self.use_boundary and gt_boundary is not None:
                 contrast_target = self.prototype_learning_boundary(
-                    sim_mat, out_seg, gt_seg, x, gt_boundary)
+                    sim_mat, out_seg, gt_seg, x, x_var, gt_boundary)
             else:
                 contrast_target = self.prototype_learning(
                     sim_mat, out_seg, gt_seg, x, x_var)

@@ -170,8 +170,8 @@
 		"prob_seg_loss_weight": 0.1,
 		"aleatoric_loss_weight": 0.1,
 		"patch_cls_weight": 0.2,
-		"proj_dim": 360,
-		"use_boundary": false,
+		"proj_dim": 320,
+		"use_boundary": true,
 		"boundary_head_mid_channel": 720,
 		"bin_size_h": 4,
 		"bin_size_w": 8,
@@ -204,7 +204,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 3

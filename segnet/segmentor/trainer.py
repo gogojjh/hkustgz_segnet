@@ -282,9 +282,6 @@ class Trainer(object):
                         loss['patch_cls_loss']) / get_world_size()
                     kl_loss = reduce_tensor(
                         loss['kl_loss']) / get_world_size()
-                    if self.use_boundary:
-                        boundary_loss = reduce_tensor(
-                            loss['boundary_loss']) / get_world_size()
             else:
                 # backward_loss = display_loss = self.pixel_loss(
                 #     outputs, targets)
