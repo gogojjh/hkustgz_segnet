@@ -203,7 +203,7 @@ class ProbPPCLoss(nn.Module, ABC):
             contrast_logits, contrast_target.long(), ignore_index=self.ignore_label)
         
         if w1 is not None and w2 is not None:
-            prob_ppc_loss = w1 * prob_ppc_loss + w2
+            prob_ppc_loss = 1 / (w1 * 4 + 1e-3) * prob_ppc_loss + w2 * 0.5
 
         return prob_ppc_loss
     
@@ -332,6 +332,13 @@ class BoundaryContrastiveLoss(nn.Module, ABC):
                 'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
+        
+        self.window_size = self.configer.get('protoseg', 'window_size')
+        
+        self.conv1 = nn.Conv2d(1, 1, kernel_size=self.window_size, stride=1, bias=False)
+        #! for summation inside the kernel
+        self.first_conv.weight = torch.nn.Parameter(torch.ones_like((self.first_conv.weight)))
+        self.pad = nn.ReplicationPad2d(1)
             
     def get_boundary_window(self, contrast_logits, sem_gt, boundary_gt, window_size=7):
         ''' 
@@ -376,23 +383,35 @@ class BoundaryContrastiveLoss(nn.Module, ABC):
         window_ind.scatter_(dim=2, index=ind_h, src=contrast_logits)
         
         return ind_b, ind_h, ind_w
-        
     
+    def get_nearby_pixel(self, contrast_logits, sem_gt, boundary_gt, window_size=7):
+        boundary_gt = boundary_gt.unsqueeze(1) # [b 1 h w]
+        bound_mask = boundary_gt == 1
+        
+        bound_mask = self.pad(bound_mask)
+        # (l - 3 + 2 * 1/padding) / 1 + 1 = l 
+         #! sum the boundary pixel inside the 7x7 sliding window
+        bound_mask = self.first_conv(bound_mask)
+        #! if bound_mask == 0: no boundary pixels inside the nearby window -> mask out
+        bound_mask = torch.where((bound_mask == 0), 0, 1)
+        bound_mask = bound_mask.squeeze(1).unsqueeze(-1)
+        
+        contrast_logits.masked_select_(contrast_logits, bound_mask)
+        
+        return contrast_logits
+        
     def forward(self, contrast_logits, boundary_gt, sem_gt):
         ''' 
         sem_gt: [b h w]
         boundary_gt: [b h w]
         contrast_logits: [b h w (c m)]
         '''
-        ind_b, ind_h, ind_w = self.get_boundary_window(contrast_logits, sem_gt, boundary_gt)
-        contrast_target = contrast_target[ind_b, ind_h, ind_w]
-        sem_gt = sem_gt[ind_b, ind_h, ind_w]
+        contrast_logits = self.get_nearby_pixel(contrast_logits, sem_gt, boundary_gt)
             
         bound_contrast_loss = F.cross_entropy(contrast_logits, sem_gt, ignore_index=self.ignore_label)
         
         return bound_contrast_loss
         
-
 
 class PixelProbContrastLoss(nn.Module, ABC):
     """

@@ -567,8 +567,6 @@ class ProbProtoSegHead(nn.Module):
             if boundary_pred is not None and self.use_boundary:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, "boundary": boundary_pred, 'prototypes': prototypes}
             elif self.use_uncertainty:
-                x = x.reshape(b_size, h_size, -1, k_size)
-                x_var = x_var.reshape(b_size, h_size, -1, k_size)
                 if self.weighted_ppd_loss:
                     proto_var = self.proto_var.data.clone()
                     loss_weight1 = torch.einsum('nk,cmk->cmn', x_var, proto_var) # [c m n]
@@ -578,13 +576,18 @@ class ProbProtoSegHead(nn.Module):
                     loss_weight2 = x_var.sum(-1) + proto_var.sum(-1, keepdim=True)
                     loss_weight2 = (loss_weight2 - loss_weight2.min()) / (loss_weight2.max() - loss_weight2.min())
                     loss_weight2 = loss_weight2.mean()
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2}
-                
+                    x = x.reshape(b_size, h_size, -1, k_size)
+                    x_var = x_var.reshape(b_size, h_size, -1, k_size)
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var}
                 elif self.use_temperature:
+                    x = x.reshape(b_size, h_size, -1, k_size)
+                    x_var = x_var.reshape(b_size, h_size, -1, k_size)
                     proto_confidence = self.proto_var.data.clone() # [c m k]
                     proto_confidence = proto_confidence.mean(-1) # [c m]
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_confidence': proto_confidence}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var, 'proto_confidence': proto_confidence}
                 else:
+                    x = x.reshape(b_size, h_size, -1, k_size)
+                    x_var = x_var.reshape(b_size, h_size, -1, k_size)
                     return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target,
                             'x_mean': x, 'x_var': x_var}
             else:

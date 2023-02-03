@@ -12,9 +12,9 @@
 wandb
 log
 .vscode
-catkin_ws/build
-catkin_ws/devel
-catkin_ws/logs
-catkin_ws/.vscode
-catkin_ws/.catkin_tools
+segnet_ros/build
+segnet_ros/devel
+segnet_ros/logs
+segnet_ros/.vscode
+segnet_ros/.catkin_tools
 

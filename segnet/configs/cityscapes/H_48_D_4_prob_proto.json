@@ -166,12 +166,12 @@
 		"prob_ppc_weight": 0.01,
 		"boundary_loss_weight": 0.5,
 		"confidence_loss_weight": 0.1,
-		"kl_loss_weight": 0.05,
+		"kl_loss_weight": 0.01,
 		"prob_seg_loss_weight": 0.1,
 		"aleatoric_loss_weight": 0.1,
 		"patch_cls_weight": 0.2,
-		"proj_dim": 320,
-		"use_boundary": true,
+		"proj_dim": 360,
+		"use_boundary": false,
 		"boundary_head_mid_channel": 720,
 		"bin_size_h": 4,
 		"bin_size_w": 8,
@@ -183,7 +183,8 @@
 		"use_temperature": false,
 		"alfa": 10,
 		"uncertainy_aware_fea": true,
-		"weighted_ppd_loss": false
+		"weighted_ppd_loss": true,
+		"windows_size": 3
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": false,
@@ -204,10 +205,10 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
-		"server": 3
+		"server": 13
 	},
 	"ros": {
 		"use_ros": true,
