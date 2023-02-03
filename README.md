@@ -8,7 +8,7 @@ Semantic Segmentation for Semantic HKUSTGZ Dataset.
 
 ```
 docker login -u iidcramlab -p ramlab-123
-docker pull iidcramlab/hkustgz_segnet_ros
+docker pull iidcramlab/segnet
 ```
 
 ### Dockerfile (Pass SSH Key to git pull private repo)
