@@ -20,7 +20,7 @@
 		"out_dir": "/save_data/cityscapes"
 	},
 	"val": {
-		"batch_size": 4,
+		"batch_size": 2,
 		"mode": "ss_test",
 		"data_transformer": {
 			"size_mode": "fix_size",
@@ -164,14 +164,14 @@
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 0.01,
 		"prob_ppc_weight": 0.01,
-		"boundary_loss_weight": 0.5,
+		"boundary_loss_weight": 0.01,
 		"confidence_loss_weight": 0.1,
-		"kl_loss_weight": 0.01,
+		"kl_loss_weight": 0.1,
 		"prob_seg_loss_weight": 0.1,
 		"aleatoric_loss_weight": 0.1,
 		"patch_cls_weight": 0.2,
 		"proj_dim": 360,
-		"use_boundary": false,
+		"use_boundary": true,
 		"boundary_head_mid_channel": 720,
 		"bin_size_h": 4,
 		"bin_size_w": 8,
@@ -182,12 +182,12 @@
 		"avg_update_proto": false,
 		"use_temperature": false,
 		"alfa": 10,
-		"uncertainy_aware_fea": true,
-		"weighted_ppd_loss": true,
+		"uncertainy_aware_fea": false,
+		"weighted_ppd_loss": false,
 		"windows_size": 3
 	},
 	"uncertainty_visualizer": {
-		"vis_uncertainty": false,
+		"vis_uncertainty": true,
 		"vis_interval_img": 1,
 		"vis_inter_iter": 1,
 		"dataset": "val"
@@ -208,7 +208,7 @@
 		"mode": "online"
 	},
 	"run": {
-		"server": 13
+		"server": 2
 	},
 	"ros": {
 		"use_ros": true,

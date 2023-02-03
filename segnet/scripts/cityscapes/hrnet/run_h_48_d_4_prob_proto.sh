@@ -28,7 +28,7 @@ BATCH_SIZE=12
 BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
-  python3 -u -m debugpy --listen 5679 --wait-for-client main.py --configs ${CONFIGS} \
+  python3 main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
                        --gathered n \
@@ -61,7 +61,7 @@ elif [ "$1"x == "resume"x ]; then
                        --max_iters ${MAX_ITERS} \
                        --data_dir ${DATA_DIR} \
                        --loss_type ${LOSS_TYPE} \
-                       --gpu 0 1 2 3\
+                       --gpu 0 1\
                        --checkpoints_root ${CHECKPOINTS_ROOT} \
                        --checkpoints_name ${CHECKPOINTS_NAME} \
                        --resume_continue n \

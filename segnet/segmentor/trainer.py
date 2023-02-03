@@ -280,8 +280,8 @@ class Trainer(object):
                         backward_loss) / get_world_size()
                     patch_cls_loss = reduce_tensor(
                         loss['patch_cls_loss']) / get_world_size()
-                    kl_loss = reduce_tensor(
-                        loss['kl_loss']) / get_world_size()
+                    bound_contrast_loss = reduce_tensor(
+                        loss['bound_contrast_loss']) / get_world_size()
             else:
                 # backward_loss = display_loss = self.pixel_loss(
                 #     outputs, targets)
@@ -332,7 +332,7 @@ class Trainer(object):
                     'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
                     'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
                     'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f} prob_ppd_loss={prob_ppd_loss:.5f} patch_cls_loss={patch_cls_loss:.5f} kl_loss={kl_loss:.5f}'.
+                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f} prob_ppd_loss={prob_ppd_loss:.5f} patch_cls_loss={patch_cls_loss:.5f} bound_contrast_loss={bound_contrast_loss:.5f}'.
                     format(
                         self.configer.get('epoch'),
                         self.configer.get('iters'),
@@ -343,7 +343,7 @@ class Trainer(object):
                         backward_time=self.backward_time, loss_time=self.loss_time,
                         data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
                         prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss,
-                        patch_cls_loss=patch_cls_loss, kl_loss=kl_loss))
+                        patch_cls_loss=patch_cls_loss, bound_contrast_loss=bound_contrast_loss))
 
                 self.batch_time.reset()
                 self.foward_time.reset()
@@ -474,7 +474,8 @@ class Trainer(object):
                             # [b h w] [1, 256, 512]
                             # uncertainty = outputs['uncertainty']
                             h, w = targets.size(1), targets.size(2)
-                            uncertainty = outputs['uncertainty']  # [b h w]
+                            uncertainty = outputs['x_var']  # [b h w k]
+                            uncertainty = uncertainty.mean(-1) # [b h w]
                             uncertainty = F.interpolate(
                                 input=uncertainty.unsqueeze(1), size=(h, w),
                                 mode='bilinear', align_corners=True) # [b, 1, h, w]

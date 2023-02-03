@@ -224,14 +224,15 @@ class KLLoss(nn.Module, ABC):
     def forward(self, x_mean, x_var, sem_gt):
         ''' 
         x / x_var: [b h w c]
+        proto_mean / proto_var: [c m k]
         '''
-        h, w = x_mean.size(1), x_mean.size(2)
-        sem_gt = F.interpolate(input=sem_gt.unsqueeze(1).float(), size=(
-                h, w), mode='nearest')
+        # h, w = x_mean.size(1), x_mean.size(2)
+        # sem_gt = F.interpolate(input=sem_gt.unsqueeze(1).float(), size=(
+        #         h, w), mode='nearest')
         
-        mask = sem_gt.squeeze(1) == self.ignore_label # [b h w]
-        x_mean[mask, ...] = 0
-        x_var[mask, ...] = 1
+        # mask = sem_gt.squeeze(1) == self.ignore_label # [b h w]
+        # x_mean[mask, ...] = 0
+        # x_var[mask, ...] = 1
         
         kl_loss = 0.5 * (x_mean ** 2 + x_var - torch.log(x_var) - 1).sum(-1)
         kl_loss = kl_loss.mean()
@@ -333,72 +334,36 @@ class BoundaryContrastiveLoss(nn.Module, ABC):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
         
-        self.window_size = self.configer.get('protoseg', 'window_size')
-        
-        self.conv1 = nn.Conv2d(1, 1, kernel_size=self.window_size, stride=1, bias=False)
+        self.conv1 = nn.Conv2d(1, 1, kernel_size=3, stride=1, bias=False)
         #! for summation inside the kernel
-        self.first_conv.weight = torch.nn.Parameter(torch.ones_like((self.first_conv.weight)))
+        self.conv1.weight = torch.nn.Parameter(torch.ones_like((self.conv1.weight)))
         self.pad = nn.ReplicationPad2d(1)
-            
-    def get_boundary_window(self, contrast_logits, sem_gt, boundary_gt, window_size=7):
-        ''' 
-        boundary_gt: [b h w]
-        bound_window: [n_bound 7 7]
-        '''
-        h = boundary_gt.shape[1]
-        w = boundary_gt.shape[2]
-        # boundary_mask = boundary_gt == 1 # [b h w]
-        bound_ind = torch.nonzero(boundary_gt==1, as_tuple=True) # len(4) 
         
-        # get the nearby pixels in a 7x7 window size
-        ind_b = []
-        ind_h = []
-        ind_w = []
-        h_w = window_size // 2
-        
-        for i in range(h_w):
-            ind_b.append(bound_ind[0]) 
-            ind_h.append(bound_ind[1] - i) 
-            ind_w.append(bound_ind[2] - i) 
-            
-            ind_b.append(bound_ind[0]) 
-            ind_h.append(bound_ind[1] + i) 
-            ind_w.append(bound_ind[2] + i) 
-            
-        ind_b = torch.cat(ind_b)
-        ind_h = torch.cat(ind_h)
-        ind_w = torch.cat(ind_w)
-        
-        h -= 1
-        w -= 1
-        ind_h[ind_h < 0] = 0
-        ind_h[ind_h > h] = h
-        ind_w[ind_w < 0] = 0
-        ind_w[ind_w > w] = w
-        
-        n = ind_h.shape[0]
-        window_ind = torch.zeros_like(ind_b).cuda().float() 
-        window_ind.scatter_(dim=0, index=ind_b, src=contrast_logits)
-        window_ind.scatter_(dim=1, index=ind_h, src=contrast_logits)
-        window_ind.scatter_(dim=2, index=ind_h, src=contrast_logits)
-        
-        return ind_b, ind_h, ind_w
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
     
-    def get_nearby_pixel(self, contrast_logits, sem_gt, boundary_gt, window_size=7):
-        boundary_gt = boundary_gt.unsqueeze(1) # [b 1 h w]
-        bound_mask = boundary_gt == 1
+    def get_nearby_pixel(self, contrast_logits, sem_gt, boundary_gt):
+        l = contrast_logits.size(-1)
+        boundary_gt = boundary_gt.unsqueeze(1)
+        sem_gt = sem_gt.unsqueeze(1)
+        bound_mask = boundary_gt == 1 # [b 1 h' w']
         
-        bound_mask = self.pad(bound_mask)
+        bound_mask = self.pad(bound_mask.float()) # [b 1 h+2 w+2]
         # (l - 3 + 2 * 1/padding) / 1 + 1 = l 
          #! sum the boundary pixel inside the 7x7 sliding window
-        bound_mask = self.first_conv(bound_mask)
+        bound_mask = self.conv1(bound_mask.float()) # [b 1 h w]
         #! if bound_mask == 0: no boundary pixels inside the nearby window -> mask out
         bound_mask = torch.where((bound_mask == 0), 0, 1)
-        bound_mask = bound_mask.squeeze(1).unsqueeze(-1)
+        bound_mask = bound_mask.squeeze(1).unsqueeze(-1) # [b h w 1]
         
-        contrast_logits.masked_select_(contrast_logits, bound_mask)
+        contrast_logits = contrast_logits.masked_select(bound_mask.bool())
+        contrast_logits = contrast_logits.reshape(-1, l) # [n, (c m)]
         
-        return contrast_logits
+        sem_gt = sem_gt.squeeze(1).unsqueeze(-1)
+        sem_gt = sem_gt.masked_select(bound_mask.bool())
+        
+        return contrast_logits, sem_gt
         
     def forward(self, contrast_logits, boundary_gt, sem_gt):
         ''' 
@@ -406,9 +371,17 @@ class BoundaryContrastiveLoss(nn.Module, ABC):
         boundary_gt: [b h w]
         contrast_logits: [b h w (c m)]
         '''
-        contrast_logits = self.get_nearby_pixel(contrast_logits, sem_gt, boundary_gt)
-            
-        bound_contrast_loss = F.cross_entropy(contrast_logits, sem_gt, ignore_index=self.ignore_label)
+        h, w = sem_gt.size(1), sem_gt.size(2) # 128, 256
+
+        contrast_logits = contrast_logits.permute(0, 3, 1, 2) # [b (c m) h w]
+        contrast_logits = F.interpolate(input=contrast_logits, size=(
+                h, w), mode='bilinear', align_corners=True)
+        contrast_logits = contrast_logits.permute(0, 2, 3, 1) # [b h w (c m)]
+        
+        contrast_logits, sem_gt = self.get_nearby_pixel(contrast_logits, sem_gt, boundary_gt)
+        
+        contrast_logits = self.proto_norm(contrast_logits)
+        bound_contrast_loss = F.cross_entropy(contrast_logits, sem_gt.long(), ignore_index=self.ignore_label)
         
         return bound_contrast_loss
         
@@ -492,28 +465,6 @@ class PixelProbContrastLoss(nn.Module, ABC):
             contrast_logits = preds['logits']
             contrast_target = preds['target']  # prototype selection [n]
             
-            if self.use_boundary and gt_boundary is not None:
-                h_d = seg.shape[-2]
-                w_d = seg.shape[-1]
-                contrast_logits = contrast_logits.reshape(b, h_d, w_d, -1)
-                contrast_logits = F.interpolate(input=contrast_logits, size=(
-                h, w), mode='bilinear', align_corners=True)
-                
-                self.bound_contrast_loss(contrast_logits, gt_boundary.squeeze(1), target)
-                # boundary prototype contrastive learning
-                
-                # assert 'boundary' in preds
-                
-                # h_bound, w_bound = gt_boundary.size(1), gt_boundary.size(2) 
-
-                # boundary_pred = preds['boundary']  # [b 2 h w]
-                # boundary_pred = F.interpolate(input=boundary_pred,
-                #                               size=(h_bound, w_bound),
-                #                               mode='bilinear',
-                #                               align_corners=True)
-
-                # boundary_loss = self.boundary_loss(boundary_pred, gt_boundary, target)
-            
             if self.use_uncertainty:
                 proto_confidence = None
                 w1 = None
@@ -530,6 +481,31 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
+            
+            if self.use_boundary and gt_boundary is not None:
+                h_d = seg.shape[-2]
+                w_d = seg.shape[-1]
+                contrast_logits = contrast_logits.reshape(b, h_d, w_d, -1)
+                # contrast_logits = F.interpolate(input=contrast_logits, size=(
+                # h, w), mode='bilinear', align_corners=True)
+                
+                if torch.count_nonzero(gt_boundary) == 0:
+                    bound_contrast_loss = prob_ppd_loss * 0
+                else:
+                    bound_contrast_loss = self.bound_contrast_loss(contrast_logits, gt_boundary.squeeze(1), target)
+                # boundary prototype contrastive learning
+                
+                # assert 'boundary' in preds
+                
+                # h_bound, w_bound = gt_boundary.size(1), gt_boundary.size(2) 
+
+                # boundary_pred = preds['boundary']  # [b 2 h w]
+                # boundary_pred = F.interpolate(input=boundary_pred,
+                #                               size=(h_bound, w_bound),
+                #                               mode='bilinear',
+                #                               align_corners=True)
+
+                # boundary_loss = self.boundary_loss(boundary_pred, gt_boundary, target)
 
             pred = F.interpolate(input=seg, size=(
                 h, w), mode='bilinear', align_corners=True)
@@ -538,24 +514,26 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             # prob_ppc_weight = self.get_uncer_loss_weight()
             
-            x_mean = preds['x_mean']
-            x_var = preds['x_var']
-            kl_loss = self.kl_loss(x_mean, x_var, target)
+            # proto_mean = preds['proto_mean']
+            # proto_var = preds['proto_var']
+            # kl_loss = self.kl_loss(proto_mean, proto_var, target)
                 
             if self.use_attention:
                 patch_cls_score = preds['patch_cls_score']
                 patch_cls_loss = self.patch_cls_loss(patch_cls_score, target)
                 
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.patch_cls_weight * patch_cls_loss + self.kl_loss_weight * kl_loss
-
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.patch_cls_weight * patch_cls_loss + self.boundary_loss_weight * bound_contrast_loss
+                
+                assert not torch.isnan(loss)
+                
                 return {'loss': loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss, 'kl_loss': kl_loss}
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss, 'bound_contrast_loss': bound_contrast_loss}
 
             else:
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.kl_loss_weight * kl_loss
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss 
 
                 return {'loss': loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'kl_loss': kl_loss}
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(
