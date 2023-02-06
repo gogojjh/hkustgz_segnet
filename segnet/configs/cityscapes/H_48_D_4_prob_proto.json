@@ -157,7 +157,7 @@
 		"update_prototype": true,
 		"use_attention": true,
 		"warmup_iters": 0,
-		"similarity_measure": "wasserstein",
+		"similarity_measure": "fast_mls",
 		"use_uncertainty": true,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
@@ -179,7 +179,7 @@
 		"use_temperature": false,
 		"alfa": 10,
 		"uncertainy_aware_fea": false,
-		"weighted_ppd_loss": true,
+		"weighted_ppd_loss": false,
 		"windows_size": 3,
 		"n_interval": 12
 	},
