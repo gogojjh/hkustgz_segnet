@@ -36,3 +36,48 @@ class UncertaintyHead(nn.Module):   # feature -> log(sigma^2)
         x = torch.sigmoid(x)  # ! log^sigma
 
         return x  # [b c h w]
+
+# class UncertaintyHead(nn.Module):   # feature -> log(sigma^2)
+#     def __init__(self, in_feat=256, out_feat=256):
+#         super(UncertaintyHead, self).__init__()
+        
+#         self.bn1 =  nn.BatchNorm2d(in_feat, affine=True)
+#         self.drop = nn.Dropout(0.4)
+#         self.var_layer = nn.Linear(in_feat, out_feat)
+#         self.bn2 = nn.BatchNorm2d(out_feat)
+
+#         # nn.init.xavier_uniform_(self.var_layer.weight)
+#         # nn.init.constant_(self.var_layer.bias, 0)
+
+#     def forward(self, x):  # [b c h w]
+#         # x = self.bn1(x)
+#         # x = self.drop(x)
+#         x = x.permute(0, 2, 3, 1)  # [b h w c]
+#         x = self.var_layer(x)
+#         x = x.permute(0, 3, 1, 2)  # [b h w c]-> [b c h w]
+#         # x = self.bn2(x)
+
+#         return x  # [b c h w]
+    
+    
+# class MeanHead(nn.Module):   # feature -> log(sigma^2)
+#     def __init__(self, in_feat=256, out_feat=256):
+#         super(MeanHead, self).__init__()
+        
+#         self.bn1 =  nn.BatchNorm2d(in_feat, affine=True)
+#         self.drop = nn.Dropout(0.4)
+#         self.mean_layer = nn.Linear(in_feat, out_feat)
+#         self.bn2 = nn.BatchNorm2d(out_feat)
+
+#         # nn.init.xavier_uniform_(self.mean_layer.weight)
+#         # nn.init.constant_(self.mean_layer.bias, 0)
+
+#     def forward(self, x):  # [b c h w]
+#         # x = self.bn1(x)
+#         # x = self.drop(x)
+#         x = x.permute(0, 2, 3, 1)  # [b h w c]
+#         x = self.mean_layer(x)
+#         x = x.permute(0, 3, 1, 2)  # [b h w c]-> [b c h w]
+#         # x = self.bn2(x)
+
+#         return x  # [b c h w]

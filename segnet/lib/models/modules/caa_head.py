@@ -16,7 +16,8 @@ class GCN(nn.Module):
         self.bin_size_h = self.configer.get('protoseg', 'bin_size_h')
         self.bin_size_w = self.configer.get('protoseg', 'bin_size_w')
         num_node = self.bin_size_h * self.bin_size_w
-        num_channel = self.configer.get('protoseg', 'proj_dim')
+        # num_channel = self.configer.get('protoseg', 'proj_dim')
+        num_channel = 720
         
         self.conv1 = nn.Conv2d(num_node, num_node, kernel_size=1, bias=False)
         self.relu = nn.ReLU(inplace=True)
@@ -37,7 +38,8 @@ class CAAHead(nn.Module):
         super(CAAHead, self).__init__()
         self.configer = configer
         self.num_classes = self.configer.get('data', 'num_classes')
-        self.proj_dim = self.configer.get('protoseg', 'proj_dim')
+        # self.proj_dim = self.configer.get('protoseg', 'proj_dim')
+        self.proj_dim = 720
         self.mid_dim = self.proj_dim // 2
         self.bin_size_h = self.configer.get('protoseg', 'bin_size_h')
         self.bin_size_w = self.configer.get('protoseg', 'bin_size_w')

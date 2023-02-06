@@ -20,7 +20,7 @@
 		"out_dir": "/save_data/cityscapes"
 	},
 	"val": {
-		"batch_size": 2,
+		"batch_size": 4,
 		"mode": "ss_test",
 		"data_transformer": {
 			"size_mode": "fix_size",
@@ -132,7 +132,6 @@
 	"loss": {
 		"loss_type": "pixel_prob_prototype_ce_loss",
 		"proto_alignment_loss": true,
-		"confidence_loss": false,
 		"init_shift": 15,
 		"init_negative_scale": 15,
 		"focal_gamma": 2,
@@ -165,17 +164,14 @@
 		"prob_ppd_weight": 0.01,
 		"prob_ppc_weight": 0.01,
 		"boundary_loss_weight": 0.01,
-		"confidence_loss_weight": 0.1,
-		"kl_loss_weight": 0.1,
-		"prob_seg_loss_weight": 0.1,
-		"aleatoric_loss_weight": 0.1,
 		"patch_cls_weight": 0.2,
-		"proj_dim": 360,
-		"use_boundary": true,
-		"boundary_head_mid_channel": 720,
+		"kl_loss_weight": 0.005,
+		"proj_dim": 512,
+		"use_boundary": false,
+		"boundary_head_mid_channel": 360,
 		"bin_size_h": 4,
 		"bin_size_w": 8,
-		"reparam_k": 8,
+		"reparam_k": 4,
 		"batch_num": 20,
 		"init_a": 1,
 		"init_b": 0,
@@ -183,11 +179,12 @@
 		"use_temperature": false,
 		"alfa": 10,
 		"uncertainy_aware_fea": false,
-		"weighted_ppd_loss": false,
-		"windows_size": 3
+		"weighted_ppd_loss": true,
+		"windows_size": 3,
+		"n_interval": 12
 	},
 	"uncertainty_visualizer": {
-		"vis_uncertainty": true,
+		"vis_uncertainty": false,
 		"vis_interval_img": 1,
 		"vis_inter_iter": 1,
 		"dataset": "val"

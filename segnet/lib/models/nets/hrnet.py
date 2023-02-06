@@ -54,14 +54,18 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
-        in_channels = 720
+        if self.use_attention:
+            in_channels = 720 * 2
+        else: 
+            in_channels = 720
+        out_channels = 720
         self.proj_dim = self.configer.get('protoseg', 'proj_dim')
 
         self.cls_head = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels,
+            nn.Conv2d(in_channels, out_channels,
                       kernel_size=3, stride=1, padding=1),
             ModuleHelper.BNReLU(
-                in_channels, bn_type=self.configer.get('network', 'bn_type')),
+                out_channels, bn_type=self.configer.get('network', 'bn_type')),
             nn.Dropout2d(0.10)
         )
             
@@ -69,23 +73,17 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             self.attention_head = CAAHead(configer=configer)
             
         if self.use_uncertainty:
-            if self.use_attention:
-                in_dim = self.proj_dim * 2        
-            else: 
-                in_dim = self.proj_dim
-            out_dim = in_dim
+            out_dim = self.proj_dim
+            in_dim = 720
             self.uncertainty_head = UncertaintyHead(
                 in_feat=in_dim,
                 out_feat=out_dim)  # predict variance of each gaussian
-
-        self.proj_head = ProjectionHead(in_channels, self.proj_dim)
+            
+        self.proj_head = ProjectionHead(720, self.proj_dim)
 
         self.prob_seg_head = ProbProtoSegHead(configer=configer)
         
-        if self.use_attention:
-            self.feat_norm = nn.LayerNorm(self.proj_dim * 2)  # normalize each row
-        else: 
-            self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
+        self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
             
         self.mask_norm = nn.LayerNorm(self.num_classes)
         
@@ -108,23 +106,24 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         feat4 = F.interpolate(x[3], size=(
             h, w), mode="bilinear", align_corners=True)
 
-        c = torch.cat([feat1, feat2, feat3, feat4], 1)  # sent to boundary head
-
-        c = self.cls_head(c)  # 720
-        c = self.proj_head(c) 
+        c_raw = torch.cat([feat1, feat2, feat3, feat4], 1)  # sent to boundary head
 
         del feat1, feat2, feat3, feat4
 
-        gt_size = c.size()[2:]
+        gt_size = c_raw.size()[2:]
         
         if self.use_attention: 
-            atten_c, patch_cls_score = self.attention_head(c)
-            c = torch.cat((c, atten_c), dim=1)
+            atten_c, patch_cls_score = self.attention_head(c_raw)
+            c_raw = torch.cat((c_raw, atten_c), dim=1)
+        
+        c_raw = self.cls_head(c_raw)  # 720
+        c = self.proj_head(c_raw) # self.proj
         
         c_var = None
         if self.use_uncertainty:
-            c_var = self.uncertainty_head(c)
+            c_var = self.uncertainty_head(c_raw)
             c_var = torch.exp(c_var)
+            
             c = rearrange(c, 'b c h w -> (b h w) c')
             c = self.feat_norm(c)  # ! along channel dimension
             c = l2_normalize(c)  # ! l2_norm along num_class dimension

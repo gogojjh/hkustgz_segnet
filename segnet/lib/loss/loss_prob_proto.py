@@ -221,18 +221,19 @@ class KLLoss(nn.Module, ABC):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
-    def forward(self, x_mean, x_var, sem_gt):
+    def forward(self, x_mean, x_var, sem_gt, proto=False):
         ''' 
         x / x_var: [b h w c]
         proto_mean / proto_var: [c m k]
         '''
-        # h, w = x_mean.size(1), x_mean.size(2)
-        # sem_gt = F.interpolate(input=sem_gt.unsqueeze(1).float(), size=(
-        #         h, w), mode='nearest')
-        
-        # mask = sem_gt.squeeze(1) == self.ignore_label # [b h w]
-        # x_mean[mask, ...] = 0
-        # x_var[mask, ...] = 1
+        if not proto:
+            h, w = x_mean.size(1), x_mean.size(2)
+            sem_gt = F.interpolate(input=sem_gt.unsqueeze(1).float(), size=(
+                    h, w), mode='nearest')
+            
+            mask = sem_gt.squeeze(1) == self.ignore_label # [b h w]
+            x_mean[mask, ...] = 0
+            x_var[mask, ...] = 1
         
         kl_loss = 0.5 * (x_mean ** 2 + x_var - torch.log(x_var) - 1).sum(-1)
         kl_loss = kl_loss.mean()
@@ -310,7 +311,7 @@ class ProbPPDLoss(nn.Module, ABC):
         
         if self.sim_measure == 'cosine' or 'match_prob': 
             prob_ppd_loss = (1 - logits).pow(2).mean()
-        elif self.sim_measure == 'wasserstein':
+        elif self.sim_measure == 'wasserstein' or 'mls' or 'fast_mls':
             prob_ppd_loss = - logits.mean()
 
         return prob_ppd_loss
@@ -408,9 +409,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
         self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
         self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
-        self.kl_loss_weight = self.configer.get('protoseg', 'kl_loss_weight')
-        self.aleatoric_loss_weight = self.configer.get('protoseg', 'aleatoric_loss_weight')
-
+        
         self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
 
         self.prob_ppd_criterion = ProbPPDLoss(configer=configer)
@@ -418,9 +417,9 @@ class PixelProbContrastLoss(nn.Module, ABC):
         
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
         if self.use_uncertainty:
-            self.prob_seg_loss_weight = self.configer.get('protoseg', 'prob_seg_loss_weight')
             self.kl_loss = KLLoss(configer=configer)
             self.aleatoric_loss = AleatoricUncertaintyLoss(configer=configer)
+            self.kl_loss_weight = self.configer.get('protoseg', 'kl_loss_weight')
         self.use_attention = self.configer.get('protoseg', 'use_attention')
         if self.use_attention:
             self.patch_cls_loss = PatchClsLoss(configer=configer)
@@ -435,10 +434,6 @@ class PixelProbContrastLoss(nn.Module, ABC):
             min_value=self.configer.get('rampdownscheduler', 'min_value'),
             ramp_mult=self.configer.get('rampdownscheduler', 'ramp_mult'),
             configer=configer)
-
-        if self.configer.get('loss', 'confidence_loss'):
-            self.confidence_loss = ConfidenceLoss(configer=configer)
-            self.confidence_loss_weight = self.configer.get('protoseg', 'confidence_loss_weight')
 
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
         if self.use_boundary:
@@ -476,6 +471,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
                     w2 = preds['w2']
 
                 prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target, proto_confidence=proto_confidence, w1=w1, w2=w2)
+                
             else: 
                 prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
 
@@ -489,10 +485,11 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 # contrast_logits = F.interpolate(input=contrast_logits, size=(
                 # h, w), mode='bilinear', align_corners=True)
                 
-                if torch.count_nonzero(gt_boundary) == 0:
-                    bound_contrast_loss = prob_ppd_loss * 0
-                else:
-                    bound_contrast_loss = self.bound_contrast_loss(contrast_logits, gt_boundary.squeeze(1), target)
+                # if torch.count_nonzero(gt_boundary) == 0:
+                #     bound_contrast_loss = prob_ppd_loss * 0
+                # else:
+                #     bound_contrast_loss = self.bound_contrast_loss(contrast_logits, gt_boundary.squeeze(1), target)
+                    
                 # boundary prototype contrastive learning
                 
                 # assert 'boundary' in preds
@@ -514,20 +511,20 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             # prob_ppc_weight = self.get_uncer_loss_weight()
             
-            # proto_mean = preds['proto_mean']
-            # proto_var = preds['proto_var']
-            # kl_loss = self.kl_loss(proto_mean, proto_var, target)
+            # x_mean = preds['x_mean']
+            # x_var = preds['x_var']
+            # kl_loss = self.kl_loss(x_mean, x_var, target)
                 
             if self.use_attention:
                 patch_cls_score = preds['patch_cls_score']
                 patch_cls_loss = self.patch_cls_loss(patch_cls_score, target)
                 
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.patch_cls_weight * patch_cls_loss + self.boundary_loss_weight * bound_contrast_loss
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.patch_cls_weight * patch_cls_loss
                 
                 assert not torch.isnan(loss)
                 
                 return {'loss': loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss, 'bound_contrast_loss': bound_contrast_loss}
+                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss, 'kl_loss': kl_loss}
 
             else:
                 loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss 
