@@ -641,7 +641,7 @@ class ProbProtoSegHead(nn.Module):
                     x_var = x_var.reshape(b_size, h_size, -1, k_size)
                     proto_confidence = self.proto_var.data.clone() # [c m k]
                     proto_confidence = proto_confidence.mean(-1) # [c m]
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_confidence': proto_confidence}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_confidence': proto_confidence, 'x_mean': x, 'x_var': x_var}
                 else:
                     return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
             else:

@@ -176,10 +176,10 @@
 		"init_a": 1,
 		"init_b": 0,
 		"avg_update_proto": false,
-		"use_temperature": false,
+		"use_temperature": true,
 		"alfa": 10,
 		"uncertainy_aware_fea": false,
-		"weighted_ppd_loss": true,
+		"weighted_ppd_loss": false,
 		"windows_size": 3,
 		"n_interval": 12,
 		"attention_proto": false,
@@ -204,7 +204,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 11
