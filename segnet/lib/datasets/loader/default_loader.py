@@ -75,6 +75,10 @@ class DefaultLoader(data.Dataset):
             border_size=border_size,
             ori_target=ori_target
         )
+        
+        # if np.unique(labelmap).size == 1:
+        #     Log.info(self.label_list[index])
+        
         return dict(
             img=DataContainer(img, stack=self.is_stack),
             labelmap=DataContainer(labelmap, stack=self.is_stack),

@@ -86,7 +86,9 @@ class ProbProtoSegHead(nn.Module):
         
         self.uncertainy_aware_fea = self.configer.get('protoseg', 'uncertainy_aware_fea')
         self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
-
+        self.attention_proto = self.configer.get('protoseg', 'attention_proto')
+        if self.attention_proto:
+            self.lamda_p = self.configer.get('protoseg', 'lamda_p')
 
     def get_uncertainty(self, c):
         ''' 
@@ -189,7 +191,7 @@ class ProbProtoSegHead(nn.Module):
                 
                 sim_mat = (2 - sim_mat) / (x_var + proto_var).sum(-1) + torch.log(x_var).sum(-1) + torch.log(proto_var).sum(-1)
                 sim_mat = sim_mat.permute(2, 0, 1) # [n c m]  
-                sim_mat = -sim_mat
+                sim_mat = -0.5 * sim_mat
                 
             elif sim_measure == 'match_prob':
                 ''' 
@@ -227,7 +229,6 @@ class ProbProtoSegHead(nn.Module):
             mu.unsqueeze(0))
         return samples # [sample_time n k]
 
-    # @torch.no_grad()
     def prototype_learning(self, sim_mat, out_seg, gt_seg, _c, _c_var):
         """
         Prototype selection and update
@@ -330,6 +331,13 @@ class ProbProtoSegHead(nn.Module):
                     protos[i, n != 0, :]  = momentum_update(old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                     proto_var[i, n != 0, :] = momentum_update(old_value=proto_var[i, n != 0, :], new_value=f_v[n != 0, :], momentum=self.var_gamma, debug=False)
                     
+                    if self.attention_proto:
+                        for m in range(self.num_prototype):
+                            proto_score = -0.5 * ((protos[i, m, :] - protos[i, ...])** 2 / (proto_var[i, m, :] + proto_var[i, ...]) + torch.log(proto_var[i, m, :] + proto_var[i, ...])).mean(-1) # [m]
+                            ind_mask = torch.arange(self.num_prototype).cuda() != m
+                            proto_score = proto_score.masked_select(ind_mask) # [self.num_Proto - 1]
+                            proto_score = proto_score / proto_score.sum()
+                            protos[i, m, :] = protos[i, m, :] + self.lamda_p * (proto_score.unsqueeze(-1) * protos[i, ...].masked_select(ind_mask.unsqueeze(-1)).reshape(-1, self.proj_dim)).sum(0)
                     del var_q, var_k, f, f_v
                                     
             # each class has a target id between [0, num_proto * c]
@@ -362,7 +370,6 @@ class ProbProtoSegHead(nn.Module):
 
         return proto_target  # [n]
     
-    @torch.no_grad()
     def prototype_learning_boundary(self, sim_mat, out_seg, gt_seg, _c, _c_var, gt_boundary=None):
         """
         Prototype selection and update
@@ -427,7 +434,7 @@ class ProbProtoSegHead(nn.Module):
                     boundary_c_var_cls = _c_var_ori[boundary_cls_mask]  # [n k]
                     if not self.avg_update_proto:
                         n = boundary_c_var_cls.shape[0]
-                        b_v = 1 / ((1 / (boundary_c_var_cls + 1e-3)).sum(0) / n + 1e-3)
+                        b_v = 1 / ((1 / (boundary_c_var_cls + 1e-3)).sum(0) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
                         b_v = torch.exp(torch.sigmoid(torch.log(b_v)))
                         b = ((b_v.unsqueeze(0) / (boundary_c_var_cls.unsqueeze(1) + 1e-3)) * boundary_c_cls.unsqueeze(1)).sum(0)
@@ -500,8 +507,8 @@ class ProbProtoSegHead(nn.Module):
                     n = m_q.shape[0]
                     if not self.avg_update_proto:
                     # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        f_v = 1 / (m_q.transpose(0, 1) @ (1 / ((var_q + 1e-3)) + 1e-3) / n)
-                        # f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) + 1e-3)
+                        # f_v = 1 / (m_q.transpose(0, 1) @ (1 / ((var_q + 1e-3)) + 1e-3) / n)
+                        f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
                         f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                         f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
@@ -586,7 +593,7 @@ class ProbProtoSegHead(nn.Module):
         #     uncertainty = uncertainty.reshape(-1, k_size) # [(b h w) 1]
         #     x *= 1 - uncertainty
         #     del sample_x
-        #todo sample or not
+
         sim_mat = self.compute_similarity(x, x_var=x_var, sample=False, sim_measure=self.sim_measure)
 
         out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
@@ -599,6 +606,7 @@ class ProbProtoSegHead(nn.Module):
                 gt_boundary.float(), size=gt_size, mode='nearest').view(-1)
 
         if self.pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
+            assert torch.unique(gt_semantic_seg).shape[0] != 1
             gt_seg = F.interpolate(
                 gt_semantic_seg.float(), size=gt_size, mode='nearest').view(-1)
             #todo use sim_mat / sim_mat_sampled
@@ -609,8 +617,6 @@ class ProbProtoSegHead(nn.Module):
                 contrast_target = self.prototype_learning(
                     sim_mat, out_seg, gt_seg, x, x_var)
                 
-            assert torch.unique(contrast_target).shape[0] != 1
-
             sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
             
             prototypes = self.prototypes.data.clone()
@@ -627,9 +633,9 @@ class ProbProtoSegHead(nn.Module):
                     loss_weight2 = x_var.sum(-1) + proto_var.sum(-1, keepdim=True)
                     loss_weight2 = (loss_weight2 - loss_weight2.min()) / (loss_weight2.max() - loss_weight2.min())
                     loss_weight2 = loss_weight2.mean()
-                    # x = x.reshape(b_size, h_size, -1, k_size)
-                    # x_var = x_var.reshape(b_size, h_size, -1, k_size)
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2}
+                    x = x.reshape(b_size, h_size, -1, k_size)
+                    x_var = x_var.reshape(b_size, h_size, -1, k_size)
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var}
                 elif self.use_temperature:
                     x = x.reshape(b_size, h_size, -1, k_size)
                     x_var = x_var.reshape(b_size, h_size, -1, k_size)
