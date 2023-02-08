@@ -157,7 +157,7 @@
 		"update_prototype": true,
 		"use_attention": false,
 		"warmup_iters": 0,
-		"similarity_measure": "wasserstein",
+		"similarity_measure": "fast_mls",
 		"use_uncertainty": true,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
@@ -167,7 +167,7 @@
 		"patch_cls_weight": 0.2,
 		"kl_loss_weight": 0.001,
 		"proj_dim": 720,
-		"use_boundary": false,
+		"use_boundary": true,
 		"boundary_head_mid_channel": 360,
 		"bin_size_h": 4,
 		"bin_size_w": 8,
@@ -175,7 +175,7 @@
 		"batch_num": 20,
 		"init_a": 1,
 		"init_b": 0,
-		"avg_update_proto": true,
+		"avg_update_proto": false,
 		"use_temperature": false,
 		"alfa": 10,
 		"uncertainy_aware_fea": false,
@@ -204,7 +204,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 11
