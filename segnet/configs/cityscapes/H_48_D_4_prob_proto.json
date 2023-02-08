@@ -109,7 +109,7 @@
 		"lr_policy": "warmup_cosine",
 		"metric": "iters",
 		"warmup_steps": 1000,
-		"t_total": 80000
+		"t_total": 60000
 	},
 	"solver": {
 		"display_iter": 10,
@@ -175,11 +175,11 @@
 		"batch_num": 20,
 		"init_a": 1,
 		"init_b": 0,
-		"avg_update_proto": false,
+		"avg_update_proto": true,
 		"use_temperature": false,
 		"alfa": 10,
 		"uncertainy_aware_fea": false,
-		"weighted_ppd_loss": true,
+		"weighted_ppd_loss": false,
 		"windows_size": 3,
 		"n_interval": 12,
 		"attention_proto": false,
@@ -204,7 +204,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 11

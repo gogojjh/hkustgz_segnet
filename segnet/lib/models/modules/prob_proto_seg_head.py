@@ -299,10 +299,9 @@ class ProbProtoSegHead(nn.Module):
                     protos[i, n != 0, :]  = momentum_update(old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                 
                 else:
-                    n = m_q.shape[0]
+                    m_q_sum = m_q.sum(dim=0) # [num_proto]
                     if not self.avg_update_proto:
                     # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        m_q_sum = m_q.sum(dim=0) # [num_proto]
                         f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
                         f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
@@ -325,8 +324,8 @@ class ProbProtoSegHead(nn.Module):
                         
                         protos[i, n != 0, :]  = momentum_update(old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                         
-                        f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1) @ c_q ** 2) / n - \
-                        (m_q.transpose(0, 1) @ c_q / n) ** 2
+                        f_v = (m_q.transpose(0, 1) @ var_q) / m_q_sum.unsqueeze(-1) + (m_q.transpose(0, 1) @ (c_q ** 2)) / m_q_sum.unsqueeze(-1) - \
+                        ((m_q.transpose(0, 1) @ c_q) / m_q_sum.unsqueeze(-1)) ** 2
                         #! normalize for f_v
                         # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                     protos[i, n != 0, :]  = momentum_update(old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
@@ -506,9 +505,9 @@ class ProbProtoSegHead(nn.Module):
                     protos[i, n != 0, :]  = momentum_update(old_value=non_edge_protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                 else:
                     n = m_q.shape[0]
+                    m_q_sum = m_q.sum(dim=0) # [num_proto]
                     if not self.avg_update_proto:
                     # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        m_q_sum = m_q.sum(dim=0) # [num_proto]
                         # f_v = 1 / (m_q.transpose(0, 1) @ (1 / ((var_q + 1e-3)) + 1e-3) / n)
                         f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
@@ -626,18 +625,14 @@ class ProbProtoSegHead(nn.Module):
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, "boundary": boundary_pred, 'prototypes': prototypes}
             elif self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
-                if self.configer.get('iters') % 50 == 0:
+                if self.configer.get('iters') % 1000 == 0:
                     Log.info(proto_var)
                 if self.use_temperature:
-                    x = x.reshape(b_size, h_size, -1, k_size)
-                    x_var = x_var.reshape(b_size, h_size, -1, k_size)
                     proto_confidence = self.proto_var.data.clone() # [c m k]
                     proto_confidence = proto_confidence.mean(-1) # [c m]
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_confidence': proto_confidence, 'x_mean': x, 'x_var': x_var}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_confidence': proto_confidence}
                 else:
-                    x = x.reshape(b_size, h_size, -1, k_size)
-                    x_var = x_var.reshape(b_size, h_size, -1, k_size)
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
         return out_seg
