@@ -167,7 +167,7 @@
 		"patch_cls_weight": 0.2,
 		"kl_loss_weight": 0.001,
 		"proj_dim": 720,
-		"use_boundary": true,
+		"use_boundary": false,
 		"boundary_head_mid_channel": 360,
 		"bin_size_h": 4,
 		"bin_size_w": 8,
@@ -204,7 +204,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 11

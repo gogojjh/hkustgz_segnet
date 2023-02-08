@@ -304,7 +304,7 @@ class ProbProtoSegHead(nn.Module):
                     if not self.avg_update_proto:
                     # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
                         m_q_sum = m_q.sum(dim=0) # [num_proto]
-                        f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / m_q_sum.unsqueeze(-1) + 1e-3)
+                        f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
                         #todo
                         # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
@@ -435,9 +435,9 @@ class ProbProtoSegHead(nn.Module):
                     boundary_c_var_cls = _c_var_ori[boundary_cls_mask]  # [n k]
                     if not self.avg_update_proto:
                         n = boundary_c_var_cls.shape[0]
-                        b_v = 1 / ((1 / (boundary_c_var_cls + 1e-3)).sum(0) + 1e-3)
+                        b_v = 1 / ((((1 / (boundary_c_var_cls + 1e-3)).sum(0))/ n) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
-                        b_v = torch.exp(torch.sigmoid(torch.log(b_v)))
+                        # b_v = torch.exp(torch.sigmoid(torch.log(b_v)))
                         b = ((b_v.unsqueeze(0) / (boundary_c_var_cls.unsqueeze(1) + 1e-3)) * boundary_c_cls.unsqueeze(1)).sum(0)
                         b = F.normalize(b, p=2, dim=-1)
                     else: 
@@ -508,8 +508,9 @@ class ProbProtoSegHead(nn.Module):
                     n = m_q.shape[0]
                     if not self.avg_update_proto:
                     # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
+                        m_q_sum = m_q.sum(dim=0) # [num_proto]
                         # f_v = 1 / (m_q.transpose(0, 1) @ (1 / ((var_q + 1e-3)) + 1e-3) / n)
-                        f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) + 1e-3)
+                        f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
                         f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                         f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
