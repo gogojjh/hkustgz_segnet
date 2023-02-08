@@ -160,16 +160,7 @@ class Trainer(object):
                 var_lr.append(value)
             else:
                 nbb_lr.append(value)
-
-        # if self.configer.exists('lr', 'var_lr'):
-            # params = [{'params': bb_lr, 'lr': self.configer.get('lr', 'base_lr')},
-            #           {'params': fcn_lr, 'lr': self.configer.get(
-            #               'lr', 'base_lr') * 10},
-            #           {'params': nbb_lr, 'lr': self.configer.get(
-            #               'lr', 'base_lr') * self.configer.get('lr', 'nbb_mult')},
-            #           {'params': var_lr, 'lr': self.configer.get('var_lr', 'base_lr')}]
-            # Log.info('base lr for uncertainty head: {}'.format(
-            #     self.configer.get('lr', 'var_lr')))
+                
         if self.configer.exists('var_lr', 'lr_policy'):
             params = [{'params': bb_lr, 'lr': self.configer.get('lr', 'base_lr')},
                       {'params': fcn_lr, 'lr': self.configer.get(

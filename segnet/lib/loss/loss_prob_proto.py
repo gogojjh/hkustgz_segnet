@@ -18,6 +18,12 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
+class InstanceContrativeLoss(nn.Module, ABC):
+    def __init__(self, configer):
+        super(InstanceContrativeLoss, self).__init__()
+        self.configer = configer
+
+
 class FocalLoss(nn.Module, ABC):
     ''' focal loss '''
     def __init__(self, configer):
@@ -191,7 +197,10 @@ class ProbPPCLoss(nn.Module, ABC):
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
         self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
 
-    def forward(self, contrast_logits, contrast_target, w1=None, w2=None, proto_confidence=None):  
+    def forward(self, contrast_logits, contrast_target, x_var=None, proto_confidence=None):  
+        ''' 
+        x_var: [c m k]
+        '''
         if proto_confidence is not None:
             # proto_confidence: [(num_cls num_proto)]
             # contrast_logits: [n c m]
@@ -202,8 +211,10 @@ class ProbPPCLoss(nn.Module, ABC):
         prob_ppc_loss = F.cross_entropy(
             contrast_logits, contrast_target.long(), ignore_index=self.ignore_label)
         
-        if w1 is not None and w2 is not None:
-            prob_ppc_loss = 1 / (w1 * 4 + 1e-3) * prob_ppc_loss + w2 * 0.5
+        if x_var is not None:
+            w = x_var.mean()
+            # w2 = torch.log(x_var).mean()
+            prob_ppc_loss = 2 / (w + 1e-3) * prob_ppc_loss + w
 
         return prob_ppc_loss
     
@@ -221,7 +232,7 @@ class KLLoss(nn.Module, ABC):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
-    def forward(self, x_mean, x_var, sem_gt, proto=False):
+    def forward(self, x_mean, x_var, sem_gt=None, proto=False):
         ''' 
         x / x_var: [b h w c]
         proto_mean / proto_var: [c m k]
@@ -462,15 +473,13 @@ class PixelProbContrastLoss(nn.Module, ABC):
             
             if self.use_uncertainty:
                 proto_confidence = None
-                w1 = None
-                w2 = None
+                x_var = None
                 if self.use_temperature:
                     proto_confidence = preds['proto_confidence']
                 if self.weighted_ppd_loss:
-                    w1 = preds['w1']
-                    w2 = preds['w2']
+                    x_var = preds['x_var']
 
-                prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target, proto_confidence=proto_confidence, w1=w1, w2=w2)
+                prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target, proto_confidence=proto_confidence, x_var=x_var)
                 
             else: 
                 prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
@@ -513,7 +522,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
             
             x_mean = preds['x_mean']
             x_var = preds['x_var']
-            kl_loss = self.kl_loss(x_mean, x_var, target)
+            kl_loss = self.kl_loss(x_mean, x_var, sem_gt=target)
                 
             if self.use_attention:
                 patch_cls_score = preds['patch_cls_score']
@@ -523,14 +532,14 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 
                 assert not torch.isnan(loss)
                 
-                return {'loss': loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss, 'kl_loss': kl_loss}
+                return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss, 'kl_loss': kl_loss}
 
             else:
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss 
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.kl_loss_weight * kl_loss 
+                
+                assert not torch.isnan(loss)
 
-                return {'loss': loss,
-                        'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
+                return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'kl_loss': kl_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(

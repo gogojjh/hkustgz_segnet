@@ -85,7 +85,6 @@ class ProbProtoSegHead(nn.Module):
         self.sigmoid = nn.Sigmoid()
         
         self.uncertainy_aware_fea = self.configer.get('protoseg', 'uncertainy_aware_fea')
-        self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
         self.attention_proto = self.configer.get('protoseg', 'attention_proto')
         if self.attention_proto:
             self.lamda_p = self.configer.get('protoseg', 'lamda_p')
@@ -306,10 +305,11 @@ class ProbProtoSegHead(nn.Module):
                         m_q_sum = m_q.sum(dim=0) # [num_proto]
                         f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
-                        #todo
-                        # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
+                        f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                         f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
                         f = torch.einsum('nm,nmk->mk', m_q, f)
+                        #todo debug
+                        f = f / (m_q_sum.unsqueeze(-1) + 1e-3)
                         f = F.normalize(f, p=2, dim=-1)
                         # if self.use_temperature:
                         #     for k in range(self.num_prototype):
@@ -328,7 +328,7 @@ class ProbProtoSegHead(nn.Module):
                         f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1) @ c_q ** 2) / n - \
                         (m_q.transpose(0, 1) @ c_q / n) ** 2
                         #! normalize for f_v
-                        f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
+                        # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                     protos[i, n != 0, :]  = momentum_update(old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                     proto_var[i, n != 0, :] = momentum_update(old_value=proto_var[i, n != 0, :], new_value=f_v[n != 0, :], momentum=self.var_gamma, debug=False)
                     
@@ -611,7 +611,6 @@ class ProbProtoSegHead(nn.Module):
             assert torch.unique(gt_semantic_seg).shape[0] != 1
             gt_seg = F.interpolate(
                 gt_semantic_seg.float(), size=gt_size, mode='nearest').view(-1)
-            #todo use sim_mat / sim_mat_sampled
             if self.use_boundary and gt_boundary is not None:
                 contrast_target = self.prototype_learning_boundary(
                     sim_mat, out_seg, gt_seg, x, x_var, gt_boundary)
@@ -626,19 +625,10 @@ class ProbProtoSegHead(nn.Module):
             if boundary_pred is not None and self.use_boundary:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, "boundary": boundary_pred, 'prototypes': prototypes}
             elif self.use_uncertainty:
-                if self.weighted_ppd_loss:
-                    proto_var = self.proto_var.data.clone()
-                    loss_weight1 = torch.einsum('nk,cmk->cmn', x_var, proto_var) # [c m n]
-                    loss_weight1 = (loss_weight1 - loss_weight1.min()) / (loss_weight1.max() - loss_weight1.min())
-                    loss_weight1 = loss_weight1.mean()
-                    # [n] + [c m 1] = [c m n]
-                    loss_weight2 = x_var.sum(-1) + proto_var.sum(-1, keepdim=True)
-                    loss_weight2 = (loss_weight2 - loss_weight2.min()) / (loss_weight2.max() - loss_weight2.min())
-                    loss_weight2 = loss_weight2.mean()
-                    x = x.reshape(b_size, h_size, -1, k_size)
-                    x_var = x_var.reshape(b_size, h_size, -1, k_size)
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var}
-                elif self.use_temperature:
+                proto_var = self.proto_var.data.clone()
+                if self.configer.get('iters') % 50 == 0:
+                    Log.info(proto_var)
+                if self.use_temperature:
                     x = x.reshape(b_size, h_size, -1, k_size)
                     x_var = x_var.reshape(b_size, h_size, -1, k_size)
                     proto_confidence = self.proto_var.data.clone() # [c m k]
