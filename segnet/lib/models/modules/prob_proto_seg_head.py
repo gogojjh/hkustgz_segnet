@@ -9,6 +9,7 @@ from lib.utils.tools.logger import Logger as Log
 from lib.models.modules.contrast import momentum_update, l2_normalize
 from lib.models.modules.sinkhorn import distributed_sinkhorn
 from timm.models.layers import trunc_normal_
+from lib.utils.distributed import get_world_size, get_rank, is_distributed
 from einops import rearrange, repeat
 
 
@@ -625,7 +626,8 @@ class ProbProtoSegHead(nn.Module):
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, "boundary": boundary_pred, 'prototypes': prototypes}
             elif self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
-                if self.configer.get('iters') % 1000 == 0:
+                if self.configer.get('iters') % self.configer.get('solver', 'display_iter') == 0 and \
+                    (not is_distributed() or get_rank() == 0):
                     Log.info(proto_var)
                 if self.use_temperature or self.weighted_ppd_loss:
                     proto_confidence = self.proto_var.data.clone() # [c m k]
