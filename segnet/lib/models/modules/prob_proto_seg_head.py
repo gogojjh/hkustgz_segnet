@@ -519,11 +519,6 @@ class ProbProtoSegHead(nn.Module):
                         
                         f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1) @ c_q ** 2) / n - \
                         (m_q.transpose(0, 1) @ c_q / n) ** 2
-<<<<<<< HEAD
-=======
-                        #! normalize for f_v
-                        # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
->>>>>>> ba1d45dfaf008f860296fd30cc20a053e8397bf4
                     non_edge_protos[i, n != 0, :]  = momentum_update(old_value=non_edge_protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                     non_edge_proto_var[i, n != 0, :] = momentum_update(old_value=non_edge_proto_var[i, n != 0, :], new_value=f_v[n != 0, :], momentum=self.var_gamma, debug=False)    
                     
@@ -620,51 +615,36 @@ class ProbProtoSegHead(nn.Module):
             
             if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
-<<<<<<< HEAD
     
                 if self.configer.get('iters') % 1000 == 0:
                     Log.info(proto_var)
                 if self.use_temperature:
-                    x = rearrange(x, '(b h w) c -> b c h w',
-                            b=b_size, h=h_size)
-                    x_var = rearrange(x_var, '(b h w) c -> b c h w',
-                            b=b_size, h=h_size)
                     proto_confidence = self.proto_var.data.clone() # [c m k]
                     proto_confidence = proto_confidence.mean(-1) # [c m]
+                    if self.weighted_ppd_loss:
+                        proto_var = self.proto_var.data.clone()
+                        loss_weight1 = torch.einsum('nk,cmk->cmn', x_var, proto_var) # [c m n]
+                        loss_weight1 = (loss_weight1 - loss_weight1.min()) / (loss_weight1.max() - loss_weight1.min())
+                        loss_weight1 = loss_weight1.mean()
+                        # [n] + [c m 1] = [c m n]
+                        loss_weight2 = torch.log(x_var).sum(-1) + torch.log(proto_var).sum(-1, keepdim=True)
+                        loss_weight2 = (loss_weight2 - loss_weight2.min()) / (loss_weight2.max() - loss_weight2.min())
+                        loss_weight2 = loss_weight2.mean()
+                        x = rearrange(x, '(b h w) c -> b c h w',
+                                b=b_size, h=h_size)
+                        x_var = rearrange(x_var, '(b h w) c -> b c h w',
+                                b=b_size, h=h_size)
+                        return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var, 'proto_confidence': proto_confidence}
+                    x = rearrange(x, '(b h w) c -> b c h w',
+                                b=b_size, h=h_size)
+                    x_var = rearrange(x_var, '(b h w) c -> b c h w',
+                                b=b_size, h=h_size)
                     return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_confidence': proto_confidence, 'x_mean': x, 'x_var': x_var}
-                if self.weighted_ppd_loss:
-                    proto_var = self.proto_var.data.clone()
-                    loss_weight1 = torch.einsum('nk,cmk->cmn', x_var, proto_var) # [c m n]
-                    loss_weight1 = (loss_weight1 - loss_weight1.min()) / (loss_weight1.max() - loss_weight1.min())
-                    loss_weight1 = loss_weight1.mean()
-                    # [n] + [c m 1] = [c m n]
-                    loss_weight2 = torch.log(x_var).sum(-1) + torch.log(proto_var).sum(-1, keepdim=True)
-                    loss_weight2 = (loss_weight2 - loss_weight2.min()) / (loss_weight2.max() - loss_weight2.min())
-                    loss_weight2 = loss_weight2.mean()
-                    x = rearrange(x, '(b h w) c -> b c h w',
-                            b=b_size, h=h_size)
-                    x_var = rearrange(x_var, '(b h w) c -> b c h w',
-                            b=b_size, h=h_size)
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var}
                 else:
                     x = rearrange(x, '(b h w) c -> b c h w',
                             b=b_size, h=h_size)
                     x_var = rearrange(x_var, '(b h w) c -> b c h w',
                             b=b_size, h=h_size)
-=======
-                x = rearrange(x, '(b h w) c -> b c h w',
-                            b=b_size, h=h_size)
-                x_var = rearrange(x_var, '(b h w) c -> b c h w',
-                            b=b_size, h=h_size)
-                if self.configer.get('iters') % 1000 == 0 and \
-                    (not is_distributed() or get_rank() == 0):
-                    Log.info(proto_var)
-                if self.use_temperature or self.weighted_ppd_loss: 
-                    proto_confidence = self.proto_var.data.clone() # [c m k]
-                    proto_confidence = proto_confidence.mean(-1) # [c m]
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_var': x_var, 'proto_confidence': proto_confidence, 'x_mean': x, 'x_var': x_var}
-                else:
->>>>>>> ba1d45dfaf008f860296fd30cc20a053e8397bf4
                     return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}

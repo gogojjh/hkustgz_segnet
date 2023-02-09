@@ -333,12 +333,7 @@ class Trainer(object):
                         batch_time=self.batch_time, foward_time=self.foward_time,
                         backward_time=self.backward_time, loss_time=self.loss_time,
                         data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
-<<<<<<< HEAD
                         prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss, kl_loss=kl_loss))
-=======
-                        prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss, 
-                        kl_loss=kl_loss))
->>>>>>> ba1d45dfaf008f860296fd30cc20a053e8397bf4
 
                 self.batch_time.reset()
                 self.foward_time.reset()
