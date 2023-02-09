@@ -178,8 +178,8 @@
 		"avg_update_proto": false,
 		"use_temperature": false,
 		"alfa": 10,
-		"uncertainy_aware_fea": false,
-		"weighted_ppd_loss": false,
+		"F": true,
+		"weighted_ppd_loss": true,
 		"windows_size": 3,
 		"n_interval": 12,
 		"attention_proto": false,
@@ -204,7 +204,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 11

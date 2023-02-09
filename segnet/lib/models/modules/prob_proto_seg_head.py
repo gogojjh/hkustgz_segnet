@@ -60,6 +60,7 @@ class ProbProtoSegHead(nn.Module):
                 self.lamda = 1 / self.proj_dim  # scaling factor for b_distance
                 
             self.avg_update_proto = self.configer.get('protoseg', 'avg_update_proto')
+            self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
             
         self.use_temperature = self.configer.get('protoseg', 'use_temperature')
         # if self.use_temperature:
@@ -84,7 +85,6 @@ class ProbProtoSegHead(nn.Module):
         self.weight = nn.Parameter(data=kernel, requires_grad=False)
         self.sigmoid = nn.Sigmoid()
         
-        self.uncertainy_aware_fea = self.configer.get('protoseg', 'uncertainy_aware_fea')
         self.attention_proto = self.configer.get('protoseg', 'attention_proto')
         if self.attention_proto:
             self.lamda_p = self.configer.get('protoseg', 'lamda_p')
@@ -284,7 +284,6 @@ class ProbProtoSegHead(nn.Module):
 
             # f = m_q.transpose(0, 1) @ c_q  # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
             if self.use_uncertainty and _c_var is not None:
-                _c_var = _c_var
                 var_k = _c_var[gt_seg == i, ...]
 
                 var_q = var_k * c_k_tile # [n embed_dim]
@@ -304,7 +303,6 @@ class ProbProtoSegHead(nn.Module):
                     # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
                         f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
-                        # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                         f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
                         f = torch.einsum('nm,nmk->mk', m_q, f)
                         f = f / (m_q_sum.unsqueeze(-1) + 1e-3)
@@ -436,7 +434,6 @@ class ProbProtoSegHead(nn.Module):
                         n = boundary_c_var_cls.shape[0]
                         b_v = 1 / (((1 / (boundary_c_var_cls + 1e-3)).mean(0)) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
-                        # b_v = torch.exp(torch.sigmoid(torch.log(b_v)))
                         b = ((b_v.unsqueeze(0) / (boundary_c_var_cls.unsqueeze(1) + 1e-3)) * boundary_c_cls.unsqueeze(1)).sum(0)
                         b = F.normalize(b, p=2, dim=-1)
                     else: 
@@ -489,11 +486,11 @@ class ProbProtoSegHead(nn.Module):
             # correctly predicted pixel embed  [n embed_dim]
             c_q = c_k * c_k_tile
 
-            # f = m_q.transpose(0, 1) @ c_q  # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim] mean?
+            if self.use_uncertainty and _c_var is not None:
 
-            var_k = _c_var[gt_seg == i, ...]
+                var_k = _c_var[gt_seg == i, ...]
 
-            var_q = var_k * c_k_tile
+                var_q = var_k * c_k_tile
 
             # the prototypes that are being selected calcualted by sum
             n = torch.sum(m_q, dim=0)  # [num_proto]
@@ -504,14 +501,11 @@ class ProbProtoSegHead(nn.Module):
                     f = F.normalize(f, p=2, dim=-1)
                     protos[i, n != 0, :]  = momentum_update(old_value=non_edge_protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                 else:
-                    n = m_q.shape[0]
                     m_q_sum = m_q.sum(dim=0) # [num_proto]
                     if not self.avg_update_proto:
                     # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        # f_v = 1 / (m_q.transpose(0, 1) @ (1 / ((var_q + 1e-3)) + 1e-3) / n)
                         f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
-                        # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                         f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
                         f = torch.einsum('nm,nmk->mk', m_q, f)
                         f = F.normalize(f, p=2, dim=-1)
@@ -523,8 +517,6 @@ class ProbProtoSegHead(nn.Module):
                         
                         f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1) @ c_q ** 2) / n - \
                         (m_q.transpose(0, 1) @ c_q / n) ** 2
-                        #! normalize for f_v
-                        f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                     non_edge_protos[i, n != 0, :]  = momentum_update(old_value=non_edge_protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                     non_edge_proto_var[i, n != 0, :] = momentum_update(old_value=non_edge_proto_var[i, n != 0, :], new_value=f_v[n != 0, :], momentum=self.var_gamma, debug=False)    
                     
@@ -619,20 +611,39 @@ class ProbProtoSegHead(nn.Module):
                 
             sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
             
-            prototypes = self.prototypes.data.clone()
-
-            if boundary_pred is not None and self.use_boundary:
-                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, "boundary": boundary_pred, 'prototypes': prototypes}
-            elif self.use_uncertainty:
+            if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
-                if self.configer.get('iters') % 100 == 0:
+    
+                if self.configer.get('iters') % 1000 == 0:
                     Log.info(proto_var)
                 if self.use_temperature:
+                    x = rearrange(x, '(b h w) c -> b c h w',
+                            b=b_size, h=h_size)
+                    x_var = rearrange(x_var, '(b h w) c -> b c h w',
+                            b=b_size, h=h_size)
                     proto_confidence = self.proto_var.data.clone() # [c m k]
                     proto_confidence = proto_confidence.mean(-1) # [c m]
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_confidence': proto_confidence}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_confidence': proto_confidence, 'x_mean': x, 'x_var': x_var}
+                if self.weighted_ppd_loss:
+                    proto_var = self.proto_var.data.clone()
+                    loss_weight1 = torch.einsum('nk,cmk->cmn', x_var, proto_var) # [c m n]
+                    loss_weight1 = (loss_weight1 - loss_weight1.min()) / (loss_weight1.max() - loss_weight1.min())
+                    loss_weight1 = loss_weight1.mean()
+                    # [n] + [c m 1] = [c m n]
+                    loss_weight2 = torch.log(x_var).sum(-1) + torch.log(proto_var).sum(-1, keepdim=True)
+                    loss_weight2 = (loss_weight2 - loss_weight2.min()) / (loss_weight2.max() - loss_weight2.min())
+                    loss_weight2 = loss_weight2.mean()
+                    x = rearrange(x, '(b h w) c -> b c h w',
+                            b=b_size, h=h_size)
+                    x_var = rearrange(x_var, '(b h w) c -> b c h w',
+                            b=b_size, h=h_size)
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var}
                 else:
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
+                    x = rearrange(x, '(b h w) c -> b c h w',
+                            b=b_size, h=h_size)
+                    x_var = rearrange(x_var, '(b h w) c -> b c h w',
+                            b=b_size, h=h_size)
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
         return out_seg
