@@ -13,5 +13,7 @@ visdom
 bs4
 html5lib
 ninja
-torch>=1.7.0
-torchvision>=0.6.0
+# torch>=1.7.0
+torch == 1.11.0
+# torchvision>=0.6.0
+torchvision==0.12.0
