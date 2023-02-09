@@ -626,15 +626,19 @@ class ProbProtoSegHead(nn.Module):
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, "boundary": boundary_pred, 'prototypes': prototypes}
             elif self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
-                if self.configer.get('iters') % self.configer.get('solver', 'display_iter') == 0 and \
+                x = rearrange(x, '(b h w) c -> b c h w',
+                            b=b_size, h=h_size)
+                x_var = rearrange(x_var, '(b h w) c -> b c h w',
+                            b=b_size, h=h_size)
+                if self.configer.get('iters') % 1000 == 0 and \
                     (not is_distributed() or get_rank() == 0):
                     Log.info(proto_var)
-                if self.use_temperature or self.weighted_ppd_loss:
+                if self.use_temperature or self.weighted_ppd_loss: 
                     proto_confidence = self.proto_var.data.clone() # [c m k]
                     proto_confidence = proto_confidence.mean(-1) # [c m]
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_var': x_var, 'proto_confidence': proto_confidence}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_var': x_var, 'proto_confidence': proto_confidence, 'x_mean': x, 'x_var': x_var}
                 else:
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
         return out_seg
