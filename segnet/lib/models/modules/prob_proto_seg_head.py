@@ -307,6 +307,7 @@ class ProbProtoSegHead(nn.Module):
                         # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                         f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
                         f = torch.einsum('nm,nmk->mk', m_q, f)
+                        #todo debug
                         f = f / (m_q_sum.unsqueeze(-1) + 1e-3)
                         f = F.normalize(f, p=2, dim=-1)
                         # if self.use_temperature:
@@ -625,7 +626,7 @@ class ProbProtoSegHead(nn.Module):
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, "boundary": boundary_pred, 'prototypes': prototypes}
             elif self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
-                if self.configer.get('iters') % 100 == 0:
+                if self.configer.get('iters') % 1000 == 0:
                     Log.info(proto_var)
                 if self.use_temperature:
                     proto_confidence = self.proto_var.data.clone() # [c m k]
