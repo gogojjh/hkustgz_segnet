@@ -530,7 +530,11 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 patch_cls_score = preds['patch_cls_score']
                 patch_cls_loss = self.patch_cls_loss(patch_cls_score, target)
                 
+<<<<<<< HEAD
                 loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.patch_cls_weight * patch_cls_loss + self.kl_loss_weight * kl_loss 
+=======
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.patch_cls_weight * patch_cls_loss + self.kl_loss_weight * kl_loss
+>>>>>>> ba1d45dfaf008f860296fd30cc20a053e8397bf4
                 
                 assert not torch.isnan(loss)
                 

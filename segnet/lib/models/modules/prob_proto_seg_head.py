@@ -9,6 +9,7 @@ from lib.utils.tools.logger import Logger as Log
 from lib.models.modules.contrast import momentum_update, l2_normalize
 from lib.models.modules.sinkhorn import distributed_sinkhorn
 from timm.models.layers import trunc_normal_
+from lib.utils.distributed import get_world_size, get_rank, is_distributed
 from einops import rearrange, repeat
 
 
@@ -88,6 +89,7 @@ class ProbProtoSegHead(nn.Module):
         self.attention_proto = self.configer.get('protoseg', 'attention_proto')
         if self.attention_proto:
             self.lamda_p = self.configer.get('protoseg', 'lamda_p')
+        self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
 
     def get_uncertainty(self, c):
         ''' 
@@ -412,8 +414,6 @@ class ProbProtoSegHead(nn.Module):
         proto_target = gt_seg_ori.clone().float()
 
         for i in range(self.num_classes):
-            if i == 255:
-                continue
             # the ones are boundary & gt is class i & correctly predicted
             boundary_cls_mask = torch.logical_and(
                 gt_boundary == 1, gt_seg_ori == i)  # [b*h*w]
@@ -443,7 +443,7 @@ class ProbProtoSegHead(nn.Module):
                         f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1) @ c_q ** 2) / n - \
                         (m_q.transpose(0, 1) @ c_q / n) ** 2
                         #! normalize for f_v
-                        f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
+                        # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                     edge_protos[i, ...] = momentum_update(old_value=edge_protos[i, ...],
                                                         new_value=b,
                                                         momentum=self.mean_gamma)
@@ -508,6 +508,8 @@ class ProbProtoSegHead(nn.Module):
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
                         f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
                         f = torch.einsum('nm,nmk->mk', m_q, f)
+                        #todo debug
+                        f = f / (m_q_sum.unsqueeze(-1) + 1e-3)
                         f = F.normalize(f, p=2, dim=-1)
                     else: 
                         f = m_q.transpose(0, 1) @ c_q # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
@@ -517,6 +519,11 @@ class ProbProtoSegHead(nn.Module):
                         
                         f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1) @ c_q ** 2) / n - \
                         (m_q.transpose(0, 1) @ c_q / n) ** 2
+<<<<<<< HEAD
+=======
+                        #! normalize for f_v
+                        # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
+>>>>>>> ba1d45dfaf008f860296fd30cc20a053e8397bf4
                     non_edge_protos[i, n != 0, :]  = momentum_update(old_value=non_edge_protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                     non_edge_proto_var[i, n != 0, :] = momentum_update(old_value=non_edge_proto_var[i, n != 0, :], new_value=f_v[n != 0, :], momentum=self.var_gamma, debug=False)    
                     
@@ -613,6 +620,7 @@ class ProbProtoSegHead(nn.Module):
             
             if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
+<<<<<<< HEAD
     
                 if self.configer.get('iters') % 1000 == 0:
                     Log.info(proto_var)
@@ -643,6 +651,20 @@ class ProbProtoSegHead(nn.Module):
                             b=b_size, h=h_size)
                     x_var = rearrange(x_var, '(b h w) c -> b c h w',
                             b=b_size, h=h_size)
+=======
+                x = rearrange(x, '(b h w) c -> b c h w',
+                            b=b_size, h=h_size)
+                x_var = rearrange(x_var, '(b h w) c -> b c h w',
+                            b=b_size, h=h_size)
+                if self.configer.get('iters') % 1000 == 0 and \
+                    (not is_distributed() or get_rank() == 0):
+                    Log.info(proto_var)
+                if self.use_temperature or self.weighted_ppd_loss: 
+                    proto_confidence = self.proto_var.data.clone() # [c m k]
+                    proto_confidence = proto_confidence.mean(-1) # [c m]
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_var': x_var, 'proto_confidence': proto_confidence, 'x_mean': x, 'x_var': x_var}
+                else:
+>>>>>>> ba1d45dfaf008f860296fd30cc20a053e8397bf4
                     return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
