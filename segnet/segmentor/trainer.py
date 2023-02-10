@@ -117,7 +117,7 @@ class Trainer(object):
         self.with_proto = True if self.configer.exists("protoseg") else False
 
         self.uncer_visualizer = UncertaintyVisualizer(configer=self.configer)
-        
+
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
 
     @staticmethod
@@ -160,7 +160,7 @@ class Trainer(object):
                 var_lr.append(value)
             else:
                 nbb_lr.append(value)
-                
+
         if self.configer.exists('var_lr', 'lr_policy'):
             params = [{'params': bb_lr, 'lr': self.configer.get('lr', 'base_lr')},
                       {'params': fcn_lr, 'lr': self.configer.get(
@@ -273,6 +273,8 @@ class Trainer(object):
                         backward_loss) / get_world_size()
                     kl_loss = reduce_tensor(
                         loss['kl_loss']) / get_world_size()
+                    patch_cls_loss = reduce_tensor(
+                        loss['patch_cls_loss']) / get_world_size()
             else:
                 # backward_loss = display_loss = self.pixel_loss(
                 #     outputs, targets)
@@ -323,7 +325,7 @@ class Trainer(object):
                     'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
                     'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
                     'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f} prob_ppd_loss={prob_ppd_loss:.5f} kl_loss={kl_loss:.5f}'.
+                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f} prob_ppd_loss={prob_ppd_loss:.5f} kl_loss={kl_loss:.5f} patch_cls_loss={patch_cls_loss:.5f}'.
                     format(
                         self.configer.get('epoch'),
                         self.configer.get('iters'),
@@ -333,7 +335,7 @@ class Trainer(object):
                         batch_time=self.batch_time, foward_time=self.foward_time,
                         backward_time=self.backward_time, loss_time=self.loss_time,
                         data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
-                        prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss, kl_loss=kl_loss))
+                        prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss, kl_loss=kl_loss, patch_cls_loss=patch_cls_loss))
 
                 self.batch_time.reset()
                 self.foward_time.reset()
@@ -465,10 +467,10 @@ class Trainer(object):
                             # uncertainty = outputs['uncertainty']
                             h, w = targets.size(1), targets.size(2)
                             uncertainty = outputs['x_var']  # [b h w k]
-                            uncertainty = uncertainty.mean(-1) # [b h w]
+                            uncertainty = uncertainty.mean(-1)  # [b h w]
                             uncertainty = F.interpolate(
                                 input=uncertainty.unsqueeze(1), size=(h, w),
-                                mode='bilinear', align_corners=True) # [b, 1, h, w]
+                                mode='bilinear', align_corners=True)  # [b, 1, h, w]
                             uncertainty = uncertainty.squeeze(1)
                             if (self.configer.get('iters') % (self.configer.get(
                                     'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
