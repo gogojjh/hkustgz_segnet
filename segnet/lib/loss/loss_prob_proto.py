@@ -18,16 +18,6 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
-# class InstanceContrativeLoss(nn.Module, ABC):
-#     def __init__(self, configer):
-#         super(InstanceContrativeLoss, self).__init__()
-#         self.configer = configer
-
-#     def _contrastive(self, )
-
-#     def forward(self, feats, labels=None, predict=None, queue=None):
-
-
 class FocalLoss(nn.Module, ABC):
     ''' focal loss '''
 
@@ -533,25 +523,25 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             x_mean = preds['x_mean']
             x_var = preds['x_var']
-            kl_loss = self.kl_loss(x_mean, x_var, sem_gt=target)
+            # kl_loss = self.kl_loss(x_mean, x_var, sem_gt=target)
 
             if self.use_attention:
                 patch_cls_score = preds['patch_cls_score']
                 patch_cls_loss = self.patch_cls_loss(patch_cls_score, target)
 
                 loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
-                    prob_ppd_loss + self.patch_cls_weight * patch_cls_loss + self.kl_loss_weight * kl_loss
+                    prob_ppd_loss + self.patch_cls_weight * patch_cls_loss 
 
                 assert not torch.isnan(loss)
 
-                return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss, 'kl_loss': kl_loss}
+                return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss}
 
             else:
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.kl_loss_weight * kl_loss
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
 
                 assert not torch.isnan(loss)
 
-                return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'kl_loss': kl_loss}
+                return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(

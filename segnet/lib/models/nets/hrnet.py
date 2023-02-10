@@ -25,6 +25,7 @@ from lib.models.modules.prob_proto_seg_head import ProbProtoSegHead
 from lib.models.modules.boundary_head import BoundaryHead
 from lib.models.modules.bayesian_uncertainty_head import BayesianUncertaintyHead
 from lib.models.modules.caa_head import CAAHead
+from lib.models.modules.boundary_attention_module import BoundaryAttentionModule
 # from lib.models.modules.attention_uncertainty_head import UncertaintyHead
 
 from timm.models.layers import trunc_normal_
@@ -54,10 +55,7 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
-        if self.use_attention:
-            in_channels = 720 * 2
-        else: 
-            in_channels = 720
+        in_channels = 720
         out_channels = 720
         self.proj_dim = self.configer.get('protoseg', 'proj_dim')
 
@@ -70,7 +68,7 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         )
             
         if self.use_attention:
-            self.attention_head = CAAHead(configer=configer)
+            self.avgpool = nn.AvgPool2d((7, 7))
             
         if self.use_uncertainty:
             out_dim = self.proj_dim
@@ -78,6 +76,8 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             self.uncertainty_head = UncertaintyHead(
                 in_feat=in_dim,
                 out_feat=out_dim)  # predict variance of each gaussian
+            if self.use_boundary:
+                self.boundary_attention = BoundaryAttentionModule(configer=configer)
             
         self.proj_head = ProjectionHead(720, self.proj_dim)
 
@@ -116,21 +116,31 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             atten_c, patch_cls_score = self.attention_head(c_raw)
             c_raw = torch.cat((c_raw, atten_c), dim=1)
         
-        c_raw = self.cls_head(c_raw)  # 720
-        c = self.proj_head(c_raw) # self.proj
+        # c_raw = self.cls_head(c_raw)  # 720
         
         c_var = None
+        if self.use_attention:
+            c_7x7 = c_raw.view(-1, self.proj_dim, 7, 7)
+            pooled = self.avgpool(c_7x7).view(-1, self.proj_dim) #! patch-wise local attention
+            c_7x7 = c_7x7.view(-1, self.proj_dim, 7 * 7)
+        
         if self.use_uncertainty:
             c_var = self.uncertainty_head(c_raw)
             c_var = torch.exp(c_var)
             
-            c = rearrange(c, 'b c h w -> (b h w) c')
-            c = self.feat_norm(c)  # ! along channel dimension
-            c = l2_normalize(c)  # ! l2_norm along num_class dimension
-
-            c = rearrange(c, '(b h w) c -> b c h w',
-                        h=gt_size[0], w=gt_size[1])
+            if self.use_boundary:
+                c_var = self.boundary_attention(gt_boundary, c_var)
             
+            c_var = torch.exp(c_var)
+         
+        c = self.proj_head(c_raw) # self.proj
+        c = rearrange(c, 'b c h w -> (b h w) c')
+        c = self.feat_norm(c)  # ! along channel dimension
+        c = l2_normalize(c)  # ! l2_norm along num_class dimension
+        c = rearrange(c, '(b h w) c -> b c h w',
+                    h=gt_size[0], w=gt_size[1])
+        del c_raw
+           
         boundary_pred = None
         preds = self.prob_seg_head(
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,

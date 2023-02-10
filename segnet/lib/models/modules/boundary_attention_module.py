@@ -21,7 +21,7 @@ class BoundaryAttentionModule(nn.Module):
 
         # to let dim of boundary map equal to that of uncertainty/feature map
         self.key_conv = nn.Sequential(
-            nn.Conv2d(2,
+            nn.Conv2d(1,
                       self.mid_channels,
                       kernel_size=1,
                       stride=1,
@@ -69,8 +69,11 @@ class BoundaryAttentionModule(nn.Module):
         all inputs: [b proj_dim/2 h w]
         '''
         b_size, c_size, h_size, w_size = uncertainty_map.size()  # c: proj_dim
-        proj_key = self.key_conv(boundary_map)  # [b mid_channel h w] key
-        proj_query = self.query_conv(uncertainty_map)  # query [b mid_channel h w]
+        boundary_map = F.interpolate(
+                boundary_map.float(), size=(h_size, w_size), mode='nearest')
+    
+        proj_key = self.key_conv(boundary_map)  # [b out_channel h w] key
+        proj_query = self.query_conv(uncertainty_map)  # query [b out_channel h w]
         # [b (h w) mid_channel]
         proj_query = proj_query.view(b_size, -1, h_size*w_size).permute(0, 2, 1)
         proj_key = proj_key.view(b_size, -1, h_size*w_size)  # [b mid_channel (h w)]
@@ -81,13 +84,18 @@ class BoundaryAttentionModule(nn.Module):
         # if uncertainty high + probability in boundary map high -> more likely to be boundary
         # [b (h w) mid_channel] * [b mid_channel (h w)] = [b (h w) (h w)]
         energy = torch.bmm(proj_query, proj_key)
-        attention = F.softmax(energy, 1)  # softmax on (h w) channel
+        #todo
+        # attention = F.softmax(energy, 1)  # softmax on (h w) channel
 
         # [b self.proj_dim (h w)]  * [b (h w/no softmax) (h w/softmax)] = [b self.proj_dim (h w/softmax)]
-        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
+        # out = torch.bmm(proj_value, attention.permute(0, 2, 1))
+        out = torch.bmm(proj_value, energy.permute(0, 2, 1))
+        
         # [b c h w] here h and w results from softmax(position attention)
         out = out.view(b_size, c_size, h_size, w_size)
 
         out = self.gamma * out + uncertainty_map  # [b c h w]
+        
+        del proj_query, proj_key, proj_value, uncertainty_map
 
         return out

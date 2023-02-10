@@ -64,10 +64,6 @@ class ProbProtoSegHead(nn.Module):
             self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
             
         self.use_temperature = self.configer.get('protoseg', 'use_temperature')
-        # if self.use_temperature:
-        #     self.alfa = self.configer.get('protoseg', 'alfa')
-        #     proto_confidence = torch.ones((self.num_classes, self.num_prototype)).cuda()
-        #     self.proto_confidence = nn.Parameter(proto_confidence, requires_grad=False)
         
         if self.sim_measure == 'match_prob':
             a = self.configer.get('protoseg', 'init_a') * torch.ones(1).cuda()
@@ -91,7 +87,7 @@ class ProbProtoSegHead(nn.Module):
             self.lamda_p = self.configer.get('protoseg', 'lamda_p')
         self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
 
-    def get_uncertainty(self, c):
+    def get_uncertainty(self, x_var):
         ''' 
         c: [sample_num b h w k]
         '''
@@ -442,8 +438,6 @@ class ProbProtoSegHead(nn.Module):
                         protos[i, n != 0, :]  = momentum_update(old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                         f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1) @ c_q ** 2) / n - \
                         (m_q.transpose(0, 1) @ c_q / n) ** 2
-                        #! normalize for f_v
-                        # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                     edge_protos[i, ...] = momentum_update(old_value=edge_protos[i, ...],
                                                         new_value=b,
                                                         momentum=self.mean_gamma)
@@ -505,7 +499,7 @@ class ProbProtoSegHead(nn.Module):
                     if not self.avg_update_proto:
                     # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
                         f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
-                        # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
+                        # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim
                         f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
                         f = torch.einsum('nm,nmk->mk', m_q, f)
                         #todo debug
@@ -616,7 +610,7 @@ class ProbProtoSegHead(nn.Module):
             if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
     
-                if self.configer.get('iters') % 1000 == 0:
+                if self.configer.get('iters') % 100 == 0:
                     Log.info(proto_var)
                 if self.use_temperature:
                     proto_confidence = self.proto_var.data.clone() # [c m k]
