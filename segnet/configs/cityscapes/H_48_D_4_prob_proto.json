@@ -149,11 +149,7 @@
 	"protoseg": {
 		"mean_gamma": 0.999,
 		"var_gamma": 0.999,
-<<<<<<< HEAD
 		"num_prototype": 5,
-=======
-		"num_prototype": 8,
->>>>>>> e85a8a4cec84d17e8c3f58b0e7e9ebd7093d47d8
 		"num_local_prototype": 5,
 		"pretrain_prototype": false,
 		"use_rmi": false,
@@ -170,7 +166,7 @@
 		"boundary_loss_weight": 0.01,
 		"patch_cls_weight": 0.2,
 		"kl_loss_weight": 0.001,
-		"proj_dim": 512,
+		"proj_dim": 320,
 		"use_boundary": true,
 		"boundary_head_mid_channel": 128,
 		"bin_size_h": 4,

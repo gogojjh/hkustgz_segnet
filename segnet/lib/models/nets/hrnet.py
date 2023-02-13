@@ -55,10 +55,7 @@ class HRNet_W18_Attn_Prob_Proto(nn.Module):
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
-        if self.use_attention:
-            in_channels = 270 * 2
-        else: 
-            in_channels = 270
+        in_channels = 270
         out_channels = 270
         self.proj_dim = self.configer.get('protoseg', 'proj_dim')
 
@@ -117,7 +114,7 @@ class HRNet_W18_Attn_Prob_Proto(nn.Module):
             atten_c, patch_cls_score = self.attention_head(c_raw)
             c_raw = torch.cat((c_raw, atten_c), dim=1)
         
-        c_raw = self.cls_head(c_raw)  # 720
+        # c_raw = self.cls_head(c_raw)  # 720
         c = self.proj_head(c_raw) # self.proj
         
         c_var = None

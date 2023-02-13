@@ -361,8 +361,6 @@ class ProbProtoSegHead(nn.Module):
         self.prototypes = nn.Parameter(
             l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
         if self.use_uncertainty:
-            # todo
-            # proto_var = torch.exp(torch.sigmoid(torch.log(proto_var)))
             self.proto_var = nn.Parameter(proto_var, requires_grad=False)
 
         if dist.is_available() and dist.is_initialized():  # distributed learning
@@ -446,24 +444,15 @@ class ProbProtoSegHead(nn.Module):
                         b_v = 1 / (((1 / (boundary_c_var_cls + 1e-3)).mean(0)) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
                         b = ((b_v.unsqueeze(0) / (boundary_c_var_cls.unsqueeze(1) + 1e-3))
-                             * boundary_c_cls.unsqueeze(1)).sum(0)
+                             * boundary_c_cls.unsqueeze(1)).mean(0)
                         b = F.normalize(b, p=2, dim=-1)
                     else:
                         # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
                         b = boundary_c_cls.sum(0)
                         b = F.normalize(b, p=2, dim=-1)
-<<<<<<< HEAD
-                        protos[i, n != 0, :] = momentum_update(
-                            old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
-                        f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1)
-                                                                     @ c_q ** 2) / n - (m_q.transpose(0, 1) @ c_q / n) ** 2
-                        #! normalize for f_v
-                        # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
-=======
                         protos[i, n != 0, :]  = momentum_update(old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                         f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1) @ c_q ** 2) / n - \
                         (m_q.transpose(0, 1) @ c_q / n) ** 2
->>>>>>> e85a8a4cec84d17e8c3f58b0e7e9ebd7093d47d8
                     edge_protos[i, ...] = momentum_update(old_value=edge_protos[i, ...],
                                                           new_value=b,
                                                           momentum=self.mean_gamma)
@@ -525,19 +514,12 @@ class ProbProtoSegHead(nn.Module):
                 else:
                     m_q_sum = m_q.sum(dim=0)  # [num_proto]
                     if not self.avg_update_proto:
-<<<<<<< HEAD
                         # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
                         f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) /
                                    (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
-=======
-                    # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
-                        # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim
->>>>>>> e85a8a4cec84d17e8c3f58b0e7e9ebd7093d47d8
                         f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
                         f = torch.einsum('nm,nmk->mk', m_q, f)
-                        # todo debug
                         f = f / (m_q_sum.unsqueeze(-1) + 1e-3)
                         f = F.normalize(f, p=2, dim=-1)
                     else:
@@ -653,13 +635,8 @@ class ProbProtoSegHead(nn.Module):
 
             if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
-<<<<<<< HEAD
 
                 if self.configer.get('iters') % 1000 == 0:
-=======
-    
-                if self.configer.get('iters') % 100 == 0:
->>>>>>> e85a8a4cec84d17e8c3f58b0e7e9ebd7093d47d8
                     Log.info(proto_var)
                 if self.use_temperature:
                     proto_confidence = self.proto_var.data.clone()  # [c m k]
