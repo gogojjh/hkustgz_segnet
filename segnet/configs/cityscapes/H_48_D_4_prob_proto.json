@@ -149,7 +149,7 @@
 	"protoseg": {
 		"mean_gamma": 0.999,
 		"var_gamma": 0.999,
-		"num_prototype": 10,
+		"num_prototype": 5,
 		"num_local_prototype": 5,
 		"pretrain_prototype": false,
 		"use_rmi": false,
@@ -157,7 +157,7 @@
 		"update_prototype": true,
 		"use_attention": false,
 		"warmup_iters": 0,
-		"similarity_measure": "fast_mls",
+		"similarity_measure": "wasserstein",
 		"use_uncertainty": true,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
@@ -166,7 +166,7 @@
 		"boundary_loss_weight": 0.01,
 		"patch_cls_weight": 0.2,
 		"kl_loss_weight": 0.001,
-		"proj_dim": 720,
+		"proj_dim": 270,
 		"use_boundary": false,
 		"boundary_head_mid_channel": 360,
 		"bin_size_h": 4,
@@ -178,8 +178,8 @@
 		"avg_update_proto": false,
 		"use_temperature": true,
 		"alfa": 10,
-		"uncertainy_aware_fea": false,
-		"weighted_ppd_loss": false,
+		"F": true,
+		"weighted_ppd_loss": true,
 		"windows_size": 3,
 		"n_interval": 12,
 		"attention_proto": false,
@@ -207,7 +207,7 @@
 		"mode": "online"
 	},
 	"run": {
-		"server": 11
+		"server": 0
 	},
 	"ros": {
 		"use_ros": true,

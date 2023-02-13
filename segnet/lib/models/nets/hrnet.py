@@ -31,6 +31,119 @@ from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
 
 
+class HRNet_W18_Attn_Prob_Proto(nn.Module):
+    """
+    deep high-resolution representation learning for human pose estimation, CVPR2019
+    """
+
+    def __init__(self, configer):
+        super(HRNet_W18_Attn_Prob_Proto, self).__init__()
+        self.configer = configer
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        # prototype config
+        self.use_prototype = self.configer.get('protoseg', 'use_prototype')
+        self.update_prototype = self.configer.get(
+            'protoseg', 'update_prototype')
+        self.pretrain_prototype = self.configer.get(
+            'protoseg', 'pretrain_prototype')
+        self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
+        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
+        self.use_ros = self.configer.get('ros', 'use_ros')
+        self.use_attention = self.configer.get('protoseg', 'use_attention')
+
+        self.backbone = BackboneSelector(configer).get_backbone()
+
+        if self.use_attention:
+            in_channels = 270 * 2
+        else: 
+            in_channels = 270
+        out_channels = 270
+        self.proj_dim = self.configer.get('protoseg', 'proj_dim')
+
+        self.cls_head = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels,
+                      kernel_size=3, stride=1, padding=1),
+            ModuleHelper.BNReLU(
+                out_channels, bn_type=self.configer.get('network', 'bn_type')),
+            nn.Dropout2d(0.10)
+        )
+            
+        if self.use_attention:
+            self.attention_head = CAAHead(configer=configer)
+            
+        if self.use_uncertainty:
+            out_dim = self.proj_dim
+            in_dim = 270
+            self.uncertainty_head = UncertaintyHead(
+                in_feat=in_dim,
+                out_feat=out_dim)  # predict variance of each gaussian
+            
+        self.proj_head = ProjectionHead(270, self.proj_dim)
+
+        self.prob_seg_head = ProbProtoSegHead(configer=configer)
+        
+        self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
+            
+        self.mask_norm = nn.LayerNorm(self.num_classes)
+        
+    def sample_gaussian_tensors(self, mu, logsigma, num_samples):
+        eps = torch.randn(mu.size(0), num_samples, mu.size(1), dtype=mu.dtype, device=mu.device)
+
+        samples = eps.mul(torch.exp(logsigma.unsqueeze(1))).add_(
+            mu.unsqueeze(1))
+        return samples
+
+    def forward(self, x_, gt_semantic_seg=None, gt_boundary=None, pretrain_prototype=False):
+        x = self.backbone(x_)
+        b, _, h, w = x[0].size()  # 128, 256
+
+        feat1 = x[0]
+        feat2 = F.interpolate(x[1], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat3 = F.interpolate(x[2], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat4 = F.interpolate(x[3], size=(
+            h, w), mode="bilinear", align_corners=True)
+
+        c_raw = torch.cat([feat1, feat2, feat3, feat4], 1)  # sent to boundary head
+
+        del feat1, feat2, feat3, feat4
+
+        gt_size = c_raw.size()[2:]
+        
+        if self.use_attention: 
+            atten_c, patch_cls_score = self.attention_head(c_raw)
+            c_raw = torch.cat((c_raw, atten_c), dim=1)
+        
+        c_raw = self.cls_head(c_raw)  # 720
+        c = self.proj_head(c_raw) # self.proj
+        
+        c_var = None
+        if self.use_uncertainty:
+            c_var = self.uncertainty_head(c_raw)
+            c_var = torch.exp(c_var)
+            
+            c = rearrange(c, 'b c h w -> (b h w) c')
+            c = self.feat_norm(c)  # ! along channel dimension
+            c = l2_normalize(c)  # ! l2_norm along num_class dimension
+
+            c = rearrange(c, '(b h w) c -> b c h w',
+                        h=gt_size[0], w=gt_size[1])
+            
+        boundary_pred = None
+        preds = self.prob_seg_head(
+            c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
+            gt_boundary=gt_boundary)
+        
+        if self.use_attention and self.configer.get('phase') == 'train':
+            preds['patch_cls_score'] = patch_cls_score
+            
+        del c, c_var
+
+        return preds
+
+
 class HRNet_W48_Attn_Prob_Proto(nn.Module):
     """
     deep high-resolution representation learning for human pose estimation, CVPR2019

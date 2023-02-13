@@ -238,8 +238,8 @@ if __name__ == "__main__":
 
     else:
         wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
-                   name=wb_name, mode=configer.get('wandb', 'mode'),
-                   settings=wandb.Settings(start_method='fork'))
+                name=wb_name, mode=configer.get('wandb', 'mode'),
+                settings=wandb.Settings(start_method='fork'))
         wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
         wandb.save(args_parser.configs)
     
