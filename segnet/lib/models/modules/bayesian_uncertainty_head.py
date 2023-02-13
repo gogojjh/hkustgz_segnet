@@ -32,7 +32,7 @@ class BayesianUncertaintyHead(nn.Module):
         mean = self.mean_conv(x)
         logvar = self.var_conv(x) # [b k h w]
         logvar = logvar.unsqueeze(0) # [1 b k h w]
-        logvar = self.reparameterize(mean, logvar, k=20) # [20 b k h w]
+        logvar = self.reparameterize(mean, logvar, k=8) # [20 b k h w]
         logvar = torch.sigmoid(logvar)
         logvar = logvar.var(dim=0) # [b k h w]
         logvar = (logvar - logvar.min()) / (logvar.max() - logvar.min())

@@ -189,8 +189,8 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             self.uncertainty_head = UncertaintyHead(
                 in_feat=in_dim,
                 out_feat=out_dim)  # predict variance of each gaussian
-            if self.use_boundary:
-                self.boundary_attention = BoundaryAttentionModule(configer=configer)
+            # if self.use_boundary:
+            #     self.boundary_attention = BoundaryAttentionModule(configer=configer)
             
         self.proj_head = ProjectionHead(720, self.proj_dim)
 
@@ -225,10 +225,6 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         gt_size = c_raw.size()[2:]
         
-        if self.use_attention: 
-            atten_c, patch_cls_score = self.attention_head(c_raw)
-            c_raw = torch.cat((c_raw, atten_c), dim=1)
-        
         # c_raw = self.cls_head(c_raw)  # 720
         
         c_var = None
@@ -239,11 +235,6 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         
         if self.use_uncertainty:
             c_var = self.uncertainty_head(c_raw)
-            c_var = torch.exp(c_var)
-            
-            if self.use_boundary:
-                c_var = self.boundary_attention(gt_boundary, c_var)
-            
             c_var = torch.exp(c_var)
          
         c = self.proj_head(c_raw) # self.proj
@@ -258,9 +249,6 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         preds = self.prob_seg_head(
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
-        
-        if self.use_attention and self.configer.get('phase') == 'train':
-            preds['patch_cls_score'] = patch_cls_score
             
         del c, c_var
 

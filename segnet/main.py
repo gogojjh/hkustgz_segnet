@@ -228,32 +228,32 @@ if __name__ == "__main__":
     today = date.today()
     wb_name = today.strftime("%d/%m/%Y") + '_server' + str(configer.get('run', 'server'))
 
-    if is_distributed():
-        if get_rank() == 0:
+    if configer.get('phase') == 'train':
+        if is_distributed():
+            if get_rank() == 0:
+                wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
+                        name=wb_name, mode=configer.get('wandb', 'mode'),
+                        settings=wandb.Settings(start_method='fork'))
+                wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
+                wandb.save(args_parser.configs)
+
+        else:
             wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
-                       name=wb_name, mode=configer.get('wandb', 'mode'),
-                       settings=wandb.Settings(start_method='fork'))
+                    name=wb_name, mode=configer.get('wandb', 'mode'),
+                    settings=wandb.Settings(start_method='fork'))
             wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
             wandb.save(args_parser.configs)
-
-    else:
-        wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
-                name=wb_name, mode=configer.get('wandb', 'mode'),
-                settings=wandb.Settings(start_method='fork'))
-        wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
-        wandb.save(args_parser.configs)
     
     #! for resume training    
     # if configer.get('network', 'resume') is not None:
     #     configer.update(('phase',), 'train')
     #     configer.update(('network', 'resume_continue'), True)
 
-    if configer.get('phase') == 'train':
+    if configer.get('phase') == 'train' or configer.get('phase') == 'val':
         model.train()
         wandb.finish()
     elif configer.get('phase').startswith('test') and configer.get('network', 'resume') is not None:
         model.test()
-        wandb.finish()
     else:
         Log.error('Phase: {} is not valid.'.format(configer.get('phase')))
         exit(1)

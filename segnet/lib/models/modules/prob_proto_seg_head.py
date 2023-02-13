@@ -54,8 +54,6 @@ class ProbProtoSegHead(nn.Module):
             #! sigma (not log(sigma))
             self.proto_var = nn.Parameter(torch.ones(
                 self.num_classes, self.num_prototype, self.proj_dim), requires_grad=False)
-
-            self.reparam_k = self.configer.get('protoseg', 'reparam_k')
             #! weight between mean and variance when calculating similarity
             if self.sim_measure == 'wasserstein':
                 self.lamda = 1 / self.proj_dim  # scaling factor for b_distance
@@ -82,7 +80,6 @@ class ProbProtoSegHead(nn.Module):
         self.weight = nn.Parameter(data=kernel, requires_grad=False)
         self.sigmoid = nn.Sigmoid()
 
-        self.attention_proto = self.configer.get('protoseg', 'attention_proto')
         if self.attention_proto:
             self.lamda_p = self.configer.get('protoseg', 'lamda_p')
         self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
@@ -117,69 +114,15 @@ class ProbProtoSegHead(nn.Module):
             proto_var = self.proto_var.data.clone()
             if sim_measure == 'wasserstein':
                 # ======== x * prototypes =========
-                if not sample:
-                    # -[c m n] + [n] + [c m 1] - 2 * [c m n]
-                    #! lamda depends on dimension of embeddings
-                    # ? non-reparam
-                    sim_mat = torch.einsum('nd,kmd->nmk', x, proto_mean)  # [n c m]
-                    sim_mat = sim_mat.permute(2, 1, 0)  # [c m n]
-                else:
-                    # smaple x
-                    x = self.sample_gaussian_tensors(x, x_var, num_samples=self.reparam_k)
-                    x = self.feat_norm(x)
-                    x = l2_normalize(x)  # [reparam_k(b h w ) k]
-
-                    # sample prototypes
-                    proto_mean = self.sample_gaussian_tensors(
-                        proto_mean.view(-1, self.proj_dim),
-                        proto_var.view(-1, self.proj_dim),
-                        num_samples=self.reparam_k)  # [reparam_k (c m) k]
-                    proto_mean = self.feat_norm(proto_mean)
-                    proto_mean = l2_normalize(proto_mean)
-                    proto_mean = proto_mean.reshape(-1, self.num_classes,
-                                                    self.num_prototype, self.proj_dim)
-                    x = x.unsqueeze(1)  # [reparam_k 1 (b h w ) k]
-                    proto_mean = proto_mean.unsqueeze(0)  # [1 reparam_k c m k]
-
-                    sim_mat = torch.einsum('rlnd,abkmd->rbnmk', x, proto_mean)
-                    # [(reparam_k reparam_k) (b h w) m c]
-                    sim_mat = rearrange(sim_mat, 'r l n m c -> (r l) n m c')
-                    sim_mat = torch.mean(sim_mat, dim=0).permute(2, 1, 0)  # [c m n]
+                # -[c m n] + [n] + [c m 1] - 2 * [c m n]
+                #! lamda depends on dimension of embeddings
+                sim_mat = torch.einsum('nd,kmd->nmk', x, proto_mean)  # [n c m]
+                sim_mat = sim_mat.permute(2, 1, 0)  # [c m n]
                 # ======= whole wasserstein loss ==========
                 sim_mat = 2 - 2 * sim_mat + self.lamda * (x_var.sum(-1) + proto_var.sum(-1, keepdim=True) - 2 * torch.einsum(
                     'nk,cmk->cmn', torch.sqrt(x_var), torch.sqrt(proto_var)))
                 sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
                 sim_mat = -sim_mat
-            elif sim_measure == 'mls':
-               # for memeory usage
-                sim_mat = None
-                proto_mean = proto_mean.unsqueeze(-2)  # [c m 1 k]
-                proto_var = proto_var.unsqueeze(-2)  # [c m 1 k]
-                n = x.shape[0]
-                m = n // self.n_interval
-
-                for i in range(self.n_interval):
-                    start_ind = i * m
-                    if i != self.n_interval - 1:
-                        end_ind = (i + 1) * m
-                    else:
-                        end_ind = n
-                    x_i = x[start_ind:end_ind, ...]  # [n' k]
-                    x_var_i = x_var[start_ind:end_ind, ...]  # [n' k]
-
-                    score = (x_i - proto_mean) ** 2
-                    score = (score / (x_var_i + proto_var)).mean(-1)
-                    score += torch.log(x_var_i).mean(-1) + torch.log(proto_var).mean(-1)  # [c m n']
-                    score *= -0.5  # ! log likelihood
-
-                    if sim_mat is None:
-                        sim_mat = score
-                    else:
-                        sim_mat = torch.cat((sim_mat, score), dim=-1)
-                    del score, x_i, x_var_i
-                    gc.collect()
-                # sim_mat = - sim_mat
-                sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
             elif sim_measure == 'fast_mls':
                 sim_mat = torch.einsum('nd,kmd->nmk', x, proto_mean)  # [n c m]
                 sim_mat = sim_mat.permute(2, 1, 0)  # [c m n]
@@ -193,23 +136,6 @@ class ProbProtoSegHead(nn.Module):
                     2 - sim_mat) / (x_var + proto_var).sum(-1) + torch.log(x_var).sum(-1) + torch.log(proto_var).sum(-1)
                 sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
                 sim_mat = -0.5 * sim_mat
-
-            elif sim_measure == 'match_prob':
-                ''' 
-                'Probabilistic Representations for Video Contrastive Learning' /
-                'Probabilistic Embeddings for Cross-Modal Retrieval'
-                Use average value of multiple samples
-                '''
-                # [reparam_k reparam_k (b h w) m c]
-                sim_mat = torch.einsum('rlnd,abkmd->rbnmk', x, proto_mean)  # [num_sample, ]
-            # [(reparam_k reparam_k) (b h w) m c]
-                sim_mat = rearrange(sim_mat, 'r l n m c -> (r l) n m c')
-                sim_mat = torch.mean(sim_mat, dim=0).permute(2, 1, 0)  # [n m c] -> [c m n]
-
-                sim_mat = - self.a * (2 - 2 * sim_mat) + self.b
-
-                sim_mat = self.sigmoid(sim_mat)  # [c m n]
-                sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
 
             del x_var, x, proto_mean, proto_var
 
@@ -313,14 +239,6 @@ class ProbProtoSegHead(nn.Module):
                         # todo debug
                         f = f / (m_q_sum.unsqueeze(-1) + 1e-3)
                         f = F.normalize(f, p=2, dim=-1)
-                        # if self.use_temperature:
-                        #     for k in range(self.num_prototype):
-                        #             if self.use_temperature:
-                        #                 proto_ind = torch.nonzero(m_q[..., k] != 0, as_tuple=True)
-                        #                 num = proto_ind[0].shape[0]
-                        #                 if num > 0:
-                        #                     temp = - init_q[proto_ind[0], k].sum(0) / (num * np.log(num + self.alfa))
-                        #                     self.proto_confidence[i, k] = temp
                     else:
                         # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
                         f = m_q.transpose(0, 1) @ c_q
@@ -361,8 +279,6 @@ class ProbProtoSegHead(nn.Module):
         self.prototypes = nn.Parameter(
             l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
         if self.use_uncertainty:
-            # todo
-            # proto_var = torch.exp(torch.sigmoid(torch.log(proto_var)))
             self.proto_var = nn.Parameter(proto_var, requires_grad=False)
 
         if dist.is_available() and dist.is_initialized():  # distributed learning
@@ -446,24 +362,15 @@ class ProbProtoSegHead(nn.Module):
                         b_v = 1 / (((1 / (boundary_c_var_cls + 1e-3)).mean(0)) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
                         b = ((b_v.unsqueeze(0) / (boundary_c_var_cls.unsqueeze(1) + 1e-3))
-                             * boundary_c_cls.unsqueeze(1)).sum(0)
+                             * boundary_c_cls.unsqueeze(1)).mean(0)
                         b = F.normalize(b, p=2, dim=-1)
                     else:
                         # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
                         b = boundary_c_cls.sum(0)
                         b = F.normalize(b, p=2, dim=-1)
-<<<<<<< HEAD
-                        protos[i, n != 0, :] = momentum_update(
-                            old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
-                        f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1)
-                                                                     @ c_q ** 2) / n - (m_q.transpose(0, 1) @ c_q / n) ** 2
-                        #! normalize for f_v
-                        # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
-=======
                         protos[i, n != 0, :]  = momentum_update(old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
                         f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1) @ c_q ** 2) / n - \
                         (m_q.transpose(0, 1) @ c_q / n) ** 2
->>>>>>> e85a8a4cec84d17e8c3f58b0e7e9ebd7093d47d8
                     edge_protos[i, ...] = momentum_update(old_value=edge_protos[i, ...],
                                                           new_value=b,
                                                           momentum=self.mean_gamma)
@@ -525,19 +432,12 @@ class ProbProtoSegHead(nn.Module):
                 else:
                     m_q_sum = m_q.sum(dim=0)  # [num_proto]
                     if not self.avg_update_proto:
-<<<<<<< HEAD
                         # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
                         f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) /
                                    (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
                         # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
-=======
-                    # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) / (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
-                        # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim
->>>>>>> e85a8a4cec84d17e8c3f58b0e7e9ebd7093d47d8
                         f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
                         f = torch.einsum('nm,nmk->mk', m_q, f)
-                        # todo debug
                         f = f / (m_q_sum.unsqueeze(-1) + 1e-3)
                         f = F.normalize(f, p=2, dim=-1)
                     else:
@@ -616,16 +516,6 @@ class ProbProtoSegHead(nn.Module):
         if self.use_uncertainty and x_var is not None:
             x_var = rearrange(x_var, 'b c h w -> (b h w) c')
 
-        # if self.uncertainy_aware_fea:
-        #     # [reparam_k(b h w ) k]
-        #     sample_x = self.sample_gaussian_tensors(x, x_var, num_samples=self.reparam_k)
-        #     sample_x = sample_x.reshape(self.reparam_k, b_size, h_size, -1, k_size)
-        #     uncertainty = self.get_uncertainty(sample_x) # [b k h w]
-        #     uncertainty = uncertainty.permute(0, 2, 3, 1) # [b h w 1]
-        #     uncertainty = uncertainty.reshape(-1, k_size) # [(b h w) 1]
-        #     x *= 1 - uncertainty
-        #     del sample_x
-
         sim_mat = self.compute_similarity(
             x, x_var=x_var, sample=False, sim_measure=self.sim_measure)
 
@@ -653,13 +543,8 @@ class ProbProtoSegHead(nn.Module):
 
             if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
-<<<<<<< HEAD
 
                 if self.configer.get('iters') % 1000 == 0:
-=======
-    
-                if self.configer.get('iters') % 100 == 0:
->>>>>>> e85a8a4cec84d17e8c3f58b0e7e9ebd7093d47d8
                     Log.info(proto_var)
                 if self.use_temperature:
                     proto_confidence = self.proto_var.data.clone()  # [c m k]

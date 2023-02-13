@@ -9,12 +9,12 @@ ASSET_ROOT=${DATA_ROOT}
 
 DATA_DIR="${DATA_ROOT}/Cityscapes"
 SAVE_DIR="${SCRATCH_ROOT}/Cityscapes/seg_results/"
-BACKBONE="hrnet18"
+BACKBONE="hrnet48"
 
 CONFIGS="configs/cityscapes/H_48_D_4_prob_proto.json"
 CONFIGS_TEST="configs/cityscapes/H_48_D_4_TEST.json"
 
-MODEL_NAME="hr_w18_attn_prob_proto"
+MODEL_NAME="hr_w48_attn_prob_proto"
 LOSS_TYPE="pixel_prob_prototype_ce_loss"
 CHECKPOINTS_ROOT="${SCRATCH_ROOT}/Cityscapes"
 CHECKPOINTS_NAME="${MODEL_NAME}_lr1x_"$2
@@ -22,9 +22,9 @@ LOG_FILE="${SCRATCH_ROOT}/logs/Cityscapes/${CHECKPOINTS_NAME}.log"
 echo "Logging to $LOG_FILE"
 mkdir -p `dirname $LOG_FILE`
 
-PRETRAINED_MODEL="/save_data/hrnetv2_w18_imagenet_pretrained.pth"
-MAX_ITERS=60000
-BATCH_SIZE=48
+PRETRAINED_MODEL="/save_data/hrnetv2_w48_imagenet_pretrained.pth"
+MAX_ITERS=80000
+BATCH_SIZE=12
 BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
@@ -64,8 +64,8 @@ elif [ "$1"x == "resume"x ]; then
                        --gpu 0 1\
                        --checkpoints_root ${CHECKPOINTS_ROOT} \
                        --checkpoints_name ${CHECKPOINTS_NAME} \
-                       --resume_continue n \
-                       --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_latest.pth \
+                       --resume_continue y \
+                       --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_max_performance.pth \
                        --train_batch_size ${BATCH_SIZE} \
                        --distributed \
                         2>&1 | tee -a ${LOG_FILE}
@@ -74,7 +74,7 @@ elif [ "$1"x == "resume"x ]; then
 elif [ "$1"x == "val"x ]; then
   python3 -u main.py --configs ${CONFIGS} --drop_last y  --data_dir ${DATA_DIR} \
                        --backbone ${BACKBONE} --model_name ${MODEL_NAME} --checkpoints_name ${CHECKPOINTS_NAME} \
-                       --phase test --gpu 0 1 2 3 --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_latest.pth \
+                       --phase test --gpu 0 1 2 3 --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_max_performance.pth \
                        --loss_type ${LOSS_TYPE} --test_dir ${DATA_DIR}/val/image \
                        --out_dir ${SAVE_DIR}${CHECKPOINTS_NAME}_val_ms
 
