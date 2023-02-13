@@ -18,16 +18,6 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
-# class InstanceContrativeLoss(nn.Module, ABC):
-#     def __init__(self, configer):
-#         super(InstanceContrativeLoss, self).__init__()
-#         self.configer = configer
-
-#     def _contrastive(self, )
-
-#     def forward(self, feats, labels=None, predict=None, queue=None):
-
-
 class FocalLoss(nn.Module, ABC):
     ''' focal loss '''
 
@@ -531,8 +521,8 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             # prob_ppc_weight = self.get_uncer_loss_weight()
 
-            # x_mean = preds['x_mean']
-            # x_var = preds['x_var']
+            x_mean = preds['x_mean']
+            x_var = preds['x_var']
             # kl_loss = self.kl_loss(x_mean, x_var, sem_gt=target)
 
             if self.use_attention:
@@ -547,7 +537,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
                 return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'patch_cls_loss': patch_cls_loss}
 
             else:
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss 
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
 
                 assert not torch.isnan(loss)
 

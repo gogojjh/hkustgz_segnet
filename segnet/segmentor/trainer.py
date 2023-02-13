@@ -117,7 +117,7 @@ class Trainer(object):
         self.with_proto = True if self.configer.exists("protoseg") else False
 
         self.uncer_visualizer = UncertaintyVisualizer(configer=self.configer)
-        
+
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
 
     @staticmethod
@@ -160,7 +160,7 @@ class Trainer(object):
                 var_lr.append(value)
             else:
                 nbb_lr.append(value)
-                
+
         if self.configer.exists('var_lr', 'lr_policy'):
             params = [{'params': bb_lr, 'lr': self.configer.get('lr', 'base_lr')},
                       {'params': fcn_lr, 'lr': self.configer.get(
@@ -461,10 +461,10 @@ class Trainer(object):
                             # uncertainty = outputs['uncertainty']
                             h, w = targets.size(1), targets.size(2)
                             uncertainty = outputs['x_var']  # [b h w k]
-                            uncertainty = uncertainty.mean(-1) # [b h w]
+                            uncertainty = uncertainty.mean(-1)  # [b h w]
                             uncertainty = F.interpolate(
                                 input=uncertainty.unsqueeze(1), size=(h, w),
-                                mode='bilinear', align_corners=True) # [b, 1, h, w]
+                                mode='bilinear', align_corners=True)  # [b, 1, h, w]
                             uncertainty = uncertainty.squeeze(1)
                             if (self.configer.get('iters') % (self.configer.get(
                                     'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
