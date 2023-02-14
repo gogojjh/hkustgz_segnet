@@ -177,16 +177,13 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             nn.Dropout2d(0.10)
         )
             
-        if self.use_attention:
-            self.avgpool = nn.AvgPool2d((7, 7))
-            
         if self.use_uncertainty:
             out_dim = self.proj_dim
             in_dim = 720
             self.uncertainty_head = UncertaintyHead(
                 in_feat=in_dim,
                 out_feat=out_dim)  # predict variance of each gaussian
-            # if self.use_boundary:
+            # if self.use_boundary and self.use_attention:
             #     self.boundary_attention = BoundaryAttentionModule(configer=configer)
             
         self.proj_head = ProjectionHead(720, self.proj_dim)
@@ -225,13 +222,13 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         # c_raw = self.cls_head(c_raw)  # 720
         
         c_var = None
-        if self.use_attention:
-            c_7x7 = c_raw.view(-1, self.proj_dim, 7, 7)
-            pooled = self.avgpool(c_7x7).view(-1, self.proj_dim) #! patch-wise local attention
-            c_7x7 = c_7x7.view(-1, self.proj_dim, 7 * 7)
         
         if self.use_uncertainty:
             c_var = self.uncertainty_head(c_raw)
+            
+            if self.use_boundary and self.use_attention:
+                c_var = self.boundary_attention(gt_boundary, c_var)
+            
             c_var = torch.exp(c_var)
          
         c = self.proj_head(c_raw) # self.proj

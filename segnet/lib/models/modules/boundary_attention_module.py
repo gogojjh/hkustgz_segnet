@@ -83,13 +83,12 @@ class BoundaryAttentionModule(nn.Module):
 
         # if uncertainty high + probability in boundary map high -> more likely to be boundary
         # [b (h w) mid_channel] * [b mid_channel (h w)] = [b (h w) (h w)]
-        energy = torch.bmm(proj_query, proj_key)
-        #todo
-        # attention = F.softmax(energy, 1)  # softmax on (h w) channel
+        #! to cpu to save gpu memory usage
+        energy = torch.bmm(proj_query.float().cpu(), proj_key.float().cpu())
+        attention = F.softmax(energy, 1)  # softmax on (h w) channel
 
         # [b self.proj_dim (h w)]  * [b (h w/no softmax) (h w/softmax)] = [b self.proj_dim (h w/softmax)]
-        # out = torch.bmm(proj_value, attention.permute(0, 2, 1))
-        out = torch.bmm(proj_value, energy.permute(0, 2, 1))
+        out = torch.bmm(proj_value.float().cpu(), attention.permute(0, 2, 1)).cuda()
         
         # [b c h w] here h and w results from softmax(position attention)
         out = out.view(b_size, c_size, h_size, w_size)

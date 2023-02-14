@@ -41,7 +41,7 @@ class ConfidenceLoss(nn.Module, ABC):
     def forward(self, sim_mat):
         # sim_mat: [n (c m)]
         score_top, _ = sim_mat.topk(k=2, dim=1)
-        confidence = score_top[:, 0] / score_top[:, 1]
+        confidence = score_top[:, 0] / (score_top[:, 1] + 1e-8)
         confidence = torch.exp(1 - confidence).mean(-1)
 
         return confidence
