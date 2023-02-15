@@ -157,7 +157,7 @@
 		"update_prototype": true,
 		"use_attention": false,
 		"warmup_iters": 0,
-		"similarity_measure": "wasserstein",
+		"similarity_measure": "match_prob",
 		"use_uncertainty": true,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
@@ -181,7 +181,9 @@
 		"uncertainty_aware_fea": true,
 		"local_refinement": false,
 		"local_size": 7,
-		"bayes_uncertainty": true
+		"bayes_uncertainty": true,
+		"init_a": 15,
+		"init_b": 15
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": false,

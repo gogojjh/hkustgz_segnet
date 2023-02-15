@@ -46,6 +46,7 @@ class ProbProtoSegHead(nn.Module):
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
         self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
+        self.reparam_k = self.configer.get('protoseg', 'reparam_k')
 
         # [cls_num, proto_num, channel/k]
         self.prototypes = nn.Parameter(torch.zeros(
@@ -58,6 +59,11 @@ class ProbProtoSegHead(nn.Module):
             #! weight between mean and variance when calculating similarity
             if self.sim_measure == 'wasserstein':
                 self.lamda = 1 / self.proj_dim  # scaling factor for b_distance
+            elif self.sim_measure == 'match_prob':
+                init_a = self.configer.get('protoseg', 'init_a') * torch.ones(1).cuda()
+                init_b = self.configer.get('protoseg', 'init_b') * torch.ones(1).cuda()
+                self.init_a = nn.Parameter(init_a, requires_grad=True)
+                self.init_b = nn.Parameter(init_b, requires_grad=True)
 
             self.avg_update_proto = self.configer.get('protoseg', 'avg_update_proto')
             self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
@@ -71,13 +77,39 @@ class ProbProtoSegHead(nn.Module):
         # if self.local_refinement:
         #     self.local_refine_module = LocalRefinementModule(configer=configer)
         
-    def reparameterize(self, mu, logvar, k=1):
+    def get_uncertainty(self, mean, var, k):
+        uncertainty = self.reparameterize(mean, var, k)
+        uncertainty = torch.sigmoid(uncertainty)
+        uncertainty = uncertainty.var(dim=0)  # [b k h w]
+        uncertainty = (uncertainty - uncertainty.min()) / (uncertainty.max() - uncertainty.min())
+        
+        return uncertainty
+        
+    def reparameterize(self, mu, var, k=1, protos=False):
+        ''' 
+        mu: [1 b c h w]
+        '''
         sample_z = []
         for _ in range(k):
-            std = logvar.mul(0.5).exp_()
+            # std = logvar.mul(0.5).exp_()
+            std = torch.sqrt(var)
             eps = std.data.new(std.size()).normal_()
-            sample_z.append(eps.mul(std).add_(mu))
+            z = eps.mul(std).add_(mu)
+            
+            if not protos:
+                z = rearrange(z, 'l n k -> (l n) k')
+            else:
+                z = rearrange(z, 'l c m k -> (l c m) k')
+            z = self.feat_norm(z)
+            z = l2_normalize(z)
+            if not protos:
+                z = z.reshape(1, -1, self.proj_dim)
+            else:
+                z = z.reshape(1, self.num_classes, self.num_prototype, -1)
+            
+            sample_z.append(z)
         sample_z = torch.cat(sample_z, dim=0)
+        
         return sample_z
 
     def compute_similarity(self, x, x_var=None, sim_measure='wasserstein'):
@@ -114,8 +146,20 @@ class ProbProtoSegHead(nn.Module):
                 sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
                 sim_mat = -0.5 * sim_mat
             elif sim_measure == 'match_prob':
-                self.reparameterize()
-
+                x = self.reparameterize(x.unsqueeze(0), x_var.unsqueeze(0), self.reparam_k, protos=False) # [sample_num n k]
+                proto_mean = self.reparameterize(proto_mean.unsqueeze(0), proto_var.unsqueeze(0), self.reparam_k, protos=True) # [sample_num c m k]
+                x = repeat(x, 's n k -> s r n k', r=self.reparam_k)
+                proto_mean = repeat(proto_mean, 's c m k -> r s c m k', r=self.reparam_k)
+                
+                # [reparam_k reparam_k n m c]
+                sim_mat = torch.einsum('srnd,zjkmd->sjnmk', x, proto_mean) 
+                sim_mat = rearrange(sim_mat, 'r l n m c -> (r l) n m c')
+                sim_mat = - self.init_a * (2 - sim_mat) + self.init_b
+                sim_mat = torch.sigmoid(sim_mat)
+                
+                sim_mat = torch.mean(sim_mat, dim=0) # [n m c]
+                sim_mat = sim_mat.permute(0, 2, 1) # [n c m]
+                
             del x_var, x, proto_mean, proto_var
 
         else:
