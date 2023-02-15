@@ -105,11 +105,11 @@
 		}
 	},
 	"var_lr": {
-		"base_lr": 0.001,
+		"base_lr": 0.01,
 		"lr_policy": "warmup_cosine",
 		"metric": "iters",
 		"warmup_steps": 1000,
-		"t_total": 60000
+		"t_total": 80000
 	},
 	"solver": {
 		"display_iter": 10,
@@ -172,13 +172,15 @@
 		"reparam_k": 4,
 		"batch_num": 20,
 		"avg_update_proto": false,
-		"use_temperature": true,
+		"use_temperature": false,
 		"alfa": 10,
 		"weighted_ppd_loss": true,
 		"attention_proto": false,
 		"lamda_p": 0.3,
 		"uncertainty_aware_fea": true,
-		"local_refinement": true
+		"local_refinement": false,
+		"local_size": 7,
+		"bayes_uncertainty": true
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": false,
@@ -199,7 +201,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 0

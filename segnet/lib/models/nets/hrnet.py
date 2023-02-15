@@ -66,25 +66,25 @@ class HRNet_W18_Attn_Prob_Proto(nn.Module):
                 out_channels, bn_type=self.configer.get('network', 'bn_type')),
             nn.Dropout2d(0.10)
         )
-            
+
         if self.use_attention:
             self.attention_head = CAAHead(configer=configer)
-            
+
         if self.use_uncertainty:
             out_dim = self.proj_dim
             in_dim = 270
             self.uncertainty_head = UncertaintyHead(
                 in_feat=in_dim,
                 out_feat=out_dim)  # predict variance of each gaussian
-            
+
         self.proj_head = ProjectionHead(270, self.proj_dim)
 
         self.prob_seg_head = ProbProtoSegHead(configer=configer)
-        
+
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
-            
+
         self.mask_norm = nn.LayerNorm(self.num_classes)
-        
+
     def sample_gaussian_tensors(self, mu, logsigma, num_samples):
         eps = torch.randn(mu.size(0), num_samples, mu.size(1), dtype=mu.dtype, device=mu.device)
 
@@ -109,34 +109,34 @@ class HRNet_W18_Attn_Prob_Proto(nn.Module):
         del feat1, feat2, feat3, feat4
 
         gt_size = c_raw.size()[2:]
-        
-        if self.use_attention: 
+
+        if self.use_attention:
             atten_c, patch_cls_score = self.attention_head(c_raw)
             c_raw = torch.cat((c_raw, atten_c), dim=1)
-        
+
         # c_raw = self.cls_head(c_raw)  # 720
-        c = self.proj_head(c_raw) # self.proj
-        
+        c = self.proj_head(c_raw)  # self.proj
+
         c_var = None
         if self.use_uncertainty:
             c_var = self.uncertainty_head(c_raw)
             c_var = torch.exp(c_var)
-            
+
             c = rearrange(c, 'b c h w -> (b h w) c')
             c = self.feat_norm(c)  # ! along channel dimension
             c = l2_normalize(c)  # ! l2_norm along num_class dimension
 
             c = rearrange(c, '(b h w) c -> b c h w',
-                        h=gt_size[0], w=gt_size[1])
-            
+                          h=gt_size[0], w=gt_size[1])
+
         boundary_pred = None
         preds = self.prob_seg_head(
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
-        
+
         if self.use_attention and self.configer.get('phase') == 'train':
             preds['patch_cls_score'] = patch_cls_score
-            
+
         del c, c_var
 
         return preds
@@ -162,6 +162,7 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
         self.use_ros = self.configer.get('ros', 'use_ros')
         self.use_attention = self.configer.get('protoseg', 'use_attention')
+        self.bayes_uncertainty = self.configer.get('protoseg', 'bayes_uncertainty')
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
@@ -176,24 +177,25 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
                 out_channels, bn_type=self.configer.get('network', 'bn_type')),
             nn.Dropout2d(0.10)
         )
-            
+
         if self.use_uncertainty:
-            out_dim = self.proj_dim
-            in_dim = 720
-            self.uncertainty_head = UncertaintyHead(
-                in_feat=in_dim,
-                out_feat=out_dim)  # predict variance of each gaussian
-            # if self.use_boundary and self.use_attention:
-            #     self.boundary_attention = BoundaryAttentionModule(configer=configer)
-            
+            if self.bayes_uncertainty:
+                self.bayes_uncertainty_head = BayesianUncertaintyHead(configer=configer)
+            else:
+                out_dim = self.proj_dim
+                in_dim = 720
+                self.uncertainty_head = UncertaintyHead(
+                    in_feat=in_dim,
+                    out_feat=out_dim)  # predict variance of each gaussian
+
         self.proj_head = ProjectionHead(720, self.proj_dim)
 
         self.prob_seg_head = ProbProtoSegHead(configer=configer)
-        
+
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
-            
+
         self.mask_norm = nn.LayerNorm(self.num_classes)
-        
+
     def sample_gaussian_tensors(self, mu, logsigma, num_samples):
         eps = torch.randn(mu.size(0), num_samples, mu.size(1), dtype=mu.dtype, device=mu.device)
 
@@ -218,32 +220,35 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         del feat1, feat2, feat3, feat4
 
         gt_size = c_raw.size()[2:]
-        
+
         # c_raw = self.cls_head(c_raw)  # 720
-        
+
         c_var = None
-        
+
         if self.use_uncertainty:
-            c_var = self.uncertainty_head(c_raw)
-            
+            if self.bayes_uncertainty:
+                c, c_var, uncertainty = self.bayes_uncertainty_head()
+            else:
+                c_var = self.uncertainty_head(c_raw)
+
             if self.use_boundary and self.use_attention:
                 c_var = self.boundary_attention(gt_boundary, c_var)
-            
+
             c_var = torch.exp(c_var)
-         
-        c = self.proj_head(c_raw) # self.proj
+
+        c = self.proj_head(c_raw)  # self.proj
         c = rearrange(c, 'b c h w -> (b h w) c')
         c = self.feat_norm(c)  # ! along channel dimension
         c = l2_normalize(c)  # ! l2_norm along num_class dimension
         c = rearrange(c, '(b h w) c -> b c h w',
-                    h=gt_size[0], w=gt_size[1])
+                      h=gt_size[0], w=gt_size[1])
         del c_raw
-           
+
         boundary_pred = None
         preds = self.prob_seg_head(
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
-            
+
         del c, c_var
 
         return preds

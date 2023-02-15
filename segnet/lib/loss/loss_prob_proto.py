@@ -120,7 +120,7 @@ class KLLoss(nn.Module, ABC):
         kl_loss = kl_loss.mean()
 
         return kl_loss
-    
+
 
 class ProbPPDLoss(nn.Module, ABC):
     """ 

@@ -67,12 +67,11 @@ class ProbProtoSegHead(nn.Module):
         self.attention_proto = self.configer.get('protoseg', 'attention_proto')
         if self.attention_proto:
             self.lamda_p = self.configer.get('protoseg', 'lamda_p')
-        self.local_refinement = self.configer.get('protoseg', 'local_refinement')       
+        self.local_refinement = self.configer.get('protoseg', 'local_refinement')
         if self.local_refinement:
             self.local_refine_module = LocalRefinementModule(configer=configer)
-            
 
-    def compute_similarity(self, x, x_var=None, sample=False, sim_measure='cosine'):
+    def compute_similarity(self, x, x_var=None, sim_measure='wasserstein'):
         ''' 
         x/x_var: [(b h w) k]
         proto_mean: [c m k]
@@ -123,8 +122,7 @@ class ProbProtoSegHead(nn.Module):
         eps = torch.randn(num_samples, mu.size(0), mu.size(1), dtype=mu.dtype, device=mu.device)
         samples = eps.mul(sigma.unsqueeze(0)).add_(
             mu.unsqueeze(0))
-        return samples  # [sample_time n k]        
-        
+        return samples  # [sample_time n k]
 
     def prototype_learning(self, sim_mat, out_seg, gt_seg, _c, _c_var):
         """
@@ -338,9 +336,10 @@ class ProbProtoSegHead(nn.Module):
                         # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
                         b = boundary_c_cls.sum(0)
                         b = F.normalize(b, p=2, dim=-1)
-                        protos[i, n != 0, :]  = momentum_update(old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
-                        f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1) @ c_q ** 2) / n - \
-                        (m_q.transpose(0, 1) @ c_q / n) ** 2
+                        protos[i, n != 0, :] = momentum_update(
+                            old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
+                        f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1)
+                                                                     @ c_q ** 2) / n - (m_q.transpose(0, 1) @ c_q / n) ** 2
                     edge_protos[i, ...] = momentum_update(old_value=edge_protos[i, ...],
                                                           new_value=b,
                                                           momentum=self.mean_gamma)
@@ -487,7 +486,7 @@ class ProbProtoSegHead(nn.Module):
             x_var = rearrange(x_var, 'b c h w -> (b h w) c')
 
         sim_mat = self.compute_similarity(
-            x, x_var=x_var, sample=False, sim_measure=self.sim_measure)
+            x, x_var=x_var, sim_measure=self.sim_measure)
 
         out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
         out_seg = self.mask_norm(out_seg)
@@ -516,35 +515,31 @@ class ProbProtoSegHead(nn.Module):
 
                 if self.configer.get('iters') % 1000 == 0:
                     Log.info(proto_var)
-                    
+
                 if self.local_refinement:
                     x = rearrange(x, '(b h w) c -> b c h w',
                                   b=b_size, h=h_size)
                     x_var = rearrange(x_var, '(b h w) c -> b c h w',
                                       b=b_size, h=h_size)
-                    local_x = self.local_refine_module(out_seg, x, )
-                    
-                if self.use_temperature:
-                    proto_confidence = self.proto_var.data.clone()  # [c m k]
-                    proto_confidence = proto_confidence.mean(-1)  # [c m]
-                    if self.weighted_ppd_loss:
-                        if self.local_refinement:
-                            x = rearrange(x, 'b c h w -> (b h w) c')
-                            x_var = rearrange(x_var, 'b c h w -> (b h w) c')
-                            
-                        proto_var = self.proto_var.data.clone()
-                        loss_weight1 = torch.einsum('nk,cmk->cmn', x_var, proto_var)  # [c m n]
-                        loss_weight1 = (loss_weight1 - loss_weight1.min()
-                                        ) / (loss_weight1.max() - loss_weight1.min())
-                        loss_weight1 = loss_weight1.mean()
-                        # [n] + [c m 1] = [c m n]
-                        loss_weight2 = torch.log(
-                            x_var).sum(-1) + torch.log(proto_var).sum(-1, keepdim=True)
-                        loss_weight2 = (loss_weight2 - loss_weight2.min()
-                                        ) / (loss_weight2.max() - loss_weight2.min())
-                        loss_weight2 = loss_weight2.mean()
-                        return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'proto_confidence': proto_confidence}
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto_confidence': proto_confidence}
+                    # local_x = self.local_refine_module(out_seg, x, )
+
+                if self.weighted_ppd_loss:
+                    if self.local_refinement:
+                        x = rearrange(x, 'b c h w -> (b h w) c')
+                        x_var = rearrange(x_var, 'b c h w -> (b h w) c')
+
+                    proto_var = self.proto_var.data.clone()
+                    loss_weight1 = torch.einsum('nk,cmk->cmn', x_var, proto_var)  # [c m n]
+                    loss_weight1 = (loss_weight1 - loss_weight1.min()
+                                    ) / (loss_weight1.max() - loss_weight1.min())
+                    loss_weight1 = loss_weight1.mean()
+                    # [n] + [c m 1] = [c m n]
+                    loss_weight2 = torch.log(
+                        x_var).sum(-1) + torch.log(proto_var).sum(-1, keepdim=True)
+                    loss_weight2 = (loss_weight2 - loss_weight2.min()
+                                    ) / (loss_weight2.max() - loss_weight2.min())
+                    loss_weight2 = loss_weight2.mean()
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2}
                 else:
                     return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
             else:

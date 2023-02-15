@@ -70,24 +70,10 @@ class LocalRefinementModule(nn.Module):
 
         self.num_classes = self.configer.get('data', 'num_classes')
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
-        self.bin_size_h = self.configer.get('protoseg', 'bin_size_h')
-        self.bin_size_w = self.configer.get('protoseg', 'bin_size_w')
         self.proj_dim = self.configer.get('protoseg', 'proj_dim')
-
-        self.dropout = nn.Dropout2d(0.1)
-        self.conv_cam = nn.Conv2d(self.proj_dim, self.num_classes, kernel_size=1)
-        self.sigmoid = nn.Sigmoid()
-        self.pool_cam = nn.AdaptiveAvgPool2d((self.bin_size_h, self.bin_size_w))
-        self.mask_norm = nn.LayerNorm(self.num_classes)
-        self.relu = nn.ReLU(inplace=True)
-        # self.avg_pool = nn.AdaptiveAvgPool2d()
-        self.local_res_module = ResBlock(configer=configer)
-        self.gcn = GCN(configer=configer)
+        self.local_size = self.configer.get('protoseg', 'local_size')
 
     def calc_pred_uncertainty(self, sim_mat):
-        ''' 
-        sim_mat: [n c]
-        '''
         sim_mat = F.softmax(sim_mat, dim=1)
         score_top, _ = sim_mat.topk(k=2, dim=1)
         pred_uncertainty = score_top[:, 0] / (score_top[:, 1] + 1e-8)
@@ -110,59 +96,21 @@ class LocalRefinementModule(nn.Module):
 
         return x
 
-    def patch_recover(self, x, bin_size_h, bin_size_w):
-        """
-        b (bh bw) rh rw c -> b c (bh rh) (bw rw)
-        """
-        b, n, patch_size_h, patch_size_w, c = x.size()
-        h = patch_size_h * bin_size_h
-        w = patch_size_w * bin_size_w
-        x = x.view(b, bin_size_h, bin_size_w, patch_size_h, patch_size_w, c)
-        # [b, c, bin_size_h, patch_size_h, bin_size_w, patch_size_w]
-        x = x.permute(0, 5, 1, 3, 2, 4).contiguous()
-        x = x.view(b, c, h, w)
-
-        return x
-
-    def forward(self, sim_mat, x, x_var=None):
+    def forward(self, sim_mat, x, x_var=None, proto_var=None):
         ''' 
-        sim_mat: [b c h w]
+        sim_mat/out_seg: [b (c m)/c h w]
         x: [b c h w]
+        protos: [c m k]
         '''
-        residual = x
-        b, k, h, w = x.size(0), x.size(1), x.size(-2), x.size(-1)
         pred_uncertainty = self.calc_pred_uncertainty(sim_mat)
 
-        cam = self.conv_cam(self.dropout(x))  # [B, C, H, W]
-        #! for each patch, the overl all(pooling) score for K classes
-        cls_score = self.sigmoid(self.pool_cam(cam))  # [B, C, bin_num_h, bin_num_w]
+        # [b, bin_size_h*bin_size_w, patch_size_h, patch_size_w, k]
+        x_patch = self.patch_split(x, self.local_size, self.local_size)
+        # [b, k bin_size_h*bin_size_w, (patch_size_h, patch_size_w)]
+        x_patch = rearrange(x_patch, 'b m h w k -> b k m (h w)')
 
-        # [B, bin_num_h * bin_num_w, rH, rW, c]
-        cam = self.patch_split(cam, self.bin_size_h, self.bin_size_w)
-        # [B, bin_num_h * bin_num_w, rH, rW, k] [1, 32, 32, 32, 720]
-        x = self.patch_split(x, self.bin_size_h, self.bin_size_w)
-
-        B = cam.shape[0]
-        rH = cam.shape[2]
-        rW = cam.shape[3]
-        K = cam.shape[-1]
-        C = x.shape[-1]
-        cam = cam.view(B, -1, rH*rW, K)  # [B, bin_num_h * bin_num_w, rH * rW, c] [1, 32, 1024, 19]
-        x = x.view(B, -1, rH*rW, C)  # [B, bin_num_h * bin_num_w, rH * rW, k] [1, 32, 1024, 720]
-
-        # [B, bin_num_h * bin_num_w, K, 1] [1, 32, 19, 1]
-        bin_confidence = cls_score.view(B, K, -1).transpose(1, 2).unsqueeze(3)
-        #! pixel_confidence: inside each patch, for each pixel, its prob. belonging to K classes
-        cam = F.softmax(cam, dim=2)
-        #! local cls centers (weigted sum (weight: bin_confidence))
-        #! torch.matmul: aggregate inside a patch
-        # [B, bin_num_h * bin_num_w, c, Ck [1, 32, 19, 720]
-        cam = torch.matmul(cam.transpose(2, 3), x) * bin_confidence
-        cam = self.gcn(cam)  # [B, bin_num_h * bin_num_w, K, C] [1, 32, 19, 720]
-
-        #! local refinement mask
-        local_max = torch.max(cam, dim=1)[0]  # [b, 19, 720] cls-wise local max
-        x = x.permute(0, 3, 1, 2)  # [1, 720, 32, 1024]
-        q = self.local_res_module(x)  # [1, 720, 32, 1024]
-
-        return
+        # local feature
+        seg = torch.argmax(sim_mat, dim=1, keepdim=True)  # [b 1 h w]
+        # [b, 1, bin_size_h*bin_size_w, (patch_size_h, patch_size_w)]
+        seg = self.patch_split(seg, self.local_size, self.local_size)
+        # local similarity
