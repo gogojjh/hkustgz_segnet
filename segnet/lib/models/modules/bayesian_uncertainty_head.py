@@ -16,13 +16,21 @@ class BayesianUncertaintyHead(nn.Module):
         self.configer = configer                                            
 
         self.proj_dim = self.configer.get('protoseg', 'proj_dim')
-        self.mean_conv = nn.Conv2d(self.proj_dim, self.proj_dim, kernel_size=1, bias=False)
-        self.var_conv = nn.Conv2d(self.proj_dim, self.proj_dim, kernel_size=1, bias=False)
+        
+        self.mean_layer = nn.Linear(self.proj_dim, self.proj_dim)
+        self.var_layer = nn.Linear(self.proj_dim, self.proj_dim)
+        
+    def init_weights(self):
+        nn.init.xavier_uniform_(self.mean_layer.weight)
+        nn.init.constant_(self.var_layer.bias, 0)
 
     def forward(self, x):
-        mean = self.mean_conv(x)
-        logvar = self.var_conv(x)  # [b k h w]
+        x = x.permute(0, 2, 3, 1)  # [b h w c]
+        mean = self.mean_layer(x)
+        logvar = self.var_layer(x)  # [b k h w]
+        mean = mean.permute(0, 3, 1, 2)  # [b h w c]-> [b c h w]
+        logvar = logvar.permute(0, 3, 1, 2)  # [b h w c]-> [b c h w]
         #todo debug
-        logvar = torch.sigmoid(logvar)
+        # logvar = torch.sigmoid(logvar)
 
         return mean, logvar

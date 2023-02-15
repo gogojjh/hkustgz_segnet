@@ -157,14 +157,14 @@
 		"update_prototype": true,
 		"use_attention": false,
 		"warmup_iters": 0,
-		"similarity_measure": "match_prob",
+		"similarity_measure": "wasserstein",
 		"use_uncertainty": true,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 0.01,
 		"prob_ppc_weight": 0.01,
 		"boundary_loss_weight": 0.01,
-		"kl_loss_weight": 0.0005,
+		"kl_loss_weight": 0.0008,
 		"proj_dim": 720,
 		"use_boundary": false,
 		"boundary_head_mid_channel": 128,
@@ -182,8 +182,8 @@
 		"local_refinement": false,
 		"local_size": 7,
 		"bayes_uncertainty": true,
-		"init_a": 15,
-		"init_b": 15
+		"init_a": 5,
+		"init_b": 5
 	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": false,

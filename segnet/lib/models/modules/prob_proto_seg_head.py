@@ -154,8 +154,8 @@ class ProbProtoSegHead(nn.Module):
                 # [reparam_k reparam_k n m c]
                 sim_mat = torch.einsum('srnd,zjkmd->sjnmk', x, proto_mean) 
                 sim_mat = rearrange(sim_mat, 'r l n m c -> (r l) n m c')
-                sim_mat = - self.init_a * (2 - sim_mat) + self.init_b
-                sim_mat = torch.sigmoid(sim_mat)
+                # sim_mat = - self.init_a * (2 - sim_mat) + self.init_b
+                # sim_mat = torch.sigmoid(sim_mat)
                 
                 sim_mat = torch.mean(sim_mat, dim=0) # [n m c]
                 sim_mat = sim_mat.permute(0, 2, 1) # [n c m]
@@ -270,8 +270,7 @@ class ProbProtoSegHead(nn.Module):
                         protos[i, n != 0, :] = momentum_update(
                             old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
 
-                        f_v = (m_q.transpose(0, 1) @ (var_q + (c_q ** 2))) / (m_q_sum.unsqueeze(-1) +
-                                                                              1e-3) - ((m_q.transpose(0, 1) @ c_q) / (m_q_sum.unsqueeze(-1) + 1e-3)) ** 2
+                        f_v = (m_q.transpose(0, 1) @ (var_q + (c_q ** 2))) / (m_q_sum.unsqueeze(-1) +1e-3) - ((m_q.transpose(0, 1) @ c_q) / (m_q_sum.unsqueeze(-1) + 1e-3)) ** 2
                         assert torch.count_nonzero(torch.isinf(f_v)) == 0
                         #! normalize for f_v
                         # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
@@ -574,13 +573,18 @@ class ProbProtoSegHead(nn.Module):
 
                 if self.weighted_ppd_loss:
                     proto_var = self.proto_var.data.clone()
-                    loss_weight1 = torch.einsum('nk,cmk->cmn', x_var, proto_var)  # [c m n]
+                    
+                    # normalize variance
+                    x_var_norm = torch.exp(torch.sigmoid(torch.log(x_var)))
+                    proto_var_norm = torch.exp(torch.sigmoid(torch.log(proto_var)))
+                    
+                    loss_weight1 = torch.einsum('nk,cmk->cmn', x_var_norm, proto_var_norm)  # [c m n]
                     loss_weight1 = (loss_weight1 - loss_weight1.min()
                                     ) / (loss_weight1.max() - loss_weight1.min())
                     loss_weight1 = loss_weight1.mean()
                     # [n] + [c m 1] = [c m n]
                     loss_weight2 = torch.log(
-                        x_var).sum(-1) + torch.log(proto_var).sum(-1, keepdim=True)
+                        x_var_norm).sum(-1) + torch.log(proto_var_norm).sum(-1, keepdim=True)
                     loss_weight2 = (loss_weight2 - loss_weight2.min()
                                     ) / (loss_weight2.max() - loss_weight2.min())
                     loss_weight2 = loss_weight2.mean()
@@ -588,7 +592,9 @@ class ProbProtoSegHead(nn.Module):
                     x_var = x_var.reshape(b_size, h_size, -1, k_size)
                     return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var}
                 else:
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
+                    x = x.reshape(b_size, h_size, -1, k_size)
+                    x_var = x_var.reshape(b_size, h_size, -1, k_size)
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
         return out_seg
