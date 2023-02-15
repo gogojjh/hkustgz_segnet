@@ -18,6 +18,7 @@ from lib.utils.tools.configer import Configer
 from lib.utils.distributed import get_rank, is_distributed
 
 # warnings.filterwarnings('ingore')
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 def str2bool(v):

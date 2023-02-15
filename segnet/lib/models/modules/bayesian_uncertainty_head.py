@@ -29,10 +29,11 @@ class BayesianUncertaintyHead(nn.Module):
         sample_z = torch.cat(sample_z, dim=0)
         return sample_z
 
+
     def forward(self, x):
         mean = self.mean_conv(x)
         logvar = self.var_conv(x)  # [b k h w]
-        logvar = logvar.unsqueeze(0)  # [1 b k h w]
+        # logvar = logvar.unsqueeze(0)  # [1 b k h w]
         logvar_reparam = self.reparameterize(mean, logvar, 1).squeeze(0)  # [b k h w]
         logvar_reparam = torch.sigmoid(logvar_reparam)
         

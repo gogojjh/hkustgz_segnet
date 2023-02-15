@@ -224,7 +224,7 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         # c_raw = self.cls_head(c_raw)  # 720
 
         c_var = None
-
+        
         if self.use_uncertainty:
             if self.bayes_uncertainty:
                 c, c_var, uncertainty = self.bayes_uncertainty_head(c_raw)

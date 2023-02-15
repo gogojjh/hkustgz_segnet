@@ -70,6 +70,15 @@ class ProbProtoSegHead(nn.Module):
         self.local_refinement = self.configer.get('protoseg', 'local_refinement')
         # if self.local_refinement:
         #     self.local_refine_module = LocalRefinementModule(configer=configer)
+        
+    def reparameterize(self, mu, logvar, k=1):
+        sample_z = []
+        for _ in range(k):
+            std = logvar.mul(0.5).exp_()
+            eps = std.data.new(std.size()).normal_()
+            sample_z.append(eps.mul(std).add_(mu))
+        sample_z = torch.cat(sample_z, dim=0)
+        return sample_z
 
     def compute_similarity(self, x, x_var=None, sim_measure='wasserstein'):
         ''' 
@@ -104,6 +113,8 @@ class ProbProtoSegHead(nn.Module):
                     2 - sim_mat) / (x_var + proto_var).sum(-1) + torch.log(x_var).sum(-1) + torch.log(proto_var).sum(-1)
                 sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
                 sim_mat = -0.5 * sim_mat
+            elif sim_measure == 'match_prob':
+                self.reparameterize()
 
             del x_var, x, proto_mean, proto_var
 
@@ -516,18 +527,8 @@ class ProbProtoSegHead(nn.Module):
                 if self.configer.get('iters') % 100 == 0:
                     Log.info(proto_var)
 
-                if self.local_refinement:
-                    x = rearrange(x, '(b h w) c -> b c h w',
-                                  b=b_size, h=h_size)
-                    x_var = rearrange(x_var, '(b h w) c -> b c h w',
-                                      b=b_size, h=h_size)
-                    # local_x = self.local_refine_module(out_seg, x, )
 
                 if self.weighted_ppd_loss:
-                    if self.local_refinement:
-                        x = rearrange(x, 'b c h w -> (b h w) c')
-                        x_var = rearrange(x_var, 'b c h w -> (b h w) c')
-
                     proto_var = self.proto_var.data.clone()
                     loss_weight1 = torch.einsum('nk,cmk->cmn', x_var, proto_var)  # [c m n]
                     loss_weight1 = (loss_weight1 - loss_weight1.min()
@@ -539,7 +540,9 @@ class ProbProtoSegHead(nn.Module):
                     loss_weight2 = (loss_weight2 - loss_weight2.min()
                                     ) / (loss_weight2.max() - loss_weight2.min())
                     loss_weight2 = loss_weight2.mean()
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2}
+                    x = x.reshape(b_size, h_size, -1, k_size)
+                    x_var = x_var.reshape(b_size, h_size, -1, k_size)
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var}
                 else:
                     return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
             else:

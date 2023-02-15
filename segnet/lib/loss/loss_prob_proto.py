@@ -275,6 +275,9 @@ class PixelProbContrastLoss(nn.Module, ABC):
             self.bound_contrast_loss = BoundaryContrastiveLoss(configer=configer)
         self.use_temperature = self.configer.get('protoseg', 'use_temperature')
         self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
+        self.kl_loss = KLLoss(configer=configer)
+        self.kl_loss_weight = self.configer.get('protoseg', 'kl_loss_weight')
+        
 
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
@@ -312,6 +315,10 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
+            
+            x_mean = preds['x_mean']
+            x_var = preds['x_var']
+            kl_loss = self.kl_loss(x_mean, x_var, target)
 
             # if self.use_boundary and gt_boundary is not None:
             #     h_t, w_t = seg.size(-2), seg.size(-1)
@@ -343,11 +350,11 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             # prob_ppc_weight = self.get_uncer_loss_weight()
 
-            loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
+            loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.kl_loss_weight * kl_loss
 
             assert not torch.isnan(loss)
 
-            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
+            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'kl_loss':kl_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(

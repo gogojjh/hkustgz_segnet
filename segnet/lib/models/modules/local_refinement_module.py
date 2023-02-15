@@ -35,27 +35,6 @@ class ResBlock(nn.Module):
         return x + r
 
 
-class GCN(nn.Module):
-    def __init__(self, configer):
-        super(GCN, self).__init__()
-        self.configer = configer
-        self.bin_size_h = self.configer.get('protoseg', 'bin_size_h')
-        self.bin_size_w = self.configer.get('protoseg', 'bin_size_w')
-        num_node = self.bin_size_h * self.bin_size_w
-        # num_channel = self.configer.get('protoseg', 'proj_dim')
-        num_channel = 720
-        
-        self.conv1 = nn.Conv2d(num_node, num_node, kernel_size=1, bias=False)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = nn.Linear(num_channel, num_channel, bias=False)
-    def forward(self, x):
-        # x: [B, bin_num_h * bin_num_w, K, C]
-        out = self.conv1(x)
-        out = self.relu(out + x)
-        out = self.conv2(out)
-        return out
-
-
 class LocalRefinementModule(nn.Module):
     ''' 
     Video Object Segmentation with Adaptive Feature Bank and Uncertain-Region Refinement
@@ -70,18 +49,7 @@ class LocalRefinementModule(nn.Module):
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
         self.bin_size_h = self.configer.get('protoseg', 'bin_size_h')
         self.bin_size_w = self.configer.get('protoseg', 'bin_size_w')
-        self.proj_dim = self.configer.get('protoseg', 'proj_dim')
-        
-        self.dropout = nn.Dropout2d(0.1)
-        self.conv_cam = nn.Conv2d(self.proj_dim, self.num_classes, kernel_size=1)
-        self.sigmoid = nn.Sigmoid()
-        self.pool_cam = nn.AdaptiveAvgPool2d((self.bin_size_h, self.bin_size_w))
-        self.mask_norm = nn.LayerNorm(self.num_classes)
-        self.relu = nn.ReLU(inplace=True)
-        self.avg_pool = nn.AdaptiveAvgPool2d()
-        self.local_res_module = ResBlock(configer=configer)
-        self.gcn = GCN(configer=configer)
-        
+        self.proj_dim = self.configer.get('protoseg', 'proj_dim')        
         
     def calc_pred_uncertainty(self, sim_mat):
         ''' 
@@ -133,37 +101,7 @@ class LocalRefinementModule(nn.Module):
         b, k, h, w = x.size(0), x.size(1), x.size(-2), x.size(-1)
         pred_uncertainty = self.calc_pred_uncertainty(sim_mat)
         
-        cam = self.conv_cam(self.dropout(x)) # [B, C, H, W]
-        #! for each patch, the overl all(pooling) score for K classes
-        cls_score = self.sigmoid(self.pool_cam(cam)) # [B, C, bin_num_h, bin_num_w]
-        
-        cam = self.patch_split(cam, self.bin_size_h, self.bin_size_w) # [B, bin_num_h * bin_num_w, rH, rW, c]
-        x = self.patch_split(x, self.bin_size_h, self.bin_size_w) # [B, bin_num_h * bin_num_w, rH, rW, k] [1, 32, 32, 32, 720]
-        
-        B = cam.shape[0]
-        rH = cam.shape[2]
-        rW = cam.shape[3]
-        K = cam.shape[-1]
-        C = x.shape[-1
-        cam = cam.view(B, -1, rH*rW, K) # [B, bin_num_h * bin_num_w, rH * rW, c] [1, 32, 1024, 19]
-        x = x.view(B, -1, rH*rW, C) # [B, bin_num_h * bin_num_w, rH * rW, k] [1, 32, 1024, 720]
-        
-        bin_confidence = cls_score.view(B,K,-1).transpose(1,2).unsqueeze(3) # [B, bin_num_h * bin_num_w, K, 1] [1, 32, 19, 1]
-        #! pixel_confidence: inside each patch, for each pixel, its prob. belonging to K classes 
-        cam = F.softmax(cam, dim=2) 
-        #! local cls centers (weigted sum (weight: bin_confidence))
-        #! torch.matmul: aggregate inside a patch
-        cam = torch.matmul(cam.transpose(2, 3), x) * bin_confidence # [B, bin_num_h * bin_num_w, c, Ck [1, 32, 19, 720]
-        cam = self.gcn(cam) # [B, bin_num_h * bin_num_w, K, C] [1, 32, 19, 720]
-        
-        #! local refinement mask
-        local_max = torch.max(cam, dim=1)[0] # [b, 19, 720] cls-wise local max
-        x = x.permute(0, 3, 1, 2) # [1, 720, 32, 1024]
-        q = self.local_res_module(x) # [1, 720, 32, 1024]
-        
-        
-        
-        return 
+        return pred_uncertainty, 
         
         
         
