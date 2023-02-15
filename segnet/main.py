@@ -17,7 +17,7 @@ from lib.utils.tools.logger import Logger as Log
 from lib.utils.tools.configer import Configer
 from lib.utils.distributed import get_rank, is_distributed
 
-warnings.filterwarnings('ignore')
+# warnings.filterwarnings('ingore')
 
 
 def str2bool(v):

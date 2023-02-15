@@ -227,16 +227,14 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         if self.use_uncertainty:
             if self.bayes_uncertainty:
-                c, c_var, uncertainty = self.bayes_uncertainty_head()
+                c, c_var, uncertainty = self.bayes_uncertainty_head(c_raw)
             else:
                 c_var = self.uncertainty_head(c_raw)
-
-            if self.use_boundary and self.use_attention:
-                c_var = self.boundary_attention(gt_boundary, c_var)
-
+                c = self.proj_head(c_raw)  # self.proj
             c_var = torch.exp(c_var)
-
-        c = self.proj_head(c_raw)  # self.proj
+        else: 
+            c = self.proj_head(c_raw)  # self.proj
+        
         c = rearrange(c, 'b c h w -> (b h w) c')
         c = self.feat_norm(c)  # ! along channel dimension
         c = l2_normalize(c)  # ! l2_norm along num_class dimension

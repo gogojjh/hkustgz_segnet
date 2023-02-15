@@ -11,7 +11,7 @@ from lib.models.modules.sinkhorn import distributed_sinkhorn
 from timm.models.layers import trunc_normal_
 from lib.utils.distributed import get_world_size, get_rank, is_distributed
 from einops import rearrange, repeat
-from lib.models.modules.local_refinement_module import LocalRefinementModule
+# from lib.models.modules.local_refinement_module import LocalRefinementModule
 
 
 class ProbProtoSegHead(nn.Module):
@@ -68,8 +68,8 @@ class ProbProtoSegHead(nn.Module):
         if self.attention_proto:
             self.lamda_p = self.configer.get('protoseg', 'lamda_p')
         self.local_refinement = self.configer.get('protoseg', 'local_refinement')
-        if self.local_refinement:
-            self.local_refine_module = LocalRefinementModule(configer=configer)
+        # if self.local_refinement:
+        #     self.local_refine_module = LocalRefinementModule(configer=configer)
 
     def compute_similarity(self, x, x_var=None, sim_measure='wasserstein'):
         ''' 
@@ -513,7 +513,7 @@ class ProbProtoSegHead(nn.Module):
             if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
 
-                if self.configer.get('iters') % 1000 == 0:
+                if self.configer.get('iters') % 100 == 0:
                     Log.info(proto_var)
 
                 if self.local_refinement:
