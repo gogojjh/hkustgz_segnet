@@ -567,9 +567,8 @@ class ProbProtoSegHead(nn.Module):
             if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
 
-                if self.configer.get('iters') % 100 == 0:
+                if self.configer.get('iters') % 1000 == 0:
                     Log.info(proto_var)
-
 
                 if self.weighted_ppd_loss:
                     proto_var = self.proto_var.data.clone()
