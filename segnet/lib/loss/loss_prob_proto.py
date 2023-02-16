@@ -18,6 +18,22 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
+# class FeatureUncertaintyLoss(nn.Module, ABC):
+#     ''' 
+#     Robust Person Re-identification by Modelling Feature Uncertainty
+#     '''
+
+#     def __init__(self, configer):
+#         super(FeatureUncertaintyLoss, self).__init__()
+#         self.configer = configer
+        
+#         self.uncer_gamma = self.configer.get('protoseg' 'uncer_gamma')
+        
+#     def forward(x_var):
+        
+
+
+
 class ConfidenceLoss(nn.Module, ABC):
     ''' 
     Video Object Segmentation with Adaptive Feature Bank and Uncertain-Region Refinement
