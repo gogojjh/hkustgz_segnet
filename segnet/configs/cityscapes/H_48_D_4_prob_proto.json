@@ -185,6 +185,12 @@
 		"init_a": 5,
 		"init_b": 5
 	},
+	"pmm": {
+		"use_pmm": true,
+		"pmm_k": 10,
+		"stage_num": 10,
+		"kappa": 20
+	},
 	"uncertainty_visualizer": {
 		"vis_uncertainty": false,
 		"vis_interval_img": 1,

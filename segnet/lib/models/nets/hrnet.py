@@ -26,6 +26,7 @@ from lib.models.modules.boundary_head import BoundaryHead
 from lib.models.modules.bayesian_uncertainty_head import BayesianUncertaintyHead
 from lib.models.modules.caa_head import CAAHead
 from lib.models.modules.boundary_attention_module import BoundaryAttentionModule
+from lib.models.modules.pmm_module import PMMs
 # from lib.models.modules.attention_uncertainty_head import UncertaintyHead
 
 from timm.models.layers import trunc_normal_
@@ -163,6 +164,11 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         self.use_ros = self.configer.get('ros', 'use_ros')
         self.use_attention = self.configer.get('protoseg', 'use_attention')
         self.bayes_uncertainty = self.configer.get('protoseg', 'bayes_uncertainty')
+        self.use_pmm = self.configer.get('pmm', 'use_pmm')
+        if self.use_pmm:
+            self.pmm_k = self.configer.get('pmm', 'pmm_k')
+            self.stage_num = self.configer.get('pmm', 'stage_num')
+            self.pmm = PMMs(configer=configer)
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
@@ -241,6 +247,9 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         c = rearrange(c, '(b h w) c -> b c h w',
                       h=gt_size[0], w=gt_size[1])
         del c_raw
+        
+        if self.use_pmm:
+            gmm_proto, prob_map = self.pmm(c)
 
         boundary_pred = None
         preds = self.prob_seg_head(
