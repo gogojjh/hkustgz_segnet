@@ -23,10 +23,11 @@ class PMMs(nn.Module):
         mu = torch.Tensor(1, c, k)#.cuda()
         mu.normal_(0, math.sqrt(2. / k))  # Init mu
         self.mu = self._l2norm(mu, dim=1)
-        self.kappa = self.configer.get('pmm', 'kapppa')
+        self.kappa = self.configer.get('pmm', 'kappa')
         #self.register_buffer('mu', mu)
 
     def forward(self, support_feature):
+        # [b num_proto proj_dim], [b (h w) num_proto]
         prototypes, z_ = self.generate_prototype(support_feature)
         #Prob_map, P = self.discriminative_model(query_feature, mu_f, mu_b)
 
@@ -56,15 +57,16 @@ class PMMs(nn.Module):
         with torch.no_grad():
             for i in range(self.stage_num):
                 # E STEP:
-                z = self.Kernel(x, mu)
+                # x: [b proj_dim (h w)] mu: [b proj_dim num_proto]
+                z = self.Kernel(x, mu) # [b (h w) num_proto]
                 z = F.softmax(z, dim=2)  # b * n * k
                 # M STEP:
-                z_ = z / (1e-6 + z.sum(dim=1, keepdim=True))
-                mu = torch.bmm(x, z_)  # b * c * k
+                z_ = z / (1e-6 + z.sum(dim=1, keepdim=True)) # [b (h w) num_proto]
+                mu = torch.bmm(x, z_)  # b * c * k [b proj_dim num_proto]
 
                 mu = self._l2norm(mu, dim=1)
 
-        mu = mu.permute(0, 2, 1)  # b * k * c
+        mu = mu.permute(0, 2, 1)  # b * k * c # [b num_proto proj_dim]
 
         return mu, z_
 
@@ -77,26 +79,16 @@ class PMMs(nn.Module):
     def get_prototype(self,x):
         b, c, h, w = x.size()
         x = x.view(b, c, h * w)  # b * c * n
-        mu, z_ = self.EM(x) # b * k * c
+        mu, z_ = self.EM(x) # b * k * c [b num_proto proj_dim], [b (h w) num_proto]
 
         return mu, z_
 
-    def generate_prototype(self, feature):
-        #mask = F.interpolate(mask, feature.shape[-2:], mode='bilinear', align_corners=True)
-        mask = torch.ones_like(feature)
-
-        mask_bg = 1-mask
-
-        # foreground
-        z = mask * feature
-        mu_f, z_ = self.get_prototype(z)
+    def generate_prototype(self, z):
+        mu_f, z_ = self.get_prototype(z) # [b num_proto proj_dim], [b (h w) num_proto]
+        
         mu_ = []
         for i in range(self.num_pro):
             mu_.append(mu_f[:, i, :].unsqueeze(dim=2).unsqueeze(dim=3))
-
-        # background
-        # z_bg = mask_bg * feature
-        # mu_b, _ = self.get_prototype(z_bg)
 
         return mu_, z_
 

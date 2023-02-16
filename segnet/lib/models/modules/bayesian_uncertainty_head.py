@@ -25,7 +25,5 @@ class BayesianUncertaintyHead(nn.Module):
         logvar = self.var_layer(x)  # [b k h w]
         mean = mean.permute(0, 3, 1, 2)  # [b h w c]-> [b c h w]
         logvar = logvar.permute(0, 3, 1, 2)  # [b h w c]-> [b c h w]
-        #todo debug
-        # logvar = torch.sigmoid(logvar)
 
         return mean, logvar

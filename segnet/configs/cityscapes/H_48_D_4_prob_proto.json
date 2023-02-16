@@ -155,9 +155,9 @@
 		"use_rmi": false,
 		"use_prototype": true,
 		"update_prototype": true,
-		"use_attention": false,
+		"use_attention": true,
 		"warmup_iters": 0,
-		"similarity_measure": "wasserstein",
+		"similarity_measure": "match_prob",
 		"use_uncertainty": true,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
@@ -165,7 +165,7 @@
 		"prob_ppc_weight": 0.01,
 		"boundary_loss_weight": 0.01,
 		"kl_loss_weight": 0.0008,
-		"proj_dim": 720,
+		"proj_dim": 512,
 		"use_boundary": false,
 		"boundary_head_mid_channel": 128,
 		"bin_size_h": 4,
@@ -210,7 +210,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 0

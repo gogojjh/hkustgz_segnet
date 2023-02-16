@@ -27,6 +27,9 @@ from lib.models.modules.bayesian_uncertainty_head import BayesianUncertaintyHead
 from lib.models.modules.caa_head import CAAHead
 from lib.models.modules.boundary_attention_module import BoundaryAttentionModule
 from lib.models.modules.pmm_module import PMMs
+from lib.models.modules.transformer import build_transformer
+from lib.models.modules.position_encoding import build_position_encoding
+from lib.utils.util import mask_from_tensor
 # from lib.models.modules.attention_uncertainty_head import UncertaintyHead
 
 from timm.models.layers import trunc_normal_
@@ -68,9 +71,6 @@ class HRNet_W18_Attn_Prob_Proto(nn.Module):
             nn.Dropout2d(0.10)
         )
 
-        if self.use_attention:
-            self.attention_head = CAAHead(configer=configer)
-
         if self.use_uncertainty:
             out_dim = self.proj_dim
             in_dim = 270
@@ -111,10 +111,6 @@ class HRNet_W18_Attn_Prob_Proto(nn.Module):
 
         gt_size = c_raw.size()[2:]
 
-        if self.use_attention:
-            atten_c, patch_cls_score = self.attention_head(c_raw)
-            c_raw = torch.cat((c_raw, atten_c), dim=1)
-
         # c_raw = self.cls_head(c_raw)  # 720
         c = self.proj_head(c_raw)  # self.proj
 
@@ -135,9 +131,6 @@ class HRNet_W18_Attn_Prob_Proto(nn.Module):
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
 
-        if self.use_attention and self.configer.get('phase') == 'train':
-            preds['patch_cls_score'] = patch_cls_score
-
         del c, c_var
 
         return preds
@@ -153,7 +146,6 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         self.configer = configer
         self.num_classes = self.configer.get('data', 'num_classes')
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
-        # prototype config
         self.use_prototype = self.configer.get('protoseg', 'use_prototype')
         self.update_prototype = self.configer.get(
             'protoseg', 'update_prototype')
@@ -165,10 +157,6 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         self.use_attention = self.configer.get('protoseg', 'use_attention')
         self.bayes_uncertainty = self.configer.get('protoseg', 'bayes_uncertainty')
         self.use_pmm = self.configer.get('pmm', 'use_pmm')
-        if self.use_pmm:
-            self.pmm_k = self.configer.get('pmm', 'pmm_k')
-            self.stage_num = self.configer.get('pmm', 'stage_num')
-            self.pmm = PMMs(configer=configer)
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
@@ -201,6 +189,16 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
 
         self.mask_norm = nn.LayerNorm(self.num_classes)
+        
+        if self.use_pmm:
+            self.pmm_k = self.configer.get('pmm', 'pmm_k')
+            self.stage_num = self.configer.get('pmm', 'stage_num')
+            self.pmm = PMMs(configer=configer)
+        if self.use_attention:
+            dropout = 0.1
+            self.transformer = build_transformer(self.proj_dim, dropout, nheads=8, dim_feedforward=2048, enc_layers=3, dec_layers=3, pre_norm=True)
+            self.position_encoding = build_position_encoding(self.proj_dim, 'v2')
+        self.uncertainty_aware_fea = self.configer.get('protoseg', 'uncertainty_aware_fea')
 
     def sample_gaussian_tensors(self, mu, logsigma, num_samples):
         eps = torch.randn(mu.size(0), num_samples, mu.size(1), dtype=mu.dtype, device=mu.device)
@@ -221,40 +219,61 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         feat4 = F.interpolate(x[3], size=(
             h, w), mode="bilinear", align_corners=True)
 
-        c_raw = torch.cat([feat1, feat2, feat3, feat4], 1)  # sent to boundary head
+        c = torch.cat([feat1, feat2, feat3, feat4], 1)  # sent to boundary head
 
         del feat1, feat2, feat3, feat4
 
-        gt_size = c_raw.size()[2:]
+        gt_size = c.size()[2:]
 
-        # c_raw = self.cls_head(c_raw)  # 720
+        c = self.cls_head(c)  # 720
+        c = self.proj_head(c)
 
         c_var = None
         
         if self.use_uncertainty:
             if self.bayes_uncertainty:
-                c, c_var = self.bayes_uncertainty_head(c_raw)
+                c_mean, c_var = self.bayes_uncertainty_head(c)
             else:
-                c_var = self.uncertainty_head(c_raw)
-                c = self.proj_head(c_raw)  # self.proj
+                c_var = self.uncertainty_head(c)
+                c_mean = c # self.proj
             c_var = torch.exp(c_var)
-        else: 
-            c = self.proj_head(c_raw)  # self.proj
+        else:
+            c_mean = c
         
         c = rearrange(c, 'b c h w -> (b h w) c')
         c = self.feat_norm(c)  # ! along channel dimension
         c = l2_normalize(c)  # ! l2_norm along num_class dimension
         c = rearrange(c, '(b h w) c -> b c h w',
                       h=gt_size[0], w=gt_size[1])
-        del c_raw
         
-        if self.use_pmm:
-            gmm_proto, prob_map = self.pmm(c)
-
+        c_mean = rearrange(c_mean, 'b c h w -> (b h w) c')
+        c_mean = self.feat_norm(c_mean)  # ! along channel dimension
+        c_mean = l2_normalize(c_mean)  # ! l2_norm along num_class dimension
+        c_mean = rearrange(c_mean, '(b h w) c -> b c h w',
+                      h=gt_size[0], w=gt_size[1])
+        
+        if self.uncertainty_aware_fea and self.configer.get('phase') == 'train':
+            #todo
+            m = 1
+        
         boundary_pred = None
         preds = self.prob_seg_head(
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
+            
+        if self.use_attention:
+            #c:[b c h w], mask:[b h w](False)
+            c, mask = mask_from_tensor(c) 
+            position_encoding = self.position_encoding(c, mask).cuda() #[b proj_dim h w]
+            
+            # gmm_proto[0]: [b self.proj 1 1], [b (h w) num_proto]
+            gmm_proto, prob_map = self.pmm(c)
+            gmm_proto = torch.stack(gmm_proto, dim=3).squeeze(-1) # [b self.proj 1 num_proto]
+            
+            #todo debug
+            # position_encoding = torch.bmm(position_encoding.flatten(2), prob_map).unsqueeze(2)
+            c_attn = self.transformer(gmm_proto, c, position_encoding)
+            
 
         del c, c_var
 
