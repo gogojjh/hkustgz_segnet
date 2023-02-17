@@ -11,6 +11,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 import torch.distributed as dist
 
@@ -199,13 +200,12 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             self.transformer = build_transformer(self.proj_dim, dropout, nheads=8, dim_feedforward=2048, enc_layers=3, dec_layers=3, pre_norm=True)
             self.position_encoding = build_position_encoding(self.proj_dim, 'v2')
         self.uncertainty_aware_fea = self.configer.get('protoseg', 'uncertainty_aware_fea')
-
-    def sample_gaussian_tensors(self, mu, logsigma, num_samples):
-        eps = torch.randn(mu.size(0), num_samples, mu.size(1), dtype=mu.dtype, device=mu.device)
-
-        samples = eps.mul(torch.exp(logsigma.unsqueeze(1))).add_(
-            mu.unsqueeze(1))
-        return samples
+        self.uncertainty_random_mask = self.configer.get('protoseg', 'uncertainty_random_mask')
+        self.use_context = self.configer.get('protoseg', 'use_context')
+        if self.use_context:
+            from segnet.lib.models.modules.object_contextual_block import SpatialGather_0CR_Module
+            self.spatial_gather_module = SpatialGather_0CR_Module(configer=configer)
+            
 
     def forward(self, x_, gt_semantic_seg=None, gt_boundary=None, pretrain_prototype=False):
         x = self.backbone(x_)
@@ -225,7 +225,7 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         gt_size = c.size()[2:]
 
-        c = self.cls_head(c)  # 720
+        # c = self.cls_head(c)  # 720
         c = self.proj_head(c)
 
         c_var = None
@@ -252,14 +252,25 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         c_mean = rearrange(c_mean, '(b h w) c -> b c h w',
                       h=gt_size[0], w=gt_size[1])
         
-        if self.uncertainty_aware_fea and self.configer.get('phase') == 'train':
-            #todo
-            m = 1
-        
         boundary_pred = None
         preds = self.prob_seg_head(
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
+        
+        if self.use_context:
+            prob_map = preds['logits'] 
+            prob_map = rearrange(prob_map, 'n l -> b l h w', b=b, h=h, w=w)
+            cls_center = self.spatial_gather_module(c, prob_map) # [b c/(c m) k]
+            
+        if self.uncertainty_aware_fea and self.configer.get('phase') == 'train':
+            uncertainty = preds['uncertainty']
+            c *= (1 - uncertainty) # ignore the uncertain pixels during training
+        if self.uncertainty_random_mask and self.configer.get('phase') == 'train':
+            # pixels with large uncertainty are masked out
+            rand_mask = uncertainty < torch.Tensor(np.random.random(uncertainty.size()).cuda())
+            c *= rand_mask.float()
+            
+        
             
         if self.use_attention:
             #c:[b c h w], mask:[b h w](False)
@@ -737,7 +748,7 @@ class HRNet_W48_OCR_B(nn.Module):
             h, w), mode="bilinear", align_corners=True)
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
-        out_aux = self.aux_head(feats)
+        out_aux = self.aux_head(feats) #! supervised by cross-entropy loss
 
         feats = self.conv3x3(feats)
 

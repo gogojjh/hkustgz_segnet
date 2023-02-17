@@ -76,11 +76,24 @@ class ProbProtoSegHead(nn.Module):
         self.local_refinement = self.configer.get('protoseg', 'local_refinement')
         # if self.local_refinement:
         #     self.local_refine_module = LocalRefinementModule(configer=configer)
+        self.uncertainty_aware_fea = self.configer.get('protoseg', 'uncertainty_aware_fea')
+        if self.uncertainty_aware_fea:
+            kernel = torch.ones((7,7))
+            kernel = torch.FloatTensor(kernel).unsqueeze(0).unsqueeze(0)
+            #kernel = np.repeat(kernel, 1, axis=0)
+            #! not trainable, only sum inside a [7 7] kernel
+            self.weight = nn.Parameter(data=kernel, requires_grad=False) 
         
     def get_uncertainty(self, mean, var, k):
         uncertainty = self.reparameterize(mean, var, k)
         uncertainty = torch.sigmoid(uncertainty)
         uncertainty = uncertainty.var(dim=0)  # [b k h w]
+        if self.configer.get('phase') == 'train':
+            # smooth the uncertainty map
+            # (l-7+2*3)/1+1=l
+            uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
+            uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
+            uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
         uncertainty = (uncertainty - uncertainty.min()) / (uncertainty.max() - uncertainty.min())
         
         return uncertainty
@@ -172,12 +185,6 @@ class ProbProtoSegHead(nn.Module):
             else:
                 Log.error('Similarity measure is invalid.')
         return sim_mat
-
-    def sample_gaussian_tensors(self, mu, sigma, num_samples):
-        eps = torch.randn(num_samples, mu.size(0), mu.size(1), dtype=mu.dtype, device=mu.device)
-        samples = eps.mul(sigma.unsqueeze(0)).add_(
-            mu.unsqueeze(0))
-        return samples  # [sample_time n k]
 
     def prototype_learning(self, sim_mat, out_seg, gt_seg, _c, _c_var):
         """
@@ -569,6 +576,10 @@ class ProbProtoSegHead(nn.Module):
 
                 if self.configer.get('iters') % 1000 == 0:
                     Log.info(proto_var)
+                
+                uncertainty = None  
+                if self.uncertainty_aware_fea:
+                    uncertainty = self.get_uncertainty(x.unsqueeze(0), x_var.unsqueeze(0), self.reparam_k)
 
                 if self.weighted_ppd_loss:
                     proto_var = self.proto_var.data.clone()
@@ -589,11 +600,11 @@ class ProbProtoSegHead(nn.Module):
                     loss_weight2 = loss_weight2.mean()
                     x = x.reshape(b_size, h_size, -1, k_size)
                     x_var = x_var.reshape(b_size, h_size, -1, k_size)
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var, 'uncertainty': uncertainty}
                 else:
                     x = x.reshape(b_size, h_size, -1, k_size)
                     x_var = x_var.reshape(b_size, h_size, -1, k_size)
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var, 'uncertainty': uncertainty}
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
         return out_seg

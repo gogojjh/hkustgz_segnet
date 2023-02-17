@@ -59,7 +59,7 @@ class SpatialGather_Module(nn.Module):
             return ocr_context
         else:
             batch_size, c, h, w = probs.size(0), probs.size(1), probs.size(2), probs.size(3)
-            probs = probs.view(batch_size, c, -1)
+            probs = probs.view(batch_size, c, -1) 
             feats = feats.view(batch_size, feats.size(1), -1)
             feats = feats.permute(0, 2, 1)  # batch x hw x c
             probs = F.softmax(self.scale * probs, dim=2)  # batch x k x hw
@@ -191,6 +191,7 @@ class _ObjectAttentionBlock(nn.Module):
                 bg_sim_map = F.normalize(bg_sim_map, p=1, dim=-1)
             sim_map = F.normalize(sim_map, p=1, dim=-1)
         else:
+            #! similarity between pixel feature and region representation
             sim_map = torch.matmul(query, key)
             sim_map = (self.key_channels ** -.5) * sim_map
             sim_map = F.softmax(sim_map, dim=-1)
