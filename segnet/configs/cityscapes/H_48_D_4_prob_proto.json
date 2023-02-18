@@ -167,6 +167,8 @@
 		"boundary_loss_weight": 0.01,
 		"kl_loss_weight": 0.0008,
 		"proj_dim": 512,
+		"key_dim": 256,
+		"context_dim": 512,
 		"use_boundary": false,
 		"boundary_head_mid_channel": 128,
 		"bin_size_h": 4,

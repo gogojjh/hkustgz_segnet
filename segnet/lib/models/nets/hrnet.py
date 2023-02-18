@@ -190,22 +190,29 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
 
         self.mask_norm = nn.LayerNorm(self.num_classes)
-        
+
         if self.use_pmm:
             self.pmm_k = self.configer.get('pmm', 'pmm_k')
             self.stage_num = self.configer.get('pmm', 'stage_num')
             self.pmm = PMMs(configer=configer)
         if self.use_attention:
             dropout = 0.1
-            self.transformer = build_transformer(self.proj_dim, dropout, nheads=8, dim_feedforward=2048, enc_layers=3, dec_layers=3, pre_norm=True)
+            self.transformer = build_transformer(
+                self.proj_dim, dropout, nheads=8, dim_feedforward=2048, enc_layers=3, dec_layers=3,
+                pre_norm=True)
             self.position_encoding = build_position_encoding(self.proj_dim, 'v2')
         self.uncertainty_aware_fea = self.configer.get('protoseg', 'uncertainty_aware_fea')
         self.uncertainty_random_mask = self.configer.get('protoseg', 'uncertainty_random_mask')
         self.use_context = self.configer.get('protoseg', 'use_context')
         if self.use_context:
-            from segnet.lib.models.modules.object_contextual_block import SpatialGather_0CR_Module
+            from lib.models.modules.object_contextual_block import SpatialGather_0CR_Module, ContextRelation_Module
+            self.context_dim = self.configer.get('protoseg', 'context_dim')
+            self.conv3x3 = nn.Sequential(
+                nn.Conv2d(self.proj_dim, self.context_dim, kernel_size=3, stride=1, padding=1),
+                ModuleHelper.BNReLU(
+                    self.context_dim, bn_type=self.configer.get('network', 'bn_type')),)
             self.spatial_gather_module = SpatialGather_0CR_Module(configer=configer)
-            
+            self.context_relation_module = ContextRelation_Module(configer=configer)
 
     def forward(self, x_, gt_semantic_seg=None, gt_boundary=None, pretrain_prototype=False):
         x = self.backbone(x_)
@@ -229,62 +236,69 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         c = self.proj_head(c)
 
         c_var = None
-        
+
         if self.use_uncertainty:
             if self.bayes_uncertainty:
                 c_mean, c_var = self.bayes_uncertainty_head(c)
             else:
                 c_var = self.uncertainty_head(c)
-                c_mean = c # self.proj
+                c_mean = c  # self.proj
             c_var = torch.exp(c_var)
         else:
             c_mean = c
-        
+
         c = rearrange(c, 'b c h w -> (b h w) c')
         c = self.feat_norm(c)  # ! along channel dimension
         c = l2_normalize(c)  # ! l2_norm along num_class dimension
         c = rearrange(c, '(b h w) c -> b c h w',
                       h=gt_size[0], w=gt_size[1])
-        
+
         c_mean = rearrange(c_mean, 'b c h w -> (b h w) c')
         c_mean = self.feat_norm(c_mean)  # ! along channel dimension
         c_mean = l2_normalize(c_mean)  # ! l2_norm along num_class dimension
         c_mean = rearrange(c_mean, '(b h w) c -> b c h w',
-                      h=gt_size[0], w=gt_size[1])
-        
+                           h=gt_size[0], w=gt_size[1])
+
         boundary_pred = None
         preds = self.prob_seg_head(
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
-        
+
         if self.use_context:
-            prob_map = preds['logits'] 
-            prob_map = rearrange(prob_map, 'n l -> b l h w', b=b, h=h, w=w)
-            cls_center = self.spatial_gather_module(c, prob_map) # [b c/(c m) k]
-            
-        if self.uncertainty_aware_fea and self.configer.get('phase') == 'train':
-            uncertainty = preds['uncertainty']
-            c *= (1 - uncertainty) # ignore the uncertain pixels during training
-        if self.uncertainty_random_mask and self.configer.get('phase') == 'train':
-            # pixels with large uncertainty are masked out
-            rand_mask = uncertainty < torch.Tensor(np.random.random(uncertainty.size()).cuda())
-            c *= rand_mask.float()
-            
-        
-            
+            c = self.conv3x3(c)
+
+            c = rearrange(c, 'b c h w -> (b h w) c')
+            c = self.feat_norm(c)  # ! along channel dimension
+            c = l2_normalize(c)  # ! l2_norm along num_class dimension
+            c = rearrange(c, '(b h w) c -> b c h w',
+                          h=gt_size[0], w=gt_size[1])
+
+            prob_map = preds['logits']
+            prob_map = prob_map.reshape(b, -1, h, w)
+            context = self.spatial_gather_module(c, prob_map)  # [b c/(c m) k]
+
+            if self.uncertainty_aware_fea and self.configer.get('phase') == 'train':
+                uncertainty = preds['uncertainty']
+                c *= (1 - uncertainty)  # ignore the uncertain pixels during training
+                if self.uncertainty_random_mask and self.configer.get('phase') == 'train':
+                    # pixels with large uncertainty are masked out
+                    rand_mask = uncertainty < torch.from_numpy(
+                        np.random.random(uncertainty.size())).cuda()
+                    c *= rand_mask.float()
+            context_c, attention_weight = self.context_relation_module(c, context)
+
         if self.use_attention:
-            #c:[b c h w], mask:[b h w](False)
-            c, mask = mask_from_tensor(c) 
-            position_encoding = self.position_encoding(c, mask).cuda() #[b proj_dim h w]
-            
+            # c:[b c h w], mask:[b h w](False)
+            c, mask = mask_from_tensor(c)
+            position_encoding = self.position_encoding(c, mask).cuda()  # [b proj_dim h w]
+
             # gmm_proto[0]: [b self.proj 1 1], [b (h w) num_proto]
             gmm_proto, prob_map = self.pmm(c)
-            gmm_proto = torch.stack(gmm_proto, dim=3).squeeze(-1) # [b self.proj 1 num_proto]
-            
-            #todo debug
+            gmm_proto = torch.stack(gmm_proto, dim=3).squeeze(-1)  # [b self.proj 1 num_proto]
+
+            # todo debug
             # position_encoding = torch.bmm(position_encoding.flatten(2), prob_map).unsqueeze(2)
             c_attn = self.transformer(gmm_proto, c, position_encoding)
-            
 
         del c, c_var
 
@@ -748,7 +762,7 @@ class HRNet_W48_OCR_B(nn.Module):
             h, w), mode="bilinear", align_corners=True)
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
-        out_aux = self.aux_head(feats) #! supervised by cross-entropy loss
+        out_aux = self.aux_head(feats)  # ! supervised by cross-entropy loss
 
         feats = self.conv3x3(feats)
 

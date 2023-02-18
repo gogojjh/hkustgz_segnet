@@ -78,16 +78,18 @@ class ProbProtoSegHead(nn.Module):
         #     self.local_refine_module = LocalRefinementModule(configer=configer)
         self.uncertainty_aware_fea = self.configer.get('protoseg', 'uncertainty_aware_fea')
         if self.uncertainty_aware_fea:
-            kernel = torch.ones((7,7))
+            kernel = torch.ones((7, 7))
             kernel = torch.FloatTensor(kernel).unsqueeze(0).unsqueeze(0)
-            #kernel = np.repeat(kernel, 1, axis=0)
+            # kernel = np.repeat(kernel, 1, axis=0)
             #! not trainable, only sum inside a [7 7] kernel
-            self.weight = nn.Parameter(data=kernel, requires_grad=False) 
-        
-    def get_uncertainty(self, mean, var, k):
-        uncertainty = self.reparameterize(mean, var, k)
+            self.weight = nn.Parameter(data=kernel, requires_grad=False)
+
+    def get_uncertainty(self, mean, var, k, b, h):
+        uncertainty = self.reparameterize(mean, var, k)  # [reparam_k (h w) k]
         uncertainty = torch.sigmoid(uncertainty)
-        uncertainty = uncertainty.var(dim=0)  # [b k h w]
+        uncertainty = uncertainty.var(dim=0)  # [(h w) k]
+        uncertainty = rearrange(uncertainty, '(b h w) c -> b c h w', b=b, h=h)
+        uncertainty = torch.mean(uncertainty, dim=1, keepdim=True)
         if self.configer.get('phase') == 'train':
             # smooth the uncertainty map
             # (l-7+2*3)/1+1=l
@@ -95,20 +97,17 @@ class ProbProtoSegHead(nn.Module):
             uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
             uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
         uncertainty = (uncertainty - uncertainty.min()) / (uncertainty.max() - uncertainty.min())
-        
+
         return uncertainty
-        
+
     def reparameterize(self, mu, var, k=1, protos=False):
-        ''' 
-        mu: [1 b c h w]
-        '''
         sample_z = []
         for _ in range(k):
             # std = logvar.mul(0.5).exp_()
             std = torch.sqrt(var)
             eps = std.data.new(std.size()).normal_()
             z = eps.mul(std).add_(mu)
-            
+
             if not protos:
                 z = rearrange(z, 'l n k -> (l n) k')
             else:
@@ -119,10 +118,10 @@ class ProbProtoSegHead(nn.Module):
                 z = z.reshape(1, -1, self.proj_dim)
             else:
                 z = z.reshape(1, self.num_classes, self.num_prototype, -1)
-            
+
             sample_z.append(z)
         sample_z = torch.cat(sample_z, dim=0)
-        
+
         return sample_z
 
     def compute_similarity(self, x, x_var=None, sim_measure='wasserstein'):
@@ -159,20 +158,24 @@ class ProbProtoSegHead(nn.Module):
                 sim_mat = sim_mat.permute(2, 0, 1)  # [n c m]
                 sim_mat = -0.5 * sim_mat
             elif sim_measure == 'match_prob':
-                x = self.reparameterize(x.unsqueeze(0), x_var.unsqueeze(0), self.reparam_k, protos=False) # [sample_num n k]
-                proto_mean = self.reparameterize(proto_mean.unsqueeze(0), proto_var.unsqueeze(0), self.reparam_k, protos=True) # [sample_num c m k]
+                x = self.reparameterize(x.unsqueeze(0), x_var.unsqueeze(
+                    0), self.reparam_k, protos=False)  # [sample_num n k]
+                proto_mean = self.reparameterize(
+                    proto_mean.unsqueeze(0),
+                    proto_var.unsqueeze(0),
+                    self.reparam_k, protos=True)  # [sample_num c m k]
                 x = repeat(x, 's n k -> s r n k', r=self.reparam_k)
                 proto_mean = repeat(proto_mean, 's c m k -> r s c m k', r=self.reparam_k)
-                
+
                 # [reparam_k reparam_k n m c]
-                sim_mat = torch.einsum('srnd,zjkmd->sjnmk', x, proto_mean) 
+                sim_mat = torch.einsum('srnd,zjkmd->sjnmk', x, proto_mean)
                 sim_mat = rearrange(sim_mat, 'r l n m c -> (r l) n m c')
                 # sim_mat = - self.init_a * (2 - sim_mat) + self.init_b
                 # sim_mat = torch.sigmoid(sim_mat)
-                
-                sim_mat = torch.mean(sim_mat, dim=0) # [n m c]
-                sim_mat = sim_mat.permute(0, 2, 1) # [n c m]
-                
+
+                sim_mat = torch.mean(sim_mat, dim=0)  # [n m c]
+                sim_mat = sim_mat.permute(0, 2, 1)  # [n c m]
+
             del x_var, x, proto_mean, proto_var
 
         else:
@@ -277,7 +280,8 @@ class ProbProtoSegHead(nn.Module):
                         protos[i, n != 0, :] = momentum_update(
                             old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
 
-                        f_v = (m_q.transpose(0, 1) @ (var_q + (c_q ** 2))) / (m_q_sum.unsqueeze(-1) +1e-3) - ((m_q.transpose(0, 1) @ c_q) / (m_q_sum.unsqueeze(-1) + 1e-3)) ** 2
+                        f_v = (m_q.transpose(0, 1) @ (var_q + (c_q ** 2))) / (m_q_sum.unsqueeze(-1) +
+                                                                              1e-3) - ((m_q.transpose(0, 1) @ c_q) / (m_q_sum.unsqueeze(-1) + 1e-3)) ** 2
                         assert torch.count_nonzero(torch.isinf(f_v)) == 0
                         #! normalize for f_v
                         # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
@@ -571,24 +575,29 @@ class ProbProtoSegHead(nn.Module):
 
             sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
 
+            uncertainty = None
+            if self.uncertainty_aware_fea:
+                uncertainty = self.get_uncertainty(
+                    x.unsqueeze(0),
+                    x_var.unsqueeze(0),
+                    self.reparam_k,
+                    b_size, h_size)
+
             if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
 
                 if self.configer.get('iters') % 1000 == 0:
                     Log.info(proto_var)
-                
-                uncertainty = None  
-                if self.uncertainty_aware_fea:
-                    uncertainty = self.get_uncertainty(x.unsqueeze(0), x_var.unsqueeze(0), self.reparam_k)
 
                 if self.weighted_ppd_loss:
                     proto_var = self.proto_var.data.clone()
-                    
+
                     # normalize variance
                     x_var_norm = torch.exp(torch.sigmoid(torch.log(x_var)))
                     proto_var_norm = torch.exp(torch.sigmoid(torch.log(proto_var)))
-                    
-                    loss_weight1 = torch.einsum('nk,cmk->cmn', x_var_norm, proto_var_norm)  # [c m n]
+
+                    loss_weight1 = torch.einsum('nk,cmk->cmn', x_var_norm,
+                                                proto_var_norm)  # [c m n]
                     loss_weight1 = (loss_weight1 - loss_weight1.min()
                                     ) / (loss_weight1.max() - loss_weight1.min())
                     loss_weight1 = loss_weight1.mean()
