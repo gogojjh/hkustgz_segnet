@@ -17,21 +17,16 @@ import torch.distributed as dist
 
 from lib.models.backbones.backbone_selector import BackboneSelector
 from lib.models.tools.module_helper import ModuleHelper
-from lib.utils.tools.logger import Logger as Log
 from lib.models.modules.hanet_attention import HANet_Conv
 from lib.models.modules.contrast import momentum_update, l2_normalize, ProjectionHead
 from lib.models.modules.uncertainty_head import UncertaintyHead
 from lib.models.modules.sinkhorn import distributed_sinkhorn
 from lib.models.modules.prob_proto_seg_head import ProbProtoSegHead
-from lib.models.modules.boundary_head import BoundaryHead
 from lib.models.modules.bayesian_uncertainty_head import BayesianUncertaintyHead
-from lib.models.modules.caa_head import CAAHead
-from lib.models.modules.boundary_attention_module import BoundaryAttentionModule
 from lib.models.modules.pmm_module import PMMs
 from lib.models.modules.transformer import build_transformer
 from lib.models.modules.position_encoding import build_position_encoding
 from lib.utils.util import mask_from_tensor
-# from lib.models.modules.attention_uncertainty_head import UncertaintyHead
 
 from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
@@ -161,17 +156,7 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
-        in_channels = 720
-        out_channels = 720
         self.proj_dim = self.configer.get('protoseg', 'proj_dim')
-
-        self.cls_head = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels,
-                      kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(
-                out_channels, bn_type=self.configer.get('network', 'bn_type')),
-            nn.Dropout2d(0.10)
-        )
 
         if self.use_uncertainty:
             if self.bayes_uncertainty:
@@ -191,6 +176,16 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         self.mask_norm = nn.LayerNorm(self.num_classes)
 
+        in_channels = self.proj_dim
+        self.cls_head = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels,
+                      kernel_size=3, stride=1, padding=1),
+            ModuleHelper.BNReLU(
+                in_channels, bn_type=self.configer.get('network', 'bn_type')),
+            nn.Conv2d(in_channels, self.num_classes, kernel_size=1,
+                      stride=1, padding=0, bias=True)
+        )
+
         if self.use_pmm:
             self.pmm_k = self.configer.get('pmm', 'pmm_k')
             self.stage_num = self.configer.get('pmm', 'stage_num')
@@ -201,9 +196,18 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
                 self.proj_dim, dropout, nheads=8, dim_feedforward=2048, enc_layers=3, dec_layers=3,
                 pre_norm=True)
             self.position_encoding = build_position_encoding(self.proj_dim, 'v2')
+
         self.uncertainty_aware_fea = self.configer.get('protoseg', 'uncertainty_aware_fea')
+        if self.uncertainty_aware_fea:
+            kernel = torch.ones((7, 7))
+            kernel = torch.FloatTensor(kernel).unsqueeze(0).unsqueeze(0)
+            # kernel = np.repeat(kernel, 1, axis=0)
+            #! not trainable, only sum inside a [7 7] kernel
+            self.weight = nn.Parameter(data=kernel, requires_grad=False)
+
         self.uncertainty_random_mask = self.configer.get('protoseg', 'uncertainty_random_mask')
         self.use_context = self.configer.get('protoseg', 'use_context')
+        self.reparam_k = self.configer.get('protoseg', 'reparam_k')
         if self.use_context:
             from lib.models.modules.object_contextual_block import SpatialGather_0CR_Module, ContextRelation_Module
             self.context_dim = self.configer.get('protoseg', 'context_dim')
@@ -213,6 +217,33 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
                     self.context_dim, bn_type=self.configer.get('network', 'bn_type')),)
             self.spatial_gather_module = SpatialGather_0CR_Module(configer=configer)
             self.context_relation_module = ContextRelation_Module(configer=configer)
+
+    def reparameterize(self, mu, var, k=1):
+        sample_z = []
+        for _ in range(k):
+            # std = logvar.mul(0.5).exp_()
+            std = torch.sqrt(var)
+            eps = std.data.new(std.size()).normal_()
+            z = eps.mul(std).add_(mu)
+            sample_z.append(z)
+        sample_z = torch.cat(sample_z, dim=0)
+
+        return sample_z
+
+    def get_uncertainty(self, mean, var, k):
+        uncertainty = self.reparameterize(mean, var, k)
+        uncertainty = torch.sigmoid(uncertainty)
+        uncertainty = uncertainty.var(dim=0)
+        uncertainty = torch.mean(uncertainty, dim=1, keepdim=True)
+        if self.configer.get('phase') == 'train':
+            # smooth the uncertainty map
+            # (l-7+2*3)/1+1=l
+            uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
+            uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
+            uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
+        uncertainty = (uncertainty - uncertainty.min()) / (uncertainty.max() - uncertainty.min())
+
+        return uncertainty
 
     def forward(self, x_, gt_semantic_seg=None, gt_boundary=None, pretrain_prototype=False):
         x = self.backbone(x_)
@@ -232,7 +263,6 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         gt_size = c.size()[2:]
 
-        # c = self.cls_head(c)  # 720
         c = self.proj_head(c)
 
         c_var = None
@@ -250,10 +280,9 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         c = rearrange(c, '(b h w) c -> b c h w',
                       h=gt_size[0], w=gt_size[1])
 
-        boundary_pred = None
-        preds = self.prob_seg_head(
-            c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
-            gt_boundary=gt_boundary)
+        #! coarse seg
+        c_coarse = self.reparameterize(c.unsqueeze(0), c_var.unsqueeze(0), k=1).squeeze(0)
+        c_coarse = self.cls_head(c_coarse)
 
         if self.use_context:
             c = self.conv3x3(c)
@@ -264,19 +293,35 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             c = rearrange(c, '(b h w) c -> b c h w',
                           h=gt_size[0], w=gt_size[1])
 
-            prob_map = preds['logits']
-            prob_map = prob_map.reshape(b, -1, h, w)
-            context = self.spatial_gather_module(c, prob_map)  # [b c/(c m) k]
+            context = self.spatial_gather_module(c, c_coarse)  # [b c/(c m) k]
 
             if self.uncertainty_aware_fea and self.configer.get('phase') == 'train':
-                uncertainty = preds['uncertainty']
+                uncertainty = self.get_uncertainty(
+                    c.unsqueeze(0),
+                    c_var.unsqueeze(0),
+                    self.reparam_k)
                 c *= (1 - uncertainty)  # ignore the uncertain pixels during training
                 if self.uncertainty_random_mask and self.configer.get('phase') == 'train':
                     # pixels with large uncertainty are masked out
                     rand_mask = uncertainty < torch.from_numpy(
                         np.random.random(uncertainty.size())).cuda()
                     c *= rand_mask.float()
-            context_c, attention_weight = self.context_relation_module(c, context)
+            c = self.context_relation_module(c, context)
+
+            c = self.conv3x3(c)
+
+            c = rearrange(c, 'b c h w -> (b h w) c')
+            c = self.feat_norm(c)  # ! along channel dimension
+            c = l2_normalize(c)  # ! l2_norm along num_class dimension
+            c = rearrange(c, '(b h w) c -> b c h w',
+                          h=gt_size[0], w=gt_size[1])
+
+        boundary_pred = None
+        preds = self.prob_seg_head(
+            c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
+            gt_boundary=gt_boundary)
+
+        preds['coarse_seg'] = c_coarse
 
         if self.use_attention:
             # c:[b c h w], mask:[b h w](False)

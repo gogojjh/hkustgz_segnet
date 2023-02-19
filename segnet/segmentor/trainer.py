@@ -15,10 +15,6 @@ from __future__ import print_function
 
 import time
 
-import os
-import cv2
-import pdb
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -267,6 +263,8 @@ class Trainer(object):
                         loss['prob_ppc_loss']) / get_world_size()
                     prob_ppd_loss = reduce_tensor(
                         loss['prob_ppd_loss']) / get_world_size()
+                    coarse_seg_loss = reduce_tensor(
+                        loss['coarse_seg_loss']) / get_world_size()
                     # kl_loss = reduce_tensor(
                     #     loss['kl_loss']) / get_world_size()
                     display_loss = reduce_tensor(
@@ -321,7 +319,7 @@ class Trainer(object):
                     'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
                     'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
                     'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f} prob_ppd_loss={prob_ppd_loss:.5f}'.
+                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f} prob_ppd_loss={prob_ppd_loss:.5f} coarse_seg_loss={coarse_seg_loss:.5f}'.
                     format(
                         self.configer.get('epoch'),
                         self.configer.get('iters'),
@@ -331,7 +329,8 @@ class Trainer(object):
                         batch_time=self.batch_time, foward_time=self.foward_time,
                         backward_time=self.backward_time, loss_time=self.loss_time,
                         data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
-                        prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss))
+                        prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss,
+                        coarse_seg_loss=coarse_seg_loss))
 
                 self.batch_time.reset()
                 self.foward_time.reset()

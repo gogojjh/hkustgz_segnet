@@ -17,7 +17,6 @@ from lib.utils.tools.logger import Logger as Log
 from lib.utils.tools.configer import Configer
 from lib.utils.distributed import get_rank, is_distributed
 
-# warnings.filterwarnings('ingore')
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 
@@ -126,7 +125,7 @@ if __name__ == "__main__":
     parser.add_argument('--is_warm', type=str2bool, nargs='?', default=False,
                         dest='lr:is_warm', help='Whether to warm training.')
 
-    # ***********  Params for display.  **********                                                                                                 
+    # ***********  Params for display.  **********
     parser.add_argument('--max_epoch', default=None, type=int,
                         dest='solver:max_epoch', help='The max epoch of training.')
     parser.add_argument('--max_iters', default=None, type=int,
@@ -233,19 +232,19 @@ if __name__ == "__main__":
         if is_distributed():
             if get_rank() == 0:
                 wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
-                        name=wb_name, mode=configer.get('wandb', 'mode'),
-                        settings=wandb.Settings(start_method='fork'))
+                           name=wb_name, mode=configer.get('wandb', 'mode'),
+                           settings=wandb.Settings(start_method='fork'))
                 wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
                 wandb.save(args_parser.configs)
 
         else:
             wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
-                    name=wb_name, mode=configer.get('wandb', 'mode'),
-                    settings=wandb.Settings(start_method='fork'))
+                       name=wb_name, mode=configer.get('wandb', 'mode'),
+                       settings=wandb.Settings(start_method='fork'))
             wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
             wandb.save(args_parser.configs)
-    
-    #! for resume training    
+
+    #! for resume training
     # if configer.get('network', 'resume') is not None:
     #     configer.update(('phase',), 'train')
     #     configer.update(('network', 'resume_continue'), True)

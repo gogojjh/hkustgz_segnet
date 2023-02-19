@@ -19,19 +19,17 @@ from einops import rearrange, repeat
 
 
 # class FeatureUncertaintyLoss(nn.Module, ABC):
-#     ''' 
+#     '''
 #     Robust Person Re-identification by Modelling Feature Uncertainty
 #     '''
 
 #     def __init__(self, configer):
 #         super(FeatureUncertaintyLoss, self).__init__()
 #         self.configer = configer
-        
-#         self.uncer_gamma = self.configer.get('protoseg' 'uncer_gamma')
-        
-#     def forward(x_var):
-        
 
+#         self.uncer_gamma = self.configer.get('protoseg' 'uncer_gamma')
+
+#     def forward(x_var):
 
 
 class ConfidenceLoss(nn.Module, ABC):
@@ -268,6 +266,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
         self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
         self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
+        self.coarse_seg_weight = self.configer.get('protoseg', 'coarse_seg_weight')
 
         self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
 
@@ -293,7 +292,6 @@ class PixelProbContrastLoss(nn.Module, ABC):
         self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
         self.kl_loss = KLLoss(configer=configer)
         self.kl_loss_weight = self.configer.get('protoseg', 'kl_loss_weight')
-        
 
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
@@ -331,47 +329,21 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
-            
-            x_mean = preds['x_mean']
-            x_var = preds['x_var']
-            # kl_loss = self.kl_loss(x_mean, x_var, target)
-
-            # if self.use_boundary and gt_boundary is not None:
-            #     h_t, w_t = seg.size(-2), seg.size(-1)
-            #     contrast_logits = contrast_logits.reshape(b, h_t, w_t, -1) # [b h w (c m)]
-
-            #     if torch.count_nonzero(gt_boundary) == 0:
-            #         bound_contrast_loss = prob_ppd_loss * 0
-            #     else:
-            #         bound_contrast_loss = self.bound_contrast_loss(contrast_logits, gt_boundary.squeeze(1), target)
-
-            # boundary prototype contrastive learning
-
-            # assert 'boundary' in preds
-
-            # h_bound, w_bound = gt_boundary.size(1), gt_boundary.size(2)
-
-            # boundary_pred = preds['boundary']  # [b 2 h w]
-            # boundary_pred = F.interpolate(input=boundary_pred,
-            #                               size=(h_bound, w_bound),
-            #                               mode='bilinear',
-            #                               align_corners=True)
-
-            # boundary_loss = self.boundary_loss(boundary_pred, gt_boundary, target)
 
             pred = F.interpolate(input=seg, size=(
                 h, w), mode='bilinear', align_corners=True)
 
             seg_loss = self.seg_criterion(pred, target)
 
-            # prob_ppc_weight = self.get_uncer_loss_weight()
+            coarse_pred = preds['coarse_seg']
+            coarse_seg_loss = self.seg_criterion(coarse_pred, target)
 
-            # loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.kl_loss_weight * kl_loss
-            loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss
+            loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
+                prob_ppd_loss + self.coarse_seg_weight * coarse_seg_loss
 
             assert not torch.isnan(loss)
 
-            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss}
+            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'coarse_seg_loss': coarse_seg_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(

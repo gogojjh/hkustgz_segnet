@@ -96,4 +96,4 @@ class ContextRelation_Module(nn.Module):
         context = context.view(batch_size, self.key_channels, *x.size()[2:])
         context = self.up_conv(context)
 
-        return context, sim_map
+        return context

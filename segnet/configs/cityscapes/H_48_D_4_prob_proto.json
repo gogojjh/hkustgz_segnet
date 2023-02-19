@@ -166,6 +166,7 @@
 		"prob_ppc_weight": 0.01,
 		"boundary_loss_weight": 0.01,
 		"kl_loss_weight": 0.0008,
+		"coarse_seg_weight": 0.1,
 		"proj_dim": 512,
 		"key_dim": 256,
 		"context_dim": 512,
@@ -185,7 +186,7 @@
 		"uncertainty_random_mask": true,
 		"local_refinement": false,
 		"local_size": 7,
-		"bayes_uncertainty": false,
+		"bayes_uncertainty": true,
 		"init_a": 5,
 		"init_b": 5
 	},

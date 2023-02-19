@@ -2,16 +2,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
-import numpy as np
-import gc
 
 from lib.utils.tools.logger import Logger as Log
 from lib.models.modules.contrast import momentum_update, l2_normalize
 from lib.models.modules.sinkhorn import distributed_sinkhorn
 from timm.models.layers import trunc_normal_
-from lib.utils.distributed import get_world_size, get_rank, is_distributed
+from lib.models.tools.module_helper import ModuleHelper
 from einops import rearrange, repeat
-# from lib.models.modules.local_refinement_module import LocalRefinementModule
 
 
 class ProbProtoSegHead(nn.Module):
@@ -53,7 +50,6 @@ class ProbProtoSegHead(nn.Module):
             self.num_classes, self.num_prototype, self.proj_dim), requires_grad=False)
         trunc_normal_(self.prototypes, std=0.02)
         if self.use_uncertainty:
-            #! sigma (not log(sigma))
             self.proto_var = nn.Parameter(torch.ones(
                 self.num_classes, self.num_prototype, self.proj_dim), requires_grad=False)
             #! weight between mean and variance when calculating similarity
@@ -73,32 +69,6 @@ class ProbProtoSegHead(nn.Module):
         self.attention_proto = self.configer.get('protoseg', 'attention_proto')
         if self.attention_proto:
             self.lamda_p = self.configer.get('protoseg', 'lamda_p')
-        self.local_refinement = self.configer.get('protoseg', 'local_refinement')
-        # if self.local_refinement:
-        #     self.local_refine_module = LocalRefinementModule(configer=configer)
-        self.uncertainty_aware_fea = self.configer.get('protoseg', 'uncertainty_aware_fea')
-        if self.uncertainty_aware_fea:
-            kernel = torch.ones((7, 7))
-            kernel = torch.FloatTensor(kernel).unsqueeze(0).unsqueeze(0)
-            # kernel = np.repeat(kernel, 1, axis=0)
-            #! not trainable, only sum inside a [7 7] kernel
-            self.weight = nn.Parameter(data=kernel, requires_grad=False)
-
-    def get_uncertainty(self, mean, var, k, b, h):
-        uncertainty = self.reparameterize(mean, var, k)  # [reparam_k (h w) k]
-        uncertainty = torch.sigmoid(uncertainty)
-        uncertainty = uncertainty.var(dim=0)  # [(h w) k]
-        uncertainty = rearrange(uncertainty, '(b h w) c -> b c h w', b=b, h=h)
-        uncertainty = torch.mean(uncertainty, dim=1, keepdim=True)
-        if self.configer.get('phase') == 'train':
-            # smooth the uncertainty map
-            # (l-7+2*3)/1+1=l
-            uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
-            uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
-            uncertainty = F.conv2d(uncertainty, self.weight, padding=3, groups=1)
-        uncertainty = (uncertainty - uncertainty.min()) / (uncertainty.max() - uncertainty.min())
-
-        return uncertainty
 
     def reparameterize(self, mu, var, k=1, protos=False):
         sample_z = []
@@ -170,11 +140,10 @@ class ProbProtoSegHead(nn.Module):
                 # [reparam_k reparam_k n m c]
                 sim_mat = torch.einsum('srnd,zjkmd->sjnmk', x, proto_mean)
                 sim_mat = rearrange(sim_mat, 'r l n m c -> (r l) n m c')
-                # sim_mat = - self.init_a * (2 - sim_mat) + self.init_b
-                # sim_mat = torch.sigmoid(sim_mat)
+                sim_mat = sim_mat.permute(0, 3, 1, 2)  # [(sample_k sample_k) c n m]
 
-                sim_mat = torch.mean(sim_mat, dim=0)  # [n m c]
-                sim_mat = sim_mat.permute(0, 2, 1)  # [n c m]
+                # sim_mat = torch.mean(sim_mat, dim=0)  # [n m c]
+                # sim_mat = sim_mat.permute(0, 2, 1)  # [n c m]
 
             del x_var, x, proto_mean, proto_var
 
@@ -533,6 +502,27 @@ class ProbProtoSegHead(nn.Module):
 
         return proto_target  # [n]
 
+    def calc_loss_weight(self, x_var):
+        proto_var = self.proto_var.data.clone()
+
+        # normalize variance
+        x_var_norm = torch.exp(torch.sigmoid(torch.log(x_var)))
+        proto_var_norm = torch.exp(torch.sigmoid(torch.log(proto_var)))
+
+        loss_weight1 = torch.einsum('nk,cmk->cmn', x_var_norm,
+                                    proto_var_norm)  # [c m n]
+        loss_weight1 = (loss_weight1 - loss_weight1.min()
+                        ) / (loss_weight1.max() - loss_weight1.min())
+        loss_weight1 = loss_weight1.mean()
+        # [n] + [c m 1] = [c m n]
+        loss_weight2 = torch.log(
+            x_var_norm).sum(-1) + torch.log(proto_var_norm).sum(-1, keepdim=True)
+        loss_weight2 = (loss_weight2 - loss_weight2.min()
+                        ) / (loss_weight2.max() - loss_weight2.min())
+        loss_weight2 = loss_weight2.mean()
+
+        return loss_weight1, loss_weight2
+
     def forward(self, x, x_var=None, gt_semantic_seg=None, boundary_pred=None, gt_boundary=None):
         ''' 
         boundary_pred: [(b h w) 2]
@@ -553,7 +543,12 @@ class ProbProtoSegHead(nn.Module):
         sim_mat = self.compute_similarity(
             x, x_var=x_var, sim_measure=self.sim_measure)
 
-        out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
+        if self.sim_measure == 'match_prob':
+            # [(sample_k sample_k) c n m]
+            out_seg = torch.max(sim_mat, dim=0)  # [c n m]
+            out_seg = torch.max(out_seg, dim=2)
+        else:
+            out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
         out_seg = self.mask_norm(out_seg)
         out_seg = rearrange(out_seg, '(b h w) c -> b c h w',
                             b=b_size, h=h_size)
@@ -575,14 +570,6 @@ class ProbProtoSegHead(nn.Module):
 
             sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
 
-            uncertainty = None
-            if self.uncertainty_aware_fea:
-                uncertainty = self.get_uncertainty(
-                    x.unsqueeze(0),
-                    x_var.unsqueeze(0),
-                    self.reparam_k,
-                    b_size, h_size)
-
             if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
 
@@ -590,30 +577,14 @@ class ProbProtoSegHead(nn.Module):
                     Log.info(proto_var)
 
                 if self.weighted_ppd_loss:
-                    proto_var = self.proto_var.data.clone()
-
-                    # normalize variance
-                    x_var_norm = torch.exp(torch.sigmoid(torch.log(x_var)))
-                    proto_var_norm = torch.exp(torch.sigmoid(torch.log(proto_var)))
-
-                    loss_weight1 = torch.einsum('nk,cmk->cmn', x_var_norm,
-                                                proto_var_norm)  # [c m n]
-                    loss_weight1 = (loss_weight1 - loss_weight1.min()
-                                    ) / (loss_weight1.max() - loss_weight1.min())
-                    loss_weight1 = loss_weight1.mean()
-                    # [n] + [c m 1] = [c m n]
-                    loss_weight2 = torch.log(
-                        x_var_norm).sum(-1) + torch.log(proto_var_norm).sum(-1, keepdim=True)
-                    loss_weight2 = (loss_weight2 - loss_weight2.min()
-                                    ) / (loss_weight2.max() - loss_weight2.min())
-                    loss_weight2 = loss_weight2.mean()
+                    loss_weight1, loss_weight2 = self.calc_loss_weight(x_var)
                     x = x.reshape(b_size, h_size, -1, k_size)
                     x_var = x_var.reshape(b_size, h_size, -1, k_size)
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var, 'uncertainty': uncertainty}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var}
                 else:
                     x = x.reshape(b_size, h_size, -1, k_size)
                     x_var = x_var.reshape(b_size, h_size, -1, k_size)
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var, 'uncertainty': uncertainty}
+                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
         return out_seg
