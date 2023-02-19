@@ -239,25 +239,16 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         if self.use_uncertainty:
             if self.bayes_uncertainty:
-                c_mean, c_var = self.bayes_uncertainty_head(c)
+                c, c_var = self.bayes_uncertainty_head(c)
             else:
                 c_var = self.uncertainty_head(c)
-                c_mean = c  # self.proj
             c_var = torch.exp(c_var)
-        else:
-            c_mean = c
 
         c = rearrange(c, 'b c h w -> (b h w) c')
         c = self.feat_norm(c)  # ! along channel dimension
         c = l2_normalize(c)  # ! l2_norm along num_class dimension
         c = rearrange(c, '(b h w) c -> b c h w',
                       h=gt_size[0], w=gt_size[1])
-
-        c_mean = rearrange(c_mean, 'b c h w -> (b h w) c')
-        c_mean = self.feat_norm(c_mean)  # ! along channel dimension
-        c_mean = l2_normalize(c_mean)  # ! l2_norm along num_class dimension
-        c_mean = rearrange(c_mean, '(b h w) c -> b c h w',
-                           h=gt_size[0], w=gt_size[1])
 
         boundary_pred = None
         preds = self.prob_seg_head(

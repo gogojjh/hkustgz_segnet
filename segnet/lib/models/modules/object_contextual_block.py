@@ -76,8 +76,10 @@ class ContextRelation_Module(nn.Module):
         query = self.query_conv(x).view(batch_size, self.key_channels, -1)  # [b k (h w)]
         query = query.permute(0, 2, 1)  # [b (h w) k]
         context = context.permute(0, 2, 1)
-        key = self.key_conv(context).view(batch_size, self.key_channels, -1)  # [b k c]
-        value = self.value_conv(context)
+        key = self.key_conv(context.unsqueeze(-1).float()).view(batch_size,
+                                                                self.key_channels, -1)  # [b k c]
+        value = self.value_conv(context.unsqueeze(-1).float()).view(batch_size,
+                                                                    self.key_channels, -1)
         value = value.permute(0, 2, 1)  # [b c k]
 
         #! similarity between pixel feature and region representation (attention weight)
