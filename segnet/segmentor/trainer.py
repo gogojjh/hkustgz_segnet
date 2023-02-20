@@ -317,7 +317,7 @@ class Trainer(object):
                     'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
                     'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
                     'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f} prob_ppd_loss={prob_ppd_loss:.5f} coarse_seg_loss={coarse_seg_loss:.5f} kl_loss={kl_loss:.5f}'.
+                    'seg_loss={seg_loss:.5f} prob_ppc_loss={prob_ppc_loss:.5f} prob_ppd_loss={prob_ppd_loss:.5f} coarse_seg_loss={coarse_seg_loss:.5f}'.
                     format(
                         self.configer.get('epoch'),
                         self.configer.get('iters'),

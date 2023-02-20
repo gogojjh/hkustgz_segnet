@@ -563,7 +563,7 @@ class ProbProtoSegHead(nn.Module):
             if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
 
-                if self.configer.get('iters') % 100 == 0 and \
+                if self.configer.get('iters') % 2000 == 0 and \
                         (not is_distributed() or get_rank() == 0):
                     Log.info(proto_var)
 
