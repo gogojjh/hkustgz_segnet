@@ -8,8 +8,12 @@ from torch.nn import Parameter
 
 
 class UncertaintyHead(nn.Module):   # feature -> log(sigma^2)
-    def __init__(self, in_feat=256, out_feat=256):
+    def __init__(self, configer):
         super(UncertaintyHead, self).__init__()
+        self.configer = configer
+
+        out_feat = 720
+        in_feat = 720
         self.fc1 = Parameter(torch.Tensor(out_feat, in_feat))
         self.bn1 = nn.BatchNorm2d(in_feat, affine=True)
         self.relu = nn.ReLU()

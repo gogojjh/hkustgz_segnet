@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pdb
 
+
 class PMMs(nn.Module):
     '''Prototype Mixture Models
     Arguments:
@@ -15,23 +16,23 @@ class PMMs(nn.Module):
     def __init__(self, configer):
         super(PMMs, self).__init__()
         self.configer = configer
-        
+
         self.stage_num = self.configer.get('pmm', 'stage_num')
         k = self.configer.get('pmm', 'pmm_k')
         self.num_pro = k
         c = self.configer.get('protoseg', 'proj_dim')
-        mu = torch.Tensor(1, c, k)#.cuda()
+        mu = torch.Tensor(1, c, k)  # .cuda()
         mu.normal_(0, math.sqrt(2. / k))  # Init mu
         self.mu = self._l2norm(mu, dim=1)
         self.kappa = self.configer.get('pmm', 'kappa')
-        #self.register_buffer('mu', mu)
+        # self.register_buffer('mu', mu)
 
     def forward(self, support_feature):
         # [b num_proto proj_dim], [b (h w) num_proto]
         prototypes, z_ = self.generate_prototype(support_feature)
-        #Prob_map, P = self.discriminative_model(query_feature, mu_f, mu_b)
+        # Prob_map, P = self.discriminative_model(query_feature, mu_f, mu_b)
 
-        return prototypes, z_#, Prob_map
+        return prototypes, z_  # , Prob_map
 
     def _l2norm(self, inp, dim):
         '''Normlize the inp tensor with l2-norm.
@@ -45,7 +46,7 @@ class PMMs(nn.Module):
         '''
         return inp / (1e-6 + inp.norm(dim=dim, keepdim=True))
 
-    def EM(self,x):
+    def EM(self, x):
         '''
         EM method
         :param x: feauture  b * c * n
@@ -58,10 +59,10 @@ class PMMs(nn.Module):
             for i in range(self.stage_num):
                 # E STEP:
                 # x: [b proj_dim (h w)] mu: [b proj_dim num_proto]
-                z = self.Kernel(x, mu) # [b (h w) num_proto]
+                z = self.Kernel(x, mu)  # [b (h w) num_proto]
                 z = F.softmax(z, dim=2)  # b * n * k
                 # M STEP:
-                z_ = z / (1e-6 + z.sum(dim=1, keepdim=True)) # [b (h w) num_proto]
+                z_ = z / (1e-6 + z.sum(dim=1, keepdim=True))  # [b (h w) num_proto]
                 mu = torch.bmm(x, z_)  # b * c * k [b proj_dim num_proto]
 
                 mu = self._l2norm(mu, dim=1)
@@ -76,16 +77,16 @@ class PMMs(nn.Module):
 
         return z
 
-    def get_prototype(self,x):
+    def get_prototype(self, x):
         b, c, h, w = x.size()
         x = x.view(b, c, h * w)  # b * c * n
-        mu, z_ = self.EM(x) # b * k * c [b num_proto proj_dim], [b (h w) num_proto]
+        mu, z_ = self.EM(x)  # b * k * c [b num_proto proj_dim], [b (h w) num_proto]
 
         return mu, z_
 
     def generate_prototype(self, z):
-        mu_f, z_ = self.get_prototype(z) # [b num_proto proj_dim], [b (h w) num_proto]
-        
+        mu_f, z_ = self.get_prototype(z)  # [b num_proto proj_dim], [b (h w) num_proto]
+
         mu_ = []
         for i in range(self.num_pro):
             mu_.append(mu_f[:, i, :].unsqueeze(dim=2).unsqueeze(dim=3))
@@ -108,9 +109,9 @@ class PMMs(nn.Module):
 
         P = z.permute(0, 2, 1)
 
-        P = P.view(b, self.num_pro * 2, h, w) #  b * k * w * h  probability map
-        P_f = torch.sum(P[:, 0:self.num_pro], dim=1).unsqueeze(dim=1) # foreground
-        P_b = torch.sum(P[:, self.num_pro:], dim=1).unsqueeze(dim=1) # background
+        P = P.view(b, self.num_pro * 2, h, w)  # b * k * w * h  probability map
+        P_f = torch.sum(P[:, 0:self.num_pro], dim=1).unsqueeze(dim=1)  # foreground
+        P_b = torch.sum(P[:, self.num_pro:], dim=1).unsqueeze(dim=1)  # background
 
         Prob_map = torch.cat([P_b, P_f], dim=1)
 

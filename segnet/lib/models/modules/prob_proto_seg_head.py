@@ -7,8 +7,8 @@ from lib.utils.tools.logger import Logger as Log
 from lib.models.modules.contrast import momentum_update, l2_normalize
 from lib.models.modules.sinkhorn import distributed_sinkhorn
 from timm.models.layers import trunc_normal_
-from lib.models.tools.module_helper import ModuleHelper
 from einops import rearrange, repeat
+from lib.utils.distributed import get_world_size, get_rank, is_distributed
 
 
 class ProbProtoSegHead(nn.Module):
@@ -573,7 +573,8 @@ class ProbProtoSegHead(nn.Module):
             if self.use_uncertainty:
                 proto_var = self.proto_var.data.clone()
 
-                if self.configer.get('iters') % 1000 == 0:
+                if self.configer.get('iters') % 100 == 0 and \
+                        (not is_distributed() or get_rank() == 0):
                     Log.info(proto_var)
 
                 if self.weighted_ppd_loss:

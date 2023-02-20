@@ -162,18 +162,13 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             if self.bayes_uncertainty:
                 self.bayes_uncertainty_head = BayesianUncertaintyHead(configer=configer)
             else:
-                out_dim = self.proj_dim
-                in_dim = 720
-                self.uncertainty_head = UncertaintyHead(
-                    in_feat=in_dim,
-                    out_feat=out_dim)  # predict variance of each gaussian
+                self.uncertainty_head = UncertaintyHead(configer=configer)
 
         self.proj_head = ProjectionHead(720, self.proj_dim)
 
         self.prob_seg_head = ProbProtoSegHead(configer=configer)
 
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
-
         self.mask_norm = nn.LayerNorm(self.num_classes)
 
         in_channels = self.proj_dim
@@ -263,58 +258,50 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         gt_size = c.size()[2:]
 
-        c = self.proj_head(c)
-
         c_var = None
-
-        if self.use_uncertainty:
-            if self.bayes_uncertainty:
-                c, c_var = self.bayes_uncertainty_head(c)
-            else:
-                c_var = self.uncertainty_head(c)
-            c_var = torch.exp(c_var)
-
+        if self.bayes_uncertainty:
+            c, c_var = self.bayes_uncertainty_head(c)
+        else:
+            c_var = self.uncertainty_head(c)
+        c_var = torch.exp(c_var)
         c = rearrange(c, 'b c h w -> (b h w) c')
         c = self.feat_norm(c)  # ! along channel dimension
         c = l2_normalize(c)  # ! l2_norm along num_class dimension
         c = rearrange(c, '(b h w) c -> b c h w',
                       h=gt_size[0], w=gt_size[1])
 
-        #! coarse seg
         c_coarse = self.reparameterize(c.unsqueeze(0), c_var.unsqueeze(0), k=1).squeeze(0)
         c_coarse = self.cls_head(c_coarse)
+        c_coarse = self.cls_head(c)
 
-        if self.use_context:
-            c = self.conv3x3(c)
+        # if self.use_context:
+        #     c = self.conv3x3(c)
 
-            c = rearrange(c, 'b c h w -> (b h w) c')
-            c = self.feat_norm(c)  # ! along channel dimension
-            c = l2_normalize(c)  # ! l2_norm along num_class dimension
-            c = rearrange(c, '(b h w) c -> b c h w',
-                          h=gt_size[0], w=gt_size[1])
+        #     context = self.spatial_gather_module(c, c_coarse)  # [b c/(c m) k]
+        #     c = self.context_relation_module(c, context)
 
-            context = self.spatial_gather_module(c, c_coarse)  # [b c/(c m) k]
-
+        if self.use_uncertainty:
             if self.uncertainty_aware_fea and self.configer.get('phase') == 'train':
                 uncertainty = self.get_uncertainty(
                     c.unsqueeze(0),
                     c_var.unsqueeze(0),
                     self.reparam_k)
-                c *= (1 - uncertainty)  # ignore the uncertain pixels during training
-                if self.uncertainty_random_mask and self.configer.get('phase') == 'train':
-                    # pixels with large uncertainty are masked out
-                    rand_mask = uncertainty < torch.from_numpy(
-                        np.random.random(uncertainty.size())).cuda()
-                    c *= rand_mask.float()
-            c = self.context_relation_module(c, context)
-
-            c = self.conv3x3(c)
-
-            c = rearrange(c, 'b c h w -> (b h w) c')
-            c = self.feat_norm(c)  # ! along channel dimension
-            c = l2_normalize(c)  # ! l2_norm along num_class dimension
-            c = rearrange(c, '(b h w) c -> b c h w',
-                          h=gt_size[0], w=gt_size[1])
+                c = c * (1 - uncertainty)  # ignore the uncertain pixels during training
+                c = rearrange(c, 'b c h w -> (b h w) c')
+                c = self.feat_norm(c)  # ! along channel dimension
+                c = l2_normalize(c)  # ! l2_norm along num_class dimension
+                c = rearrange(c, '(b h w) c -> b c h w',
+                              h=gt_size[0], w=gt_size[1])
+            if self.uncertainty_random_mask and self.configer.get('phase') == 'train':
+                # pixels with large uncertainty are masked out
+                rand_mask = uncertainty < torch.from_numpy(
+                    np.random.random(uncertainty.size())).cuda()
+                c = c * rand_mask.float()
+                c = rearrange(c, 'b c h w -> (b h w) c')
+                c = self.feat_norm(c)  # ! along channel dimension
+                c = l2_normalize(c)  # ! l2_norm along num_class dimension
+                c = rearrange(c, '(b h w) c -> b c h w',
+                              h=gt_size[0], w=gt_size[1])
 
         boundary_pred = None
         preds = self.prob_seg_head(

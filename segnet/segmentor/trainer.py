@@ -289,7 +289,7 @@ class Trainer(object):
                            "Loss": backward_loss,
                            "seg_loss": seg_loss,
                            "prob_ppc_loss": prob_ppc_loss,
-                           "prob_ppd_loss": prob_ppc_loss})
+                           "prob_ppd_loss": prob_ppd_loss})
 
             backward_start_time = time.time()
 

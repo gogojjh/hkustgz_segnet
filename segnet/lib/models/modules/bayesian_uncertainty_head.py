@@ -8,13 +8,13 @@ class BayesianUncertaintyHead(nn.Module):
 
     def __init__(self, configer):
         super(BayesianUncertaintyHead, self).__init__()
-        self.configer = configer                                            
+        self.configer = configer
 
         self.proj_dim = self.configer.get('protoseg', 'proj_dim')
-        
+
         self.mean_layer = nn.Linear(self.proj_dim, self.proj_dim)
         self.var_layer = nn.Linear(self.proj_dim, self.proj_dim)
-        
+
     def init_weights(self):
         nn.init.xavier_uniform_(self.mean_layer.weight)
         nn.init.constant_(self.var_layer.bias, 0)
