@@ -26,7 +26,7 @@ from lib.models.modules.bayesian_uncertainty_head import BayesianUncertaintyHead
 from lib.models.modules.pmm_module import PMMs
 from lib.models.modules.transformer import build_transformer
 from lib.models.modules.position_encoding import build_position_encoding
-from lib.utils.util import mask_from_tensor
+from lib.models.modules.object_contextual_block import SpatialGather_0CR_Module, ContextRelation_Module
 
 from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
@@ -193,25 +193,24 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             self.position_encoding = build_position_encoding(self.proj_dim, 'v2')
 
         self.uncertainty_aware_fea = self.configer.get('protoseg', 'uncertainty_aware_fea')
-        if self.uncertainty_aware_fea:
+        self.uncertainty_random_mask = self.configer.get('protoseg', 'uncertainty_random_mask')
+        if self.uncertainty_aware_fea or self.uncertainty_random_mask:
             kernel = torch.ones((7, 7))
             kernel = torch.FloatTensor(kernel).unsqueeze(0).unsqueeze(0)
             # kernel = np.repeat(kernel, 1, axis=0)
             #! not trainable, only sum inside a [7 7] kernel
             self.weight = nn.Parameter(data=kernel, requires_grad=False)
 
-        self.uncertainty_random_mask = self.configer.get('protoseg', 'uncertainty_random_mask')
         self.use_context = self.configer.get('protoseg', 'use_context')
         self.reparam_k = self.configer.get('protoseg', 'reparam_k')
         if self.use_context:
-            from lib.models.modules.object_contextual_block import SpatialGather_0CR_Module, ContextRelation_Module
             self.context_dim = self.configer.get('protoseg', 'context_dim')
             self.conv3x3 = nn.Sequential(
                 nn.Conv2d(self.proj_dim, self.context_dim, kernel_size=3, stride=1, padding=1),
                 ModuleHelper.BNReLU(
                     self.context_dim, bn_type=self.configer.get('network', 'bn_type')),)
             self.spatial_gather_module = SpatialGather_0CR_Module(configer=configer)
-            self.context_relation_module = ContextRelation_Module(configer=configer)
+        self.context_relation_module = ContextRelation_Module(configer=configer)
 
     def reparameterize(self, mu, var, k=1):
         sample_z = []
@@ -262,6 +261,7 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         if self.bayes_uncertainty:
             c, c_var = self.bayes_uncertainty_head(c)
         else:
+            c = self.proj_head(c)
             c_var = self.uncertainty_head(c)
         c_var = torch.exp(c_var)
         c = rearrange(c, 'b c h w -> (b h w) c')
@@ -274,24 +274,45 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         c_coarse = self.cls_head(c_coarse)
         c_coarse = self.cls_head(c)
 
-        # if self.use_context:
-        #     c = self.conv3x3(c)
+        if self.use_context:
+            c = self.conv3x3(c)
 
-        #     context = self.spatial_gather_module(c, c_coarse)  # [b c/(c m) k]
-        #     c = self.context_relation_module(c, context)
+            context = self.spatial_gather_module(c, c_coarse)  # [b c/(c m) k]
+            c = self.context_relation_module(c, context)
 
         if self.use_uncertainty:
-            if self.uncertainty_aware_fea and self.configer.get('phase') == 'train':
+            if self.uncertainty_random_mask or self.uncertainty_aware_fea:
                 uncertainty = self.get_uncertainty(
                     c.unsqueeze(0),
                     c_var.unsqueeze(0),
                     self.reparam_k)
+            if self.uncertainty_aware_fea and self.configer.get('phase') == 'train':
                 c = c * (1 - uncertainty)  # ignore the uncertain pixels during training
                 c = rearrange(c, 'b c h w -> (b h w) c')
                 c = self.feat_norm(c)  # ! along channel dimension
                 c = l2_normalize(c)  # ! l2_norm along num_class dimension
                 c = rearrange(c, '(b h w) c -> b c h w',
                               h=gt_size[0], w=gt_size[1])
+
+            if self.use_attention:
+                # c:[b c h w], mask:[b h w](False)
+                # c, mask = mask_from_tensor(c)
+                # position_encoding = self.position_encoding(c, mask).cuda()  # [b proj_dim h w]
+
+                # gmm_proto[0]: [b self.proj 1 1], [b (h w) num_proto]
+                gmm_proto, prob_map = self.pmm(c)
+                gmm_proto = torch.stack(gmm_proto, dim=3).squeeze(-1)  # [b self.proj 1 num_proto]
+                c = self.context_relation_module(c, gmm_proto)
+
+                c = rearrange(c, 'b c h w -> (b h w) c')
+                c = self.feat_norm(c)  # ! along channel dimension
+                c = l2_normalize(c)  # ! l2_norm along num_class dimension
+                c = rearrange(c, '(b h w) c -> b c h w',
+                              h=gt_size[0], w=gt_size[1])
+
+                # position_encoding = torch.bmm(position_encoding.flatten(2), prob_map).unsqueeze(2)
+                # c_attn = self.transformer(gmm_proto, c, position_encoding)
+
             if self.uncertainty_random_mask and self.configer.get('phase') == 'train':
                 # pixels with large uncertainty are masked out
                 rand_mask = uncertainty < torch.from_numpy(
@@ -308,20 +329,8 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
 
-        preds['coarse_seg'] = c_coarse
-
-        if self.use_attention:
-            # c:[b c h w], mask:[b h w](False)
-            c, mask = mask_from_tensor(c)
-            position_encoding = self.position_encoding(c, mask).cuda()  # [b proj_dim h w]
-
-            # gmm_proto[0]: [b self.proj 1 1], [b (h w) num_proto]
-            gmm_proto, prob_map = self.pmm(c)
-            gmm_proto = torch.stack(gmm_proto, dim=3).squeeze(-1)  # [b self.proj 1 num_proto]
-
-            # todo debug
-            # position_encoding = torch.bmm(position_encoding.flatten(2), prob_map).unsqueeze(2)
-            c_attn = self.transformer(gmm_proto, c, position_encoding)
+        if gt_semantic_seg is not None:
+            preds['coarse_seg'] = c_coarse
 
         del c, c_var
 

@@ -55,11 +55,6 @@ class ProbProtoSegHead(nn.Module):
             #! weight between mean and variance when calculating similarity
             if self.sim_measure == 'wasserstein':
                 self.lamda = 1 / self.proj_dim  # scaling factor for b_distance
-            elif self.sim_measure == 'match_prob':
-                init_a = self.configer.get('protoseg', 'init_a') * torch.ones(1).cuda()
-                init_b = self.configer.get('protoseg', 'init_b') * torch.ones(1).cuda()
-                self.init_a = nn.Parameter(init_a, requires_grad=True)
-                self.init_b = nn.Parameter(init_b, requires_grad=True)
 
             self.avg_update_proto = self.configer.get('protoseg', 'avg_update_proto')
             self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
@@ -140,10 +135,10 @@ class ProbProtoSegHead(nn.Module):
                 # [reparam_k reparam_k n m c]
                 sim_mat = torch.einsum('srnd,zjkmd->sjnmk', x, proto_mean)
                 sim_mat = rearrange(sim_mat, 'r l n m c -> (r l) n m c')
-                sim_mat = sim_mat.permute(0, 3, 1, 2)  # [(sample_k sample_k) c n m]
+                # sim_mat = sim_mat.permute(0, 3, 1, 2)  # [(sample_k sample_k) c n m]
 
-                # sim_mat = torch.mean(sim_mat, dim=0)  # [n m c]
-                # sim_mat = sim_mat.permute(0, 2, 1)  # [n c m]
+                sim_mat = torch.mean(sim_mat, dim=0)  # [n m c]
+                sim_mat = sim_mat.permute(0, 2, 1)  # [n c m]
 
             del x_var, x, proto_mean, proto_var
 
@@ -543,12 +538,7 @@ class ProbProtoSegHead(nn.Module):
         sim_mat = self.compute_similarity(
             x, x_var=x_var, sim_measure=self.sim_measure)
 
-        if self.sim_measure == 'match_prob':
-            # [(sample_k sample_k) c n m]
-            out_seg = torch.max(sim_mat, dim=0)  # [c n m]
-            out_seg = torch.max(out_seg, dim=2)
-        else:
-            out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
+        out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
         out_seg = self.mask_norm(out_seg)
         out_seg = rearrange(out_seg, '(b h w) c -> b c h w',
                             b=b_size, h=h_size)

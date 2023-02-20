@@ -79,7 +79,7 @@ class PMMs(nn.Module):
 
     def get_prototype(self, x):
         b, c, h, w = x.size()
-        x = x.view(b, c, h * w)  # b * c * n
+        x = x.view(b, c, h * w)  # b * c * n #! self-attention
         mu, z_ = self.EM(x)  # b * k * c [b num_proto proj_dim], [b (h w) num_proto]
 
         return mu, z_
