@@ -257,6 +257,8 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         gt_size = c.size()[2:]
 
+        c_coarse = self.cls_head(c)
+
         c_var = None
         if self.bayes_uncertainty:
             c, c_var = self.bayes_uncertainty_head(c)
@@ -270,9 +272,8 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         c = rearrange(c, '(b h w) c -> b c h w',
                       h=gt_size[0], w=gt_size[1])
 
-        c_coarse = self.reparameterize(c.unsqueeze(0), c_var.unsqueeze(0), k=1).squeeze(0)
-        c_coarse = self.cls_head(c_coarse)
-        c_coarse = self.cls_head(c)
+        # c_coarse = self.reparameterize(c.unsqueeze(0), c_var.unsqueeze(0), k=1).squeeze(0)
+        # c_coarse = self.cls_head(c_coarse)
 
         if self.use_context:
             c = self.conv3x3(c)

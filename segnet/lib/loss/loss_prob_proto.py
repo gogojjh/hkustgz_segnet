@@ -338,15 +338,15 @@ class PixelProbContrastLoss(nn.Module, ABC):
             coarse_pred = preds['coarse_seg']
             coarse_seg_loss = self.seg_criterion(coarse_pred, target)
 
-            # x_mean = preds['x_mean']
-            # x_var = preds['x_var']
-            # kl_loss = self.kl_loss(x_mean, x_var, target)
+            x_mean = preds['x_mean']
+            x_var = preds['x_var']
+            kl_loss = self.kl_loss(x_mean, x_var, target)
 
             loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
-                prob_ppd_loss + self.coarse_seg_weight * coarse_seg_loss
+                prob_ppd_loss + self.coarse_seg_weight * coarse_seg_loss + self.kl_loss_weight * kl_loss
             assert not torch.isnan(loss)
 
-            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'coarse_seg_loss': coarse_seg_loss}
+            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'coarse_seg_loss': coarse_seg_loss, 'kl_loss': kl_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(

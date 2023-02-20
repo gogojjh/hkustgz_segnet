@@ -27,7 +27,7 @@
 			"input_size": [2048, 1024],
 			"align_method": "only_pad"
 		},
-		"vis_prototype": true,
+		"vis_prototype": false,
 		"vis_pred": false
 	},
 	"test": {
@@ -117,7 +117,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 10,
+		"test_interval": 2000,
 		"max_iters": 80000
 	},
 	"optim": {
@@ -181,7 +181,7 @@
 		"avg_update_proto": false,
 		"use_temperature": false,
 		"alfa": 10,
-		"weighted_ppd_loss": false,
+		"weighted_ppd_loss": true,
 		"attention_proto": false,
 		"lamda_p": 0.3,
 		"uncertainty_aware_fea": false,
@@ -190,7 +190,7 @@
 		"bayes_uncertainty": true
 	},
 	"pmm": {
-		"use_pmm": true,
+		"use_pmm": false,
 		"pmm_k": 19,
 		"stage_num": 10,
 		"kappa": 20
@@ -214,7 +214,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 0
