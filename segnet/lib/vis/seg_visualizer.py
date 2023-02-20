@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from lib.datasets.tools.transforms import DeNormalize
 from lib.utils.tools.logger import Logger as Log
 from lib.utils.distributed import get_world_size, get_rank, is_distributed
+from lib.vis.prototype_visualizer import PrototypeVisualier
 
 SEG_DIR = 'vis/results/seg'
 ERROR_MAP_DIR = 'vis/results/error_map'

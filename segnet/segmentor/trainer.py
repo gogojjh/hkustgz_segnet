@@ -21,6 +21,8 @@ import torch.nn.functional as F
 import torch.distributed as dist
 import torch.backends.cudnn as cudnn
 import wandb
+import cv2
+import numpy as np
 
 from lib.utils.tools.average_meter import AverageMeter
 from lib.datasets.data_loader import DataLoader
@@ -70,6 +72,12 @@ class Trainer(object):
         self.running_score = None
 
         self._init_model()
+
+        self.vis_prototype = self.configer.get('val', 'vis_prototype')
+        self.vis_pred = self.configer.get('val', 'vis_pred')
+        if self.vis_prototype:
+            from lib.vis.prototype_visualizer import PrototypeVisualier
+            self.proto_visualizer = PrototypeVisualier(configer=configer)
 
     def _init_model(self):
         self.seg_net = self.model_manager.semantic_segmentor()
@@ -453,8 +461,9 @@ class Trainer(object):
                     if not is_distributed():
                         outputs = self.module_runner.gather(outputs)
                     if isinstance(outputs, dict):
-
-                        # ============== vis uncertainty and error map ==============#
+                        sim_mat = outputs['logits']  # [b h w (c m)]
+                        outputs = outputs['seg']
+                        # ============== visualize==============#
                         if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
                             # [b h w] [1, 256, 512]
                             # uncertainty = outputs['uncertainty']
@@ -481,6 +490,41 @@ class Trainer(object):
 
                                         self.seg_visualizer.vis_error(
                                             imgs[i], pred[i], targets[i], names[i])
+                        if self.vis_prototype:
+                            inputs = data_dict['img']
+                            metas = data_dict['meta']
+                            names = data_dict['name']
+
+                            if isinstance(outputs, torch.Tensor):
+                                outputs = outputs.permute(0, 2, 3, 1).cpu().numpy()
+                                n = outputs.shape[0]
+                                sim_mat = sim_mat.cpu().numpy()
+                            else:
+                                # outputs: [b c h w] -> [b h w c]
+                                # outputs = [output.permute(0, 2, 3, 1).cpu().numpy().squeeze()
+                                #            for output in outputs]
+                                outputs = outputs.permute(0, 2, 3, 1).cpu().numpy().squeeze()
+
+                                n = outputs.shape[0]
+                            for k in range(n):
+                                ori_img_size = metas[k]['ori_img_size']  # [1024, 2048]
+                                border_size = metas[k]['border_size']  # [1024, 2048]
+                                logits_proto = cv2.resize(
+                                    sim_mat[k][: border_size[1],
+                                               : border_size[0]],
+                                    tuple(ori_img_size),
+                                    interpolation=cv2.INTER_CUBIC)  # [1024, 2048, c]
+
+                                logits = cv2.resize(
+                                    outputs[k][: border_size[1],
+                                               : border_size[0]],
+                                    tuple(ori_img_size),
+                                    interpolation=cv2.INTER_CUBIC)  # [1024, 2048, c]
+                                # [1024, 2048]
+                                preds = np.asarray(np.argmax(logits, axis=-1), dtype=np.uint8)
+                                # inputs[k]: [3, 1024, 2048], sim_mat: [b h w c m]
+                                self.proto_visualizer.vis_prototype(
+                                    logits_proto, preds, inputs[k], names[k])
 
                         outputs = outputs['seg']
                     self.evaluator.update_score(outputs, data_dict['meta'])

@@ -1,12 +1,12 @@
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-## Created by: RainbowSecret, LayneH, Donny You
-## Microsoft Research
-## yuyua@microsoft.com
-## Copyright (c) 2019
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Created by: RainbowSecret, LayneH, Donny You
+# Microsoft Research
+# yuyua@microsoft.com
+# Copyright (c) 2019
 ##
-## This source code is licensed under the MIT-style license found in the
-## LICENSE file in the root directory of this source tree 
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# This source code is licensed under the MIT-style license found in the
+# LICENSE file in the root directory of this source tree
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 from __future__ import absolute_import
@@ -65,6 +65,12 @@ class Tester(object):
         self.infer_cnt = 0
         self._init_model()
 
+        self.vis_prototype = self.configer.get('test', 'vis_prototype')
+        self.vis_pred = self.configer.get('test', 'vis_pred')
+        if self.vis_prototype:
+            from lib.vis.prototype_visualizer import PrototypeVisualier
+            self.proto_visualizer = PrototypeVisualier()
+
     def _init_model(self):
         self.seg_net = self.model_manager.semantic_segmentor()
         self.seg_net = self.module_runner.load_net(self.seg_net)
@@ -77,7 +83,7 @@ class Tester(object):
             self.test_size = 1
 
         self.seg_net.eval()
-        
+
     def get_ros_batch_data(self, data_dict):
         ''' 
         This function is called everytime when ros callback is called.
@@ -145,12 +151,14 @@ class Tester(object):
             if 'subfolder' in data_dict:
                 subfolder = data_dict['subfolder']
 
-            if '/val/' in self.save_dir: #and os.environ.get('save_gt_label'):
+            if '/val/' in self.save_dir:  # and os.environ.get('save_gt_label'):
                 labels = data_dict['labelmap']
 
             with torch.no_grad():
                 # Forward pass.
-                if self.configer.exists('data', 'use_offset') and self.configer.get('data', 'use_offset') == 'offline':
+                if self.configer.exists(
+                        'data', 'use_offset') and self.configer.get(
+                        'data', 'use_offset') == 'offline':
                     offset_h_maps = data_dict['offsetmap_h']
                     offset_w_maps = data_dict['offsetmap_w']
                     outputs = self.offset_test(inputs, offset_h_maps, offset_w_maps)
@@ -176,7 +184,8 @@ class Tester(object):
                     outputs = outputs.permute(0, 2, 3, 1).cpu().numpy()
                     n = outputs.shape[0]
                 else:
-                    outputs = [output.permute(0, 2, 3, 1).cpu().numpy().squeeze() for output in outputs]
+                    outputs = [output.permute(0, 2, 3, 1).cpu().numpy().squeeze()
+                               for output in outputs]
                     n = len(outputs)
 
                 for k in range(n):
@@ -193,49 +202,60 @@ class Tester(object):
                         np.save(prob_path, softmax(logits, axis=-1))
 
                     label_img = np.asarray(np.argmax(logits, axis=-1), dtype=np.uint8)
-                    
+
                     #! use gpu for faster speed
                     # get the top 3 largest softmax class-wise prediction confidence
-                    if self.configer.get('ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
+                    if self.configer.get(
+                            'ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
                         logits = torch.from_numpy(logits).cuda()
                         m = nn.Softmax(dim=-1)
                         logits = m(logits)
-                        val, ind = torch.topk(logits, k=3, dim=-1) # [h, w, 3]
-                        uncer_img = torch.zeros([label_img.shape[0], label_img.shape[1], 3], dtype=torch.int64)
+                        val, ind = torch.topk(logits, k=3, dim=-1)  # [h, w, 3]
+                        uncer_img = torch.zeros(
+                            [label_img.shape[0],
+                             label_img.shape[1],
+                             3],
+                            dtype=torch.int64)
                         for i in range(3):
                             ''' 
                             logits: [0, 1]
                             class id: int
                             confidence img: (class id[i] + logit[i]) * 100
                             '''
-                            #[h, w, num_cls]([h, w])
+                            # [h, w, num_cls]([h, w])
                             uncer_img[:, :, i] = ((val[:, :, i] + ind[:, :, i]) * 100).long()
-                            
-                        uncer_img = uncer_img.cpu().numpy() # int64
+
+                        uncer_img = uncer_img.cpu().numpy()  # int64
                         uncer_img = uncer_img.astype(np.uint8)
                         # uncer_img = cv2.cvtColor(uncer_img, cv2.CV_16UC1)
                         uncer_img_ros.append(uncer_img)
-                        
-                    if self.configer.exists('data', 'reduce_zero_label') and self.configer.get('data', 'reduce_zero_label'):
+
+                    if self.configer.exists(
+                            'data', 'reduce_zero_label') and self.configer.get(
+                            'data', 'reduce_zero_label'):
                         label_img = label_img + 1
                         label_img = label_img.astype(np.uint8)
                     if self.configer.exists('data', 'label_list'):
-                        label_img_ = self.__relabel(label_img) # convert trianing id to ori id
+                        label_img_ = self.__relabel(label_img)  # convert trianing id to ori id
                     else:
                         label_img_ = label_img
                     label_img_ = Image.fromarray(label_img_, 'P')
                     Log.info('{:4d}/{:4d} label map generated'.format(image_id, self.test_size))
                     if 'subfolder' not in data_dict or len(subfolder[k]) == 0:
-                        label_path = os.path.join(self.save_dir, "label/", '{}.png'.format(names[k]))
+                        label_path = os.path.join(self.save_dir, "label/",
+                                                  '{}.png'.format(names[k]))
                     else:
-                        label_path = os.path.join(self.save_dir, "label/", '{}/{}.png'.format(subfolder[k], names[k]))
+                        label_path = os.path.join(self.save_dir, "label/",
+                                                  '{}/{}.png'.format(subfolder[k], names[k]))
 
                     FileHelper.make_dirs(label_path, is_file=True)
                     ImageHelper.save(label_img_, label_path)
 
                     # colorize the label-map
                     if os.environ.get('save_gt_label'):
-                        if self.configer.exists('data', 'reduce_zero_label') and self.configer.get('data','reduce_zero_label'):
+                        if self.configer.exists(
+                                'data', 'reduce_zero_label') and self.configer.get(
+                                'data', 'reduce_zero_label'):
                             label_img = labels[k]
                             label_img = np.asarray(label_img, dtype=np.uint8)
                         color_img_ = Image.fromarray(label_img)
@@ -250,7 +270,8 @@ class Tester(object):
                         FileHelper.make_dirs(vis_path, is_file=True)
                         ImageHelper.save(color_img_, save_path=vis_path)
 
-                    if self.configer.get('ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
+                    if self.configer.get(
+                            'ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
                         ''' 
                         Publish semantic image rosmsg
                         Publish the uncertainty image:
@@ -261,73 +282,81 @@ class Tester(object):
                         sem_img = np.stack([label_img, label_img, label_img], axis=-1)
                         sem_img = cv2.cvtColor(sem_img, cv2.COLOR_RGB2GRAY)
                         sem_img_ros.append(sem_img)
-                        
 
-                    # =============== visualie ===============　#
-                    # from lib.datasets.tools.transforms import DeNormalize
-                    # mean = self.configer.get('normalize', 'mean')
-                    # std = self.configer.get('normalize', 'std')
-                    # div_value = self.configer.get('normalize', 'div_value')
-                    # org_img = DeNormalize(div_value, mean, std)(inputs[k])
-                    # org_img = org_img.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
-                    # org_img = cv2.cvtColor(org_img, cv2.COLOR_BGR2RGB)
+                    if self.vis_pred:
+                        # =============== visualie ===============　#
+                        from lib.datasets.tools.transforms import DeNormalize
+                        mean = self.configer.get('normalize', 'mean')
+                        std = self.configer.get('normalize', 'std')
+                        div_value = self.configer.get('normalize', 'div_value')
+                        org_img = DeNormalize(div_value, mean, std)(inputs[k])
+                        org_img = org_img.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+                        org_img = cv2.cvtColor(org_img, cv2.COLOR_BGR2RGB)
 
+                        # # colorize the label-map
+                        if os.environ.get('save_gt_label'):
+                            if self.configer.exists(
+                                    'data', 'reduce_zero_label') and self.configer.get(
+                                    'data', 'reduce_zero_label'):
+                                label_img = labels[k] + 1
+                                label_img = np.asarray(label_img, dtype=np.uint8)
 
-                    # # # colorize the label-map
-                    # if os.environ.get('save_gt_label'):
-                    #     if self.configer.exists('data', 'reduce_zero_label') and self.configer.get('data',                                                                 'reduce_zero_label'):
-                    #         label_img = labels[k] + 1
-                    #         label_img = np.asarray(label_img, dtype=np.uint8)
-                    
-                    #     label_img = cv2.resize(label_img, (org_img.shape[1], org_img.shape[0]),
-                    #                            interpolation=cv2.INTER_NEAREST)
-                    #     color_img_ = Image.fromarray(label_img)
-                    #     color_img_.putpalette(colors)
-                    #     color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
-                    
-                    #     sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
-                    #     sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
-                    
-                    #     for i in range(0, 200):
-                    #         mask = np.zeros_like(label_img)
-                    #         mask[label_img == i] = 1
-                    
-                    #         contours = cv2.findContours(mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
-                    #         cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
-                    #                          1, cv2.LINE_AA)
-                    
-                    #     vis_path = os.path.join(self.save_dir, "gt_vis_overlay/", '{}.png'.format(names[k]))
-                    #     FileHelper.make_dirs(vis_path, is_file=True)
-                    #     ImageHelper.save(sys_img_part, save_path=vis_path)
-                    
-                    # else:
-                    #     label_img = cv2.resize(label_img, (org_img.shape[1], org_img.shape[0]), interpolation=cv2.INTER_NEAREST)
-                    #     color_img_ = Image.fromarray(label_img)
-                    #     color_img_.putpalette(colors)
-                    #     color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
-                    
-                    #     sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
-                    
-                    #     sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
-                    
-                    #     for i in range(0, 200):
-                    #         mask = np.zeros_like(label_img)
-                    #         mask[label_img == i] = 1
-                    
-                    #         contours = cv2.findContours(mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
-                    #         cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
-                    #                          1, cv2.LINE_AA)
-                    
-                    #     vis_path = os.path.join(self.save_dir, "vis_overlay/", '{}.png'.format(names[k]))
-                    #     FileHelper.make_dirs(vis_path, is_file=True)
-                    #     ImageHelper.save(sys_img_part, save_path=vis_path)
+                            label_img = cv2.resize(label_img, (org_img.shape[1], org_img.shape[0]),
+                                                   interpolation=cv2.INTER_NEAREST)
+                            color_img_ = Image.fromarray(label_img)
+                            color_img_.putpalette(colors)
+                            color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
+
+                            sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
+                            sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
+
+                            for i in range(0, 200):
+                                mask = np.zeros_like(label_img)
+                                mask[label_img == i] = 1
+
+                                contours = cv2.findContours(
+                                    mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
+                                cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
+                                                 1, cv2.LINE_AA)
+
+                            vis_path = os.path.join(
+                                self.save_dir, "gt_vis_overlay/", '{}.png'.format(names[k]))
+                            FileHelper.make_dirs(vis_path, is_file=True)
+                            ImageHelper.save(sys_img_part, save_path=vis_path)
+
+                        else:
+                            label_img = cv2.resize(
+                                label_img, (org_img.shape[1],
+                                            org_img.shape[0]),
+                                interpolation=cv2.INTER_NEAREST)
+                            color_img_ = Image.fromarray(label_img)
+                            color_img_.putpalette(colors)
+                            color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
+
+                            sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
+
+                            sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
+
+                            for i in range(0, 200):
+                                mask = np.zeros_like(label_img)
+                                mask[label_img == i] = 1
+
+                                contours = cv2.findContours(
+                                    mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
+                                cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
+                                                 1, cv2.LINE_AA)
+
+                            vis_path = os.path.join(self.save_dir, "vis_overlay/",
+                                                    '{}.png'.format(names[k]))
+                            FileHelper.make_dirs(vis_path, is_file=True)
+                            ImageHelper.save(sys_img_part, save_path=vis_path)
 
             self.batch_time.update(time.time() - start_time)
             start_time = time.time()
 
         # Print the log info & reset the states.
         Log.info('Test Time {batch_time.sum:.3f}s'.format(batch_time=self.batch_time))
-        
+
         if self.configer.get('ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
             return sem_img_ros, uncer_img_ros
 
@@ -353,8 +382,10 @@ class Tester(object):
     def ss_test(self, inputs, scale=1):
         if isinstance(inputs, torch.Tensor):
             n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-            scaled_inputs = F.interpolate(inputs, size=(int(h * scale), int(w * scale)), mode="bilinear",
-                                          align_corners=True)
+            scaled_inputs = F.interpolate(
+                inputs, size=(int(h * scale),
+                              int(w * scale)),
+                mode="bilinear", align_corners=True)
             start = timeit.default_timer()
             outputs = self.seg_net.forward(scaled_inputs)
             torch.cuda.synchronize()
@@ -375,12 +406,20 @@ class Tester(object):
             for i, d in zip(inputs, device_ids):
                 h, w = i.size(1), i.size(2)
                 ori_size.append((h, w))
-                i = F.interpolate(i.unsqueeze(0), size=(int(h * scale), int(w * scale)), mode="bilinear",
-                                  align_corners=True)
+                i = F.interpolate(
+                    i.unsqueeze(0),
+                    size=(int(h * scale),
+                          int(w * scale)),
+                    mode="bilinear", align_corners=True)
                 scaled_inputs.append(i.cuda(d, non_blocking=True))
-            scaled_outputs = nn.parallel.parallel_apply(replicas[:len(scaled_inputs)], scaled_inputs)
+            scaled_outputs = nn.parallel.parallel_apply(
+                replicas[:len(scaled_inputs)], scaled_inputs)
             for i, output in enumerate(scaled_outputs):
-                outputs.append(F.interpolate(output[-1], size=ori_size[i], mode='bilinear', align_corners=True))
+                outputs.append(
+                    F.interpolate(
+                        output[-1],
+                        size=ori_size[i],
+                        mode='bilinear', align_corners=True))
             return outputs
         else:
             raise RuntimeError("Unsupport data type: {}".format(type(inputs)))
@@ -396,11 +435,17 @@ class Tester(object):
         Currently, sscrop_test does not support diverse_size testing
         '''
         n, c, ori_h, ori_w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-        scaled_inputs = F.interpolate(inputs, size=(int(ori_h * scale), int(ori_w * scale)), mode="bilinear",
-                                      align_corners=True)
-        n, c, h, w = scaled_inputs.size(0), scaled_inputs.size(1), scaled_inputs.size(2), scaled_inputs.size(3)
-        full_probs = torch.cuda.FloatTensor(n, self.configer.get('data', 'num_classes'), h, w).fill_(0)
-        count_predictions = torch.cuda.FloatTensor(n, self.configer.get('data', 'num_classes'), h, w).fill_(0)
+        scaled_inputs = F.interpolate(
+            inputs, size=(int(ori_h * scale),
+                          int(ori_w * scale)),
+            mode="bilinear", align_corners=True)
+        n, c, h, w = scaled_inputs.size(0), scaled_inputs.size(
+            1), scaled_inputs.size(2), scaled_inputs.size(3)
+        full_probs = torch.cuda.FloatTensor(
+            n, self.configer.get('data', 'num_classes'),
+            h, w).fill_(0)
+        count_predictions = torch.cuda.FloatTensor(
+            n, self.configer.get('data', 'num_classes'), h, w).fill_(0)
 
         crop_counter = 0
 
@@ -409,21 +454,28 @@ class Tester(object):
 
         for height in height_starts:
             for width in width_starts:
-                crop_inputs = scaled_inputs[:, :, height:height + crop_size[0], width:width + crop_size[1]]
+                crop_inputs = scaled_inputs[:, :, height: height + crop_size[0],
+                                            width: width + crop_size[1]]
                 prediction = self.ss_test(crop_inputs)
-                count_predictions[:, :, height:height + crop_size[0], width:width + crop_size[1]] += 1
-                full_probs[:, :, height:height + crop_size[0], width:width + crop_size[1]] += prediction
+                count_predictions[:, :, height: height + crop_size[0],
+                                  width: width + crop_size[1]] += 1
+                full_probs[:, :, height:height + crop_size[0],
+                           width:width + crop_size[1]] += prediction
                 crop_counter += 1
                 Log.info('predicting {:d}-th crop'.format(crop_counter))
 
         full_probs /= count_predictions
-        full_probs = F.interpolate(full_probs, size=(ori_h, ori_w), mode='bilinear', align_corners=True)
+        full_probs = F.interpolate(
+            full_probs, size=(ori_h, ori_w),
+            mode='bilinear', align_corners=True)
         return full_probs
 
     def ms_test(self, inputs):
         if isinstance(inputs, torch.Tensor):
             n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-            full_probs = torch.cuda.FloatTensor(n, self.configer.get('data', 'num_classes'), h, w).fill_(0)
+            full_probs = torch.cuda.FloatTensor(
+                n, self.configer.get('data', 'num_classes'),
+                h, w).fill_(0)
             if self.configer.exists('test', 'scale_weights'):
                 for scale, weight in zip(self.configer.get('test', 'scale_search'),
                                          self.configer.get('test', 'scale_weights')):
@@ -472,7 +524,9 @@ class Tester(object):
 
         if isinstance(inputs, torch.Tensor):
             n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-            full_probs = torch.cuda.FloatTensor(n, self.configer.get('data', 'num_classes'), h, w).fill_(0)
+            full_probs = torch.cuda.FloatTensor(
+                n, self.configer.get('data', 'num_classes'),
+                h, w).fill_(0)
 
             for scale in self.configer.get('test', 'scale_search'):
                 probs = self.ss_test(inputs, scale)
@@ -496,7 +550,9 @@ class Tester(object):
             stereo_path = "/msravcshare/dataset/cityscapes/stereo/val/"
 
         n, c, h, w = probs[0].size(0), probs[0].size(1), probs[0].size(2), probs[0].size(3)
-        full_probs = torch.cuda.FloatTensor(n, self.configer.get('data', 'num_classes'), h, w).fill_(0)
+        full_probs = torch.cuda.FloatTensor(
+            n, self.configer.get('data', 'num_classes'),
+            h, w).fill_(0)
 
         for index, name in enumerate(names):
             stereo_map = cv2.imread(stereo_path + name + '.png', -1)
@@ -512,8 +568,8 @@ class Tester(object):
                 weight_map = np.abs(depth_map - scale_index)
                 weight_map = np.power(POWER_BASE, weight_map)
                 weight_map = cv2.resize(weight_map, (w, h))
-                full_probs[index, :, :, :] += torch.from_numpy(np.expand_dims(weight_map, axis=0)).type(
-                    torch.cuda.FloatTensor) * prob[index, :, :, :]
+                full_probs[index, :, :, :] += torch.from_numpy(np.expand_dims(
+                    weight_map, axis=0)).type(torch.cuda.FloatTensor) * prob[index, :, :, :]
 
         return full_probs
 
@@ -527,7 +583,9 @@ class Tester(object):
     def ms_test_wo_flip(self, inputs):
         if isinstance(inputs, torch.Tensor):
             n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-            full_probs = torch.cuda.FloatTensor(n, self.configer.get('data', 'num_classes'), h, w).fill_(0)
+            full_probs = torch.cuda.FloatTensor(
+                n, self.configer.get('data', 'num_classes'),
+                h, w).fill_(0)
             for scale in self.configer.get('test', 'scale_search'):
                 probs = self.ss_test(inputs, scale)
                 full_probs += probs
@@ -550,7 +608,9 @@ class Tester(object):
         Currently, mscrop_test does not support diverse_size testing
         '''
         n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-        full_probs = torch.cuda.FloatTensor(n, self.configer.get('data', 'num_classes'), h, w).fill_(0)
+        full_probs = torch.cuda.FloatTensor(
+            n, self.configer.get('data', 'num_classes'),
+            h, w).fill_(0)
         for scale in self.configer.get('test', 'scale_search'):
             Log.info('Scale {0:.2f} prediction'.format(scale))
             if scale < 1:
@@ -579,7 +639,7 @@ class Tester(object):
         '''
         Reference: https://github.com/kazuto1011/deeplab-pytorch/blob/master/libs/utils/crf.py
         '''
-        # hyperparameters of the dense crf 
+        # hyperparameters of the dense crf
         # baseline = 79.5
         # bi_xy_std = 67, 79.1
         # bi_xy_std = 20, 79.6
@@ -595,8 +655,8 @@ class Tester(object):
         bi_rgb_std = 3
 
         b = images.size(0)
-        mean_vector = np.expand_dims(np.expand_dims(np.transpose(np.array([102.9801, 115.9465, 122.7717])), axis=1),
-                                     axis=2)
+        mean_vector = np.expand_dims(np.expand_dims(np.transpose(
+            np.array([102.9801, 115.9465, 122.7717])), axis=1), axis=2)
         outputs = F.softmax(outputs, dim=1)
         for i in range(b):
             unary = outputs[i].data.cpu().numpy()

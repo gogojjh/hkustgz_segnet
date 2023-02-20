@@ -26,7 +26,9 @@
 			"size_mode": "fix_size",
 			"input_size": [2048, 1024],
 			"align_method": "only_pad"
-		}
+		},
+		"vis_prototype": true,
+		"vis_pred": false
 	},
 	"test": {
 		"batch_size": 4,
@@ -36,7 +38,9 @@
 			"size_mode": "fix_size",
 			"input_size": [1024, 768],
 			"align_method": "only_pad"
-		}
+		},
+		"vis_prototype": true,
+		"vis_pred": false
 	},
 	"train_trans": {
 		"trans_seq": ["random_resize", "random_crop", "random_hflip", "random_brightness"],
@@ -113,7 +117,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 2000,
+		"test_interval": 10,
 		"max_iters": 80000
 	},
 	"optim": {
