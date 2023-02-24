@@ -272,7 +272,12 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         c = rearrange(c, '(b h w) c -> b c h w',
                       h=gt_size[0], w=gt_size[1])
 
-        # c_coarse = self.reparameterize(c.unsqueeze(0), c_var.unsqueeze(0), k=1).squeeze(0)
+        c = self.reparameterize(c.unsqueeze(0), c_var.unsqueeze(0), k=1).squeeze(0)
+        c = rearrange(c, 'b c h w -> (b h w) c')
+        c = self.feat_norm(c)  # ! along channel dimension
+        c = l2_normalize(c)  # ! l2_norm along num_class dimension
+        c = rearrange(c, '(b h w) c -> b c h w',
+                      h=gt_size[0], w=gt_size[1])
         # c_coarse = self.cls_head(c_coarse)
 
         if self.use_context:
