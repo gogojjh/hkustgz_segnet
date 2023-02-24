@@ -164,22 +164,20 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             else:
                 self.uncertainty_head = UncertaintyHead(configer=configer)
 
-        self.proj_head = ProjectionHead(720, self.proj_dim)
-
         self.prob_seg_head = ProbProtoSegHead(configer=configer)
 
         self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
         self.mask_norm = nn.LayerNorm(self.num_classes)
 
-        in_channels = self.proj_dim
+        in_channels = 720
         self.cls_head = nn.Sequential(
             nn.Conv2d(in_channels, in_channels,
                       kernel_size=3, stride=1, padding=1),
             ModuleHelper.BNReLU(
                 in_channels, bn_type=self.configer.get('network', 'bn_type')),
-            nn.Conv2d(in_channels, self.num_classes, kernel_size=1,
-                      stride=1, padding=0, bias=True)
+            nn.Dropout2d(0.10)
         )
+        self.proj_head = ProjectionHead(in_channels, in_channels)
 
         if self.use_pmm:
             self.pmm_k = self.configer.get('pmm', 'pmm_k')
@@ -257,13 +255,18 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         gt_size = c.size()[2:]
 
-        c_coarse = self.cls_head(c)
+        c = self.cls_head(c)
+        c = self.proj_head(c)
+        c = rearrange(c, 'b c h w -> (b h w) c')
+        c = self.feat_norm(c)  # ! along channel dimension
+        c = l2_normalize(c)  # ! l2_norm along num_class dimension
+        c = rearrange(c, '(b h w) c -> b c h w',
+                      h=gt_size[0], w=gt_size[1])
 
         c_var = None
         if self.bayes_uncertainty:
             c, c_var = self.bayes_uncertainty_head(c)
         else:
-            c = self.proj_head(c)
             c_var = self.uncertainty_head(c)
         c_var = torch.exp(c_var)
         c = rearrange(c, 'b c h w -> (b h w) c')
@@ -335,8 +338,8 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
 
-        if gt_semantic_seg is not None:
-            preds['coarse_seg'] = c_coarse
+        # if gt_semantic_seg is not None:
+        #     preds['coarse_seg'] = c_coarse
 
         del c, c_var
 

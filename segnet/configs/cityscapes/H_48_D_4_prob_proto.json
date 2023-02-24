@@ -118,7 +118,7 @@
 	"solver": {
 		"display_iter": 10,
 		"test_interval": 2000,
-		"max_iters": 80000
+		"max_iters": 50000
 	},
 	"optim": {
 		"optim_method": "sgd",
@@ -168,7 +168,7 @@
 		"prob_ppd_weight": 0.01,
 		"prob_ppc_weight": 0.01,
 		"boundary_loss_weight": 0.01,
-		"kl_loss_weight": 0.001,
+		"kl_loss_weight": 0.01,
 		"coarse_seg_weight": 0.05,
 		"proj_dim": 720,
 		"key_dim": 256,
@@ -181,13 +181,14 @@
 		"avg_update_proto": true,
 		"use_temperature": false,
 		"alfa": 10,
-		"weighted_ppd_loss": true,
+		"weighted_ppd_loss": false,
 		"attention_proto": false,
 		"lamda_p": 0.3,
 		"uncertainty_aware_fea": false,
 		"uncertainty_random_mask": false,
 		"local_refinement": false,
-		"bayes_uncertainty": true
+		"bayes_uncertainty": true,
+		"cosine_classifier": true
 	},
 	"pmm": {
 		"use_pmm": false,

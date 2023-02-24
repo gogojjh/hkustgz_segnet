@@ -64,6 +64,7 @@ class ProbProtoSegHead(nn.Module):
         self.attention_proto = self.configer.get('protoseg', 'attention_proto')
         if self.attention_proto:
             self.lamda_p = self.configer.get('protoseg', 'lamda_p')
+        self.cosine_classifier = self.configer.get('protoseg', 'cosine_classifier')
 
     def reparameterize(self, mu, var, k=1, protos=False):
         sample_z = []
@@ -140,10 +141,7 @@ class ProbProtoSegHead(nn.Module):
                 sim_mat = torch.mean(sim_mat, dim=0)  # [n m c]
                 sim_mat = sim_mat.permute(0, 2, 1)  # [n c m]
 
-            del x_var, x, proto_mean, proto_var
-
-        else:
-            if sim_measure == 'cosine':
+            elif sim_measure == 'cosine':
                 # batch product (toward d dimension) -> cosine simialrity between fea and prototypes
                 # n: h*w, k: num_class, m: num_prototype
                 sim_mat = torch.einsum('nd,kmd->nmk', x, proto_mean)  # [c m n]
@@ -151,6 +149,7 @@ class ProbProtoSegHead(nn.Module):
                 sim_mat = sim_mat.permute(0, 2, 1)  # [c n m]
             else:
                 Log.error('Similarity measure is invalid.')
+            del x_var, x, proto_mean, proto_var
         return sim_mat
 
     def prototype_learning(self, sim_mat, out_seg, gt_seg, _c, _c_var):
@@ -208,7 +207,7 @@ class ProbProtoSegHead(nn.Module):
             #     init_q = init_q * q_k_tile # sim mat of correctly predicted pixels
 
             # f = m_q.transpose(0, 1) @ c_q  # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-            if self.use_uncertainty and _c_var is not None:
+            if self.use_uncertainty and _c_var is not None and not self.cosine_classifier:
                 var_k = _c_var[gt_seg == i, ...]
 
                 var_q = var_k * c_k_tile  # [n embed_dim]
@@ -236,6 +235,9 @@ class ProbProtoSegHead(nn.Module):
                         # todo debug
                         f = f / (m_q_sum.unsqueeze(-1) + 1e-3)
                         f = F.normalize(f, p=2, dim=-1)
+                    elif self.cosine_classifier:
+                        f = m_q.transpose(0, 1) @ c_q
+                        f = F.normalize(f, p=2, dim=-1)
                     else:
                         # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
                         f = m_q.transpose(0, 1) @ c_q
@@ -251,8 +253,9 @@ class ProbProtoSegHead(nn.Module):
                         # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
                     protos[i, n != 0, :] = momentum_update(
                         old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
-                    proto_var[i, n != 0, :] = momentum_update(
-                        old_value=proto_var[i, n != 0, :], new_value=f_v[n != 0, :], momentum=self.var_gamma, debug=False)
+                    if not self.cosine_classifier:
+                        proto_var[i, n != 0, :] = momentum_update(
+                            old_value=proto_var[i, n != 0, :], new_value=f_v[n != 0, :], momentum=self.var_gamma, debug=False)
 
                     if self.attention_proto:
                         for m in range(self.num_prototype):
@@ -264,7 +267,7 @@ class ProbProtoSegHead(nn.Module):
                             proto_score = proto_score / proto_score.sum()
                             protos[i, m, :] = protos[i, m, :] + self.lamda_p * (proto_score.unsqueeze(-1) * protos[i, ...].masked_select(
                                 ind_mask.unsqueeze(-1)).reshape(-1, self.proj_dim)).sum(0)
-                    del var_q, var_k, f, f_v
+                    # del var_q, var_k, f, f_v
 
             # each class has a target id between [0, num_proto * c]
             #! ignore_label are still -1, and not being modified
@@ -275,7 +278,7 @@ class ProbProtoSegHead(nn.Module):
 
         self.prototypes = nn.Parameter(
             l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
-        if self.use_uncertainty:
+        if self.use_uncertainty and not self.cosine_classifier:
             self.proto_var = nn.Parameter(proto_var, requires_grad=False)
 
         if dist.is_available() and dist.is_initialized():  # distributed learning
@@ -287,7 +290,7 @@ class ProbProtoSegHead(nn.Module):
             protos = self.prototypes.data.clone()
             dist.all_reduce(protos.div_(dist.get_world_size()))
             self.prototypes = nn.Parameter(protos, requires_grad=False)
-            if self.use_uncertainty:
+            if self.use_uncertainty and not self.cosine_classifier:
                 proto_var = self.proto_var.data.clone()
                 dist.all_reduce(proto_var.div_(dist.get_world_size()))
                 self.proto_var = nn.Parameter(proto_var, requires_grad=False)
@@ -564,7 +567,7 @@ class ProbProtoSegHead(nn.Module):
                 proto_var = self.proto_var.data.clone()
 
                 if self.configer.get('iters') % 2000 == 0 and \
-                        (not is_distributed() or get_rank() == 0):
+                        (not is_distributed() or get_rank() == 0) and not self.cosine_classifier:
                     Log.info(proto_var)
 
                 if self.weighted_ppd_loss:
