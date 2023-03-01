@@ -326,11 +326,14 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         
         # get confidence using both img and predictions
         sem_pred = preds['seg'] # [b num_cls h w]
-        x_ = torch.cat(sem_pred, x_) # [b 3 h w]
+        sem_pred = torch.max(sem_pred, dim=1, keepdim=True)[0] # [b 1 h w]
+        x_ = F.interpolate(x_, size=(
+            h, w), mode="bilinear", align_corners=True)
+        x_ = torch.cat((sem_pred, x_), dim=1) # [b 3 h w] -> [b 4 h w]
         confidence = self.confidence_head(x_)
         preds['confidence'] = confidence
 
-        if gt_semantic_seg is not None:
+        if gt_semantic_seg is not None and self.use_context:
             preds['coarse_seg'] = c_coarse
 
         del c, c_var

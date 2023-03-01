@@ -173,7 +173,7 @@
 		"proj_dim": 720,
 		"key_dim": 256,
 		"context_dim": 720,
-		"ndf_dim": 16,
+		"ndf_dim": 32,
 		"use_boundary": false,
 		"bin_size_h": 4,
 		"bin_size_w": 8,

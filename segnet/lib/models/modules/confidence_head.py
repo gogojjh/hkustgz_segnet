@@ -62,6 +62,7 @@ class ConfidenceHead(nn.Module):
     def __init__(self, configer):
         super(ConfidenceHead, self).__init__()
         self.configer = configer
+        self.num_classes = self.configer.get('data', 'num_classes')
         
         ndf = self.configer.get('protoseg', 'ndf_dim')
         
@@ -69,7 +70,9 @@ class ConfidenceHead(nn.Module):
 
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
-        self.down_block_1 = UNetConvBlock(4, ndf)
+        # in_channel = self.num_classes + 3 # 22
+        in_channel = 4
+        self.down_block_1 = UNetConvBlock(in_channel, ndf)
         self.down_block_2 = UNetConvBlock(ndf, 2*ndf)
         self.down_block_3 = UNetConvBlock(2*ndf, 4*ndf)
         self.down_block_4 = UNetConvBlock(4*ndf, 8*ndf)

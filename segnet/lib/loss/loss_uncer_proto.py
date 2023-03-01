@@ -20,28 +20,79 @@ from einops import rearrange, repeat
 
 class PredUncertaintyLoss(nn.Module, ABC):
     ''' 
-    Minimzie difference between data variance and predictive uncertainty.
-    Only backpropated to uncertainty head.
+    Construct the multi-class classification problem into binary classification problem using the 
+    top 2 classification probability/distance.
     '''
     def __init__(self, configer):
         super(PredUncertaintyLoss, self).__init__()
         self.configer = configer
-        self.seg_criterion = FSCELoss(configer=configer)
+        self.seg_criterion = torch.nn.BCELoss() 
+        
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
     
-    def get_uncertainty_label(self, pred, target):
-        uncer_label = torch.mul(target, (1 - pred)) + torch.mul((1- target), pred)
+    def get_uncertainty_label(self, binary_pred, binary_sem_gt):
+        ''' 
+        1. correct pred: min(1-pred, pred)
+        2. wrong pred: max(1-pred, pred)
+        
+        pred/sem_gt [b h w]
+        '''
+        correct_mask = binary_sem_gt == 1
+        correct_uncer_label = torch.cat(binary_pred[correct_mask].unsqueeze(1), (1 - binary_pred[correct_mask]).unsqueeze(1), dim=1) # [b 2 h w]
+        correct_uncer_label = torch.min(correct_uncer_label, dim=1)[0] # [b h w]
+        
+        wrong_mask = binary_sem_gt == 0
+        correct_uncer_label = torch.cat(binary_pred[wrong_mask].unsqueeze(1), (1 - binary_pred[wrong_mask]).unsqueeze(1), dim=1) # [b 2 h w]
+        wrong_uncer_label = torch.max(correct_uncer_label, dim=1)[0] # [b h w]
+        
+        uncer_label = (1 - binary_sem_gt) * wrong_uncer_label + binary_sem_gt * correct_uncer_label
+        
         return uncer_label 
-            
+    
+    def get_binary_sem_label(self, pred, sem_gt):
+        ''' 
+        Construct the lable for binary classificatio using the top2 segmentation probability.
+        Correct prediction: 1
+        Wrong prediction: 0
+        '''
+        sem_gt = sem_gt.squeeze(1)
+        binary_label = torch.zeros_like(sem_gt).cuda()
+        pred = torch.argmax(pred, dim=1)
+        binary_label[pred == sem_gt] = 1 # [b h w]
+        return binary_label
+        
+    def get_binary_prediction(self, pred):
+        ''' 
+        Use the top2 segmentation probability to contruct a binary classifier.
+        '''
+        score_top, _ = pred.topk(k=2, dim=1) # [b 2 h w]
+        score_top = F.softmax(score_top, dim=1) # prob of binary classifiers
+        return score_top
+
     def forward(self, confidence, pred, sem_gt):
         ''' 
         confidence: [b h w]
+        pred: [b num_cls h w]
         '''
         h, w = confidence.size(1), confidence.size(2)
         sem_gt = F.interpolate(input=sem_gt.unsqueeze(1).float(), size=(
                 h, w), mode='nearest')
+         
+        binary_label = self.get_binary_sem_label(pred, sem_gt) # [b h w]
+        binary_pred = self.get_binary_prediction(pred) # [b 2 h w]
         
-        uncer_label = self.get_uncertainty_label(pred, sem_gt)
-        uncer_seg_loss = self.seg_criterion(torch.sigmoid(confidence), uncer_label)
+        binary_pred = torch.max(binary_pred, dim=1)[0] # [b h w]
+        uncer_label = self.get_uncertainty_label(binary_pred, binary_label)
+        
+        # mask out the ignored label
+        mask = sem_gt != self.ignore_label
+        
+        uncer_seg_loss = self.seg_criterion(torch.sigmoid(confidence[mask]), uncer_label[mask])
         
         return uncer_seg_loss
         
@@ -169,6 +220,9 @@ class PixelUncerContrastLoss(nn.Module, ABC):
             ignore_index = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
         Log.info('ignore_index: {}'.format(ignore_index))
+        
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
 
         self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
         self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
@@ -183,6 +237,7 @@ class PixelUncerContrastLoss(nn.Module, ABC):
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
 
         self.use_temperature = self.configer.get('protoseg', 'use_temperature')
+        self.use_context = self.configer.get('protoseg', 'use_context')
         self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
         self.uncer_seg_loss = PredUncertaintyLoss(configer=configer)
 
@@ -222,21 +277,25 @@ class PixelUncerContrastLoss(nn.Module, ABC):
 
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
+            
+            confidence = preds['confidence']
+            contrast_logits = contrast_logits.reshape(-1, self.num_classes, self.num_prototype)
+            contrast_logits = torch.max(contrast_logits, dim=-1)[0]
+            b_train, h_train, w_train = seg.size(0), seg.size(2), seg.size(3)
+            contrast_logits = contrast_logits.reshape(b_train, h_train, w_train, self.num_classes)
+            uncer_seg_loss = self.uncer_seg_loss(confidence, contrast_logits.permute(0, -1, 1, 2), target)
 
             pred = F.interpolate(input=seg, size=(
                 h, w), mode='bilinear', align_corners=True)
 
             seg_loss = self.seg_criterion(pred, target)
 
-            coarse_pred = preds['coarse_seg']
-            coarse_seg_loss = self.seg_criterion(coarse_pred, target)
-            
-            confidence = preds['confidence']
-            
-            uncer_seg_loss = self.uncer_seg_loss(confidence, pred, target)
+            if self.use_context:
+                coarse_pred = preds['coarse_seg']
+                coarse_seg_loss = self.seg_criterion(coarse_pred, target)
 
             loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
-                prob_ppd_loss + self.coarse_seg_weight * coarse_seg_loss + self.uncer_seg_loss_weight * uncer_seg_loss
+                prob_ppd_loss + self.uncer_seg_loss_weight * uncer_seg_loss
             assert not torch.isnan(loss)
 
             return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss}
