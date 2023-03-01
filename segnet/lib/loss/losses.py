@@ -14,6 +14,79 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
+class BoundaryContrastiveLoss(nn.Module, ABC):
+    ''' 
+    - pixels belonging to boundary prototype(last proto) have high uncertainty because they are likely to predicted as nearby class
+    - This loss is conducted between the pixels around the boundary.
+    '''
+
+    def __init__(self, configer):
+        super(BoundaryContrastiveLoss, self).__init__()
+        self.configer = configer
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+
+        self.conv1 = nn.Conv2d(1, 1, kernel_size=3, stride=1, bias=False)
+        #! for summation inside the kernel
+        self.conv1.weight = torch.nn.Parameter(torch.ones_like((self.conv1.weight)))
+        self.pad = nn.ReplicationPad2d(1)
+
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
+
+    def get_nearby_pixel(self, contrast_logits, sem_gt, boundary_gt):
+        l = contrast_logits.size(-1)
+        boundary_gt = boundary_gt.unsqueeze(1)
+        sem_gt = sem_gt.unsqueeze(1)
+        bound_mask = boundary_gt == 1  # [b 1 h' w']
+
+        bound_mask = self.pad(bound_mask.float())  # [b 1 h+2 w+2]
+        # (l - 3 + 2 * 1/padding) / 1 + 1 = l
+        #! sum the boundary pixel inside the 7x7 sliding window
+        bound_mask = self.conv1(bound_mask.float())  # [b 1 h w]
+        #! if bound_mask == 0: no boundary pixels inside the nearby window -> mask out
+        bound_mask = torch.where((bound_mask == 0), 0, 1)
+        bound_mask = bound_mask.squeeze(1).unsqueeze(-1)  # [b h w 1]
+
+        contrast_logits = contrast_logits.masked_select(bound_mask.bool())
+        contrast_logits = contrast_logits.reshape(-1, l)  # [n, (c m)]
+
+        sem_gt = sem_gt.squeeze(1).unsqueeze(-1)
+        sem_gt = sem_gt.masked_select(bound_mask.bool())
+
+        return contrast_logits, sem_gt
+
+    def forward(self, contrast_logits, boundary_gt, sem_gt):
+        ''' 
+        sem_gt: [b h w]
+        boundary_gt: [b h w]
+        contrast_logits: [(b h w) (c m)]
+        '''
+        h, w = sem_gt.size(1), sem_gt.size(2)  # 128, 256
+
+        contrast_logits = contrast_logits.permute(0, 3, 1, 2)  # [b (c m) h w]
+        contrast_logits = F.interpolate(input=contrast_logits, size=(
+            h, w), mode='bilinear', align_corners=True)
+        contrast_logits = contrast_logits.permute(0, 2, 3, 1)  # [b h w (c m)]
+
+        contrast_logits, sem_gt = self.get_nearby_pixel(contrast_logits, sem_gt, boundary_gt)
+
+        contrast_logits = self.proto_norm(contrast_logits)
+        bound_contrast_loss = F.cross_entropy(
+            contrast_logits, sem_gt.long(),
+            ignore_index=self.ignore_label)
+
+        return bound_contrast_loss
+
+
 class AleatoricUncertaintyLoss(nn.Module, ABC):
     """ 
     Geometry and Uncertainty in Deep Learning for Computer Vision

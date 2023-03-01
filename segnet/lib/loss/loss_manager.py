@@ -21,6 +21,7 @@ from lib.loss.loss_contrast import ContrastAuxCELoss, ContrastCELoss
 from lib.loss.loss_contrast_mem import ContrastCELoss as MemContrastCELoss
 from lib.loss.loss_proto import PixelPrototypeCELoss
 from lib.loss.loss_prob_proto import PixelProbContrastLoss
+from lib.loss.loss_uncer_proto import PixelUncerContrastLoss
 
 from lib.utils.tools.logger import Logger as Log
 from lib.utils.distributed import is_distributed
@@ -42,7 +43,8 @@ SEG_LOSS_DICT = {
     'fs_auxce_dsn_loss': FSAuxCELossDSN,
     'mem_contrast_ce_loss': MemContrastCELoss,
     'pixel_prototype_ce_loss': PixelPrototypeCELoss,
-    'pixel_prob_prototype_ce_loss': PixelProbContrastLoss
+    'pixel_prob_prototype_ce_loss': PixelProbContrastLoss,
+    'pixel_uncer_prototype_ce_loss': PixelUncerContrastLoss
 }
 
 

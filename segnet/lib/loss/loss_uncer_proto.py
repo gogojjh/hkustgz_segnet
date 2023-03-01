@@ -32,9 +32,16 @@ class PredUncertaintyLoss(nn.Module, ABC):
         uncer_label = torch.mul(target, (1 - pred)) + torch.mul((1- target), pred)
         return uncer_label 
             
-    def forward(self, x_var, pred, target):
-        uncer_label = self.get_uncertainty_label(pred, target)
-        uncer_seg_loss = self.seg_criterion(torch.sigmoid(x_var), uncer_label)
+    def forward(self, confidence, pred, sem_gt):
+        ''' 
+        confidence: [b h w]
+        '''
+        h, w = confidence.size(1), confidence.size(2)
+        sem_gt = F.interpolate(input=sem_gt.unsqueeze(1).float(), size=(
+                h, w), mode='nearest')
+        
+        uncer_label = self.get_uncertainty_label(pred, sem_gt)
+        uncer_seg_loss = self.seg_criterion(torch.sigmoid(confidence), uncer_label)
         
         return uncer_seg_loss
         
@@ -110,39 +117,6 @@ class ProbPPCLoss(nn.Module, ABC):
         return prob_ppc_loss
 
 
-class KLLoss(nn.Module, ABC):
-    def __init__(self, configer):
-        super(KLLoss, self).__init__()
-
-        self.configer = configer
-
-        self.ignore_label = -1
-        if self.configer.exists(
-                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
-                'loss', 'params'):
-            self.ignore_label = self.configer.get('loss', 'params')[
-                'ce_ignore_index']
-
-    def forward(self, x_mean, x_var, sem_gt=None, proto=False):
-        ''' 
-        x / x_var: [b h w c]
-        proto_mean / proto_var: [c m k]
-        '''
-        if not proto:
-            h, w = x_mean.size(1), x_mean.size(2)
-            sem_gt = F.interpolate(input=sem_gt.unsqueeze(1).float(), size=(
-                h, w), mode='nearest')
-
-            mask = sem_gt.squeeze(1) == self.ignore_label  # [b h w]
-            x_mean[mask, ...] = 0
-            x_var[mask, ...] = 1
-
-        kl_loss = 0.5 * (x_mean ** 2 + x_var - torch.log(x_var) - 1).sum(-1)
-        kl_loss = kl_loss.mean()
-
-        return kl_loss
-
-
 class ProbPPDLoss(nn.Module, ABC):
     """ 
     Minimize intra-class compactness using distance between probabilistic distributions (MLS Distance).
@@ -178,14 +152,14 @@ class ProbPPDLoss(nn.Module, ABC):
         return prob_ppd_loss
 
 
-class PixelProbContrastLoss(nn.Module, ABC):
-    """
-    Pixel-wise probabilistic contrastive loss
-    Pixel embedding: Multivariate Gaussian
-    """
 
+class PixelUncerContrastLoss(nn.Module, ABC):
+    """
+    Use both images and predictions to obtain uncertainty/confidence.
+    Uncertainty is utilized in uncertainty-aware learning framework.
+    """
     def __init__(self, configer):
-        super(PixelProbContrastLoss, self).__init__()
+        super(PixelUncerContrastLoss, self).__init__()
         self.configer = configer
 
         ignore_index = -1
@@ -199,6 +173,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
         self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
         self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
         self.coarse_seg_weight = self.configer.get('protoseg', 'coarse_seg_weight')
+        self.uncer_seg_loss_weight = self.configer.get('protoseg', 'uncer_seg_loss_weight')
 
         self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
 
@@ -207,19 +182,9 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
 
-        # initialize scheudler for uncer_loss_weight
-        # self.rampdown_scheduler = RampdownScheduler(
-        #     begin_epoch=self.configer.get('rampdownscheduler', 'begin_epoch'),
-        #     max_epoch=self.configer.get('rampdownscheduler', 'max_epoch'),
-        #     current_epoch=self.configer.get('epoch'),
-        #     max_value=self.configer.get('rampdownscheduler', 'max_value'),
-        #     min_value=self.configer.get('rampdownscheduler', 'min_value'),
-        #     ramp_mult=self.configer.get('rampdownscheduler', 'ramp_mult'),
-        #     configer=configer)
         self.use_temperature = self.configer.get('protoseg', 'use_temperature')
         self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
-        self.kl_loss = KLLoss(configer=configer)
-        self.kl_loss_weight = self.configer.get('protoseg', 'kl_loss_weight')
+        self.uncer_seg_loss = PredUncertaintyLoss(configer=configer)
 
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
@@ -265,16 +230,16 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             coarse_pred = preds['coarse_seg']
             coarse_seg_loss = self.seg_criterion(coarse_pred, target)
-
-            x_mean = preds['x_mean']
-            x_var = preds['x_var']
-            kl_loss = self.kl_loss(x_mean, x_var, target)
+            
+            confidence = preds['confidence']
+            
+            uncer_seg_loss = self.uncer_seg_loss(confidence, pred, target)
 
             loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
-                prob_ppd_loss + self.kl_loss_weight * kl_loss + self.coarse_seg_weight * coarse_seg_loss
+                prob_ppd_loss + self.coarse_seg_weight * coarse_seg_loss + self.uncer_seg_loss_weight * uncer_seg_loss
             assert not torch.isnan(loss)
 
-            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'kl_loss': kl_loss}
+            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(

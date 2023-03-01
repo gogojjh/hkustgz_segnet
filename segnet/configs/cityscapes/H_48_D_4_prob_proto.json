@@ -39,7 +39,7 @@
 			"input_size": [1024, 768],
 			"align_method": "only_pad"
 		},
-		"vis_prototype": true,
+		"vis_prototype": false,
 		"vis_pred": false
 	},
 	"train_trans": {
@@ -167,12 +167,13 @@
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 0.01,
 		"prob_ppc_weight": 0.01,
-		"boundary_loss_weight": 0.01,
 		"kl_loss_weight": 0.01,
 		"coarse_seg_weight": 0.05,
+		"uncer_seg_loss_weight": 0.01,
 		"proj_dim": 720,
 		"key_dim": 256,
 		"context_dim": 720,
+		"ndf_dim": 16,
 		"use_boundary": false,
 		"bin_size_h": 4,
 		"bin_size_w": 8,
@@ -188,7 +189,8 @@
 		"uncertainty_random_mask": false,
 		"local_refinement": false,
 		"bayes_uncertainty": true,
-		"cosine_classifier": true
+		"cosine_classifier": true,
+		"uncertainty_aware_loss": true
 	},
 	"pmm": {
 		"use_pmm": false,
@@ -215,7 +217,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 0

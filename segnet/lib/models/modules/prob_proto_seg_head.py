@@ -138,7 +138,7 @@ class ProbProtoSegHead(nn.Module):
                 sim_mat = rearrange(sim_mat, 'r l n m c -> (r l) n m c')
                 # sim_mat = sim_mat.permute(0, 3, 1, 2)  # [(sample_k sample_k) c n m]
 
-                sim_mat = torch.mean(sim_mat, dim=0)  # [n m c]
+                sim_mat = torch.mean(sim_mat, dim=0)  # [n m c]cc
                 sim_mat = sim_mat.permute(0, 2, 1)  # [n c m]
 
             elif sim_measure == 'cosine':
@@ -150,6 +150,15 @@ class ProbProtoSegHead(nn.Module):
             else:
                 Log.error('Similarity measure is invalid.')
             del x_var, x, proto_mean, proto_var
+        else: 
+            if sim_measure == 'cosine':
+                # batch product (toward d dimension) -> cosine simialrity between fea and prototypes
+                # n: h*w, k: num_class, m: num_prototype
+                sim_mat = torch.einsum('nd,kmd->nmk', x, proto_mean)  # [c m n]
+
+                sim_mat = sim_mat.permute(0, 2, 1)  # [c n m]
+            else:
+                Log.error('Similarity measure is invalid.')
         return sim_mat
 
     def prototype_learning(self, sim_mat, out_seg, gt_seg, _c, _c_var):
@@ -563,7 +572,7 @@ class ProbProtoSegHead(nn.Module):
 
             sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
 
-            if self.use_uncertainty:
+            if self.use_uncertainty and x_var is not None:
                 proto_var = self.proto_var.data.clone()
 
                 if self.configer.get('iters') % 2000 == 0 and \
