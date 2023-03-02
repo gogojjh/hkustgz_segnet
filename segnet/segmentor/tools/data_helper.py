@@ -144,8 +144,8 @@ class DataHelper:
             names = [data_dict[k] for k in name_keys]
             img_keys = self.img_keys()
             imgs = [data_dict[k] for k in img_keys]
-            Log.info_once('Image name keys: {}'.format(name_keys))
-            Log.info_once('Image keys: {}'.format(img_keys))
+            # Log.info_once('Image name keys: {}'.format(name_keys))
+            # Log.info_once('Image keys: {}'.format(img_keys))
         
         if self.use_boundary and self.configer.get('phase') != 'test':
             boundary_keys = self.boundary_keys()

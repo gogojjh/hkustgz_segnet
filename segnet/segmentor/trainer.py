@@ -465,20 +465,20 @@ class Trainer(object):
                     if not is_distributed():
                         outputs = self.module_runner.gather(outputs)
                     if isinstance(outputs, dict):
-                        sim_mat = outputs['logits']  # [b h w (c m)]
-                        outputs = outputs['seg']
+                        # sim_mat = outputs['logits']  # [b h w (c m)]
+                        # outputs = outputs['seg']
                         # ============== visualize==============#
                         if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
                             # [b h w] [1, 256, 512]
                             # uncertainty = outputs['uncertainty']
                             h, w = targets.size(1), targets.size(2)
-                            uncertainty = outputs['x_var']  # [b h w k]
-                            uncertainty = uncertainty.mean(-1)  # [b h w]
+                            uncertainty = outputs['confidence']  # [b h w k] 
+                            # uncertainty = uncertainty.mean(-1)  # [b h w]
                             uncertainty = F.interpolate(
                                 input=uncertainty.unsqueeze(1), size=(h, w),
                                 mode='bilinear', align_corners=True)  # [b, 1, h, w]
                             uncertainty = uncertainty.squeeze(1)
-                            if (self.configer.get('iters') % (self.configer.get(
+                            if (j % (self.configer.get(
                                     'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
                                 vis_interval_img = self.configer.get(
                                     'uncertainty_visualizer', 'vis_interval_img')
