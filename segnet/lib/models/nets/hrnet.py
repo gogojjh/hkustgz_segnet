@@ -234,7 +234,7 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         return uncertainty
 
     def forward(self, x_, gt_semantic_seg=None, gt_boundary=None, pretrain_prototype=False):
-        x = self.backbone(x_)
+        x = self.backbone(x_) # [48, 96, 192, 384]
         b, _, h, w = x[0].size()  # 128, 256
 
         feat1 = x[0]
@@ -260,20 +260,6 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
                       h=gt_size[0], w=gt_size[1])
 
         c_var = None
-
-        if self.use_context:
-            c_coarse = self.cls_head(c_coarse)
-            
-            c = self.conv3x3(c)
-
-            context = self.spatial_gather_module(c, c_coarse)  # [b c/(c m) k]
-            c = self.context_relation_module(c, context)
-            
-            c = rearrange(c, 'b c h w -> (b h w) c')
-            c = self.feat_norm(c)  # ! along channel dimension
-            c = l2_normalize(c)  # ! l2_norm along num_class dimension
-            c = rearrange(c, '(b h w) c -> b c h w',
-                            h=gt_size[0], w=gt_size[1])
 
         if self.use_uncertainty:
             if self.uncertainty_random_mask or self.uncertainty_aware_fea:
@@ -324,17 +310,15 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
         
+        if gt_semantic_seg is not None or self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
         # get confidence using both img and predictions
-        sem_pred = preds['seg'] # [b num_cls h w]
-        sem_pred = torch.max(sem_pred, dim=1, keepdim=True)[0] # [b 1 h w]
-        x_ = F.interpolate(x_, size=(
-            h, w), mode="bilinear", align_corners=True)
-        x_ = torch.cat((sem_pred, x_), dim=1) # [b 3 h w] -> [b 4 h w]
-        confidence = self.confidence_head(x_)
-        preds['confidence'] = confidence
-
-        if gt_semantic_seg is not None and self.use_context:
-            preds['coarse_seg'] = c_coarse
+            sem_pred = preds['seg'] # [b num_cls h w]
+            sem_pred = torch.max(sem_pred, dim=1, keepdim=True)[0] # [b 1 h w]
+            x_ = F.interpolate(x_, size=(
+                h, w), mode="bilinear", align_corners=True)
+            x_ = torch.cat((sem_pred, x_), dim=1) # [b 3 h w] -> [b 4 h w]
+            confidence = self.confidence_head(x_)
+            preds['confidence'] = confidence
 
         del c, c_var
 

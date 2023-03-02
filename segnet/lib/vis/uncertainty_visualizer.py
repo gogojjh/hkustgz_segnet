@@ -2,6 +2,8 @@ import os
 
 import cv2
 import numpy as np
+import wandb
+import PIL
 
 from lib.datasets.tools.transforms import DeNormalize
 from lib.utils.tools.logger import Logger as Log
@@ -12,14 +14,19 @@ UNCERTAINTY_DIR = 'vis/results/uncertainty'
 
 class UncertaintyVisualizer(object):
     ''' 
-    Uncertainty is defined as the probability of the pixel belonging to its predicted class.
+    Uncertainty refers to data uncertainty / predictive uncertainty.
     '''
 
     def __init__(self, configer):
         super(UncertaintyVisualizer, self).__init__()
 
         self.configer = configer
-
+        self.wandb_mode = self.configer.get('wandb', 'mode')
+    
+    def wandb_log(self, uncer_img, file_name):
+        im = wandb.Image(uncer_img, caption=file_name)
+        wandb.log({'uncertainty image': [im]})
+        
     def vis_uncertainty(self, uncertainty, name='default'):
         base_dir = os.path.join(self.configer.get('train', 'out_dir'), UNCERTAINTY_DIR)
 
@@ -46,3 +53,6 @@ class UncertaintyVisualizer(object):
         uncertainty_img = uncertainty_img.astype(np.uint8)
         cv2.imwrite(os.path.join(base_dir, '{}_uncertainty.jpg'.format(name)), uncertainty_img)
         Log.info('Saving {}_uncertainty.jpg'.format(name))
+        
+        if self.wandb_mode == 'online':
+            self.wandb_log(uncertainty_img, '{}_uncertainty.jpg'.format(name))

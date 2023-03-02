@@ -178,6 +178,11 @@ class FSCELoss(nn.Module):
         reduction = 'elementwise_mean'
         if self.configer.exists('loss', 'params') and 'ce_reduction' in self.configer.get('loss', 'params'):
             reduction = self.configer.get('loss', 'params')['ce_reduction']
+        self.use_weighted_seg_loss = self.configer.get('protoseg', 'use_weighted_seg_loss')
+        if self.use_weighted_seg_loss:
+            reduction = 'none'    
+            self.confidence_seg_loss_weight = self.configer.get('protoseg', 'confidence_seg_loss_weight')
+        Log.info('Recudtion for seg loss: {}'.format(reduction))
 
         ignore_index = -1
         if self.configer.exists('loss', 'params') and 'ce_ignore_index' in self.configer.get('loss', 'params'):
@@ -185,7 +190,7 @@ class FSCELoss(nn.Module):
 
         self.ce_loss = nn.CrossEntropyLoss(weight=weight, ignore_index=ignore_index, reduction=reduction)
 
-    def forward(self, inputs, *targets, weights=None, **kwargs):
+    def forward(self, inputs, *targets, weights=None, confidence_wieght=None, **kwargs):
         loss = 0.0
         if isinstance(inputs, tuple) or isinstance(inputs, list):
             if weights is None:
@@ -200,8 +205,13 @@ class FSCELoss(nn.Module):
                     loss += weights[i] * self.ce_loss(inputs[i], target)
 
         else:
-            target = self._scale_target(targets[0], (inputs.size(2), inputs.size(3)))
-            loss = self.ce_loss(inputs, target)
+            target = self._scale_target(targets[0], (inputs.size(2), inputs.size(3))) # [b h w]
+            if confidence_wieght is not None and self.use_weighted_seg_loss:
+                confidence_wieght = 1 + self.confidence_seg_loss_weight * torch.sigmoid(confidence_wieght)
+                loss = self.ce_loss(inputs, target) * confidence_wieght # [b h w]
+                loss = torch.mean(loss)
+            else: 
+                loss = self.ce_loss(inputs, target)
 
         return loss
 

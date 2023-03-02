@@ -346,8 +346,8 @@ class Tester(object):
                                 cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
                                                  1, cv2.LINE_AA)
 
-                            vis_path = os.path.join(self.save_dir, "vis_overlay/",
-                                                    '{}.png'.format(names[k]))
+                            vis_path = os.path.join(self.save_dir, "sem_pred_overlay/",
+                                                    '{}_sem_pred_overlay.png'.format(names[k]))
                             FileHelper.make_dirs(vis_path, is_file=True)
                             ImageHelper.save(sys_img_part, save_path=vis_path)
 

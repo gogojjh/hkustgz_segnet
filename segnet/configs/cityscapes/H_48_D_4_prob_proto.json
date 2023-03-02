@@ -20,7 +20,7 @@
 		"out_dir": "/save_data/cityscapes"
 	},
 	"val": {
-		"batch_size": 4,
+		"batch_size": 2,
 		"mode": "ss_test",
 		"data_transformer": {
 			"size_mode": "fix_size",
@@ -165,15 +165,17 @@
 		"use_uncertainty": true,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
-		"prob_ppd_weight": 0.01,
+		"prob_ppd_weight": 0.1,
 		"prob_ppc_weight": 0.01,
 		"kl_loss_weight": 0.01,
 		"coarse_seg_weight": 0.05,
-		"uncer_seg_loss_weight": 0.01,
+		"uncer_seg_loss_weight": 0.05,
+		"confidence_seg_loss_weight": 0.1,
 		"proj_dim": 720,
 		"key_dim": 256,
 		"context_dim": 720,
 		"ndf_dim": 32,
+		"edge_dim": 256,
 		"use_boundary": false,
 		"bin_size_h": 4,
 		"bin_size_w": 8,
@@ -181,6 +183,7 @@
 		"batch_num": 20,
 		"avg_update_proto": true,
 		"use_temperature": false,
+		"use_weighted_seg_loss": true,
 		"alfa": 10,
 		"weighted_ppd_loss": false,
 		"attention_proto": false,
@@ -199,9 +202,9 @@
 		"kappa": 20
 	},
 	"uncertainty_visualizer": {
-		"vis_uncertainty": false,
+		"vis_uncertainty": true,
 		"vis_interval_img": 1,
-		"vis_inter_iter": 1,
+		"vis_inter_iter": 40,
 		"dataset": "val"
 	},
 	"rampdownscheduler": {
@@ -217,7 +220,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 0

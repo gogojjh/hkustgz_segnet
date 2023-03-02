@@ -26,7 +26,7 @@ class PredUncertaintyLoss(nn.Module, ABC):
     def __init__(self, configer):
         super(PredUncertaintyLoss, self).__init__()
         self.configer = configer
-        self.seg_criterion = torch.nn.BCELoss() 
+        self.seg_criterion = torch.nn.BCEWithLogitsLoss() 
         
         self.ignore_label = -1
         if self.configer.exists(
@@ -42,15 +42,18 @@ class PredUncertaintyLoss(nn.Module, ABC):
         
         pred/sem_gt [b h w]
         '''
-        correct_mask = binary_sem_gt == 1
-        correct_uncer_label = torch.cat(binary_pred[correct_mask].unsqueeze(1), (1 - binary_pred[correct_mask]).unsqueeze(1), dim=1) # [b 2 h w]
-        correct_uncer_label = torch.min(correct_uncer_label, dim=1)[0] # [b h w]
+        mask = torch.zeros_like(binary_sem_gt) # mask=0:wrong pred, mask=1:correct pred
+        mask[binary_sem_gt == 1] = 1
         
-        wrong_mask = binary_sem_gt == 0
-        correct_uncer_label = torch.cat(binary_pred[wrong_mask].unsqueeze(1), (1 - binary_pred[wrong_mask]).unsqueeze(1), dim=1) # [b 2 h w]
-        wrong_uncer_label = torch.max(correct_uncer_label, dim=1)[0] # [b h w]
+        correct_uncer_label = torch.cat((binary_pred.unsqueeze(1), (1 - binary_pred).unsqueeze(1)), dim=1) # [b 2 h w]
+        correct_uncer_label = binary_sem_gt * torch.min(correct_uncer_label, dim=1)[0] # [b h w]
+
+        wrong_uncer_label = torch.cat((binary_pred.unsqueeze(1), (1 - binary_pred).unsqueeze(1)), dim=1) # [b 2 h w]
+        wrong_uncer_label = (1 - binary_sem_gt) * torch.max(wrong_uncer_label, dim=1)[0] # [b h w]
         
-        uncer_label = (1 - binary_sem_gt) * wrong_uncer_label + binary_sem_gt * correct_uncer_label
+        uncer_label = torch.ones_like(mask)
+        uncer_label.masked_scatter_(mask.bool(), correct_uncer_label)
+        uncer_label.masked_scatter_(~(mask.bool()), wrong_uncer_label)
         
         return uncer_label 
     
@@ -60,7 +63,6 @@ class PredUncertaintyLoss(nn.Module, ABC):
         Correct prediction: 1
         Wrong prediction: 0
         '''
-        sem_gt = sem_gt.squeeze(1)
         binary_label = torch.zeros_like(sem_gt).cuda()
         pred = torch.argmax(pred, dim=1)
         binary_label[pred == sem_gt] = 1 # [b h w]
@@ -82,17 +84,18 @@ class PredUncertaintyLoss(nn.Module, ABC):
         h, w = confidence.size(1), confidence.size(2)
         sem_gt = F.interpolate(input=sem_gt.unsqueeze(1).float(), size=(
                 h, w), mode='nearest')
+        sem_gt = sem_gt.squeeze(1)
          
         binary_label = self.get_binary_sem_label(pred, sem_gt) # [b h w]
         binary_pred = self.get_binary_prediction(pred) # [b 2 h w]
         
         binary_pred = torch.max(binary_pred, dim=1)[0] # [b h w]
-        uncer_label = self.get_uncertainty_label(binary_pred, binary_label)
+        uncer_label = self.get_uncertainty_label(binary_pred, binary_label) # [b h w]
         
         # mask out the ignored label
         mask = sem_gt != self.ignore_label
         
-        uncer_seg_loss = self.seg_criterion(torch.sigmoid(confidence[mask]), uncer_label[mask])
+        uncer_seg_loss = self.seg_criterion(confidence[mask].float(), uncer_label[mask])
         
         return uncer_seg_loss
         
@@ -228,11 +231,16 @@ class PixelUncerContrastLoss(nn.Module, ABC):
         self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
         self.coarse_seg_weight = self.configer.get('protoseg', 'coarse_seg_weight')
         self.uncer_seg_loss_weight = self.configer.get('protoseg', 'uncer_seg_loss_weight')
-
+        self.use_weighted_seg_loss = self.configer.get('protoseg', 'use_weighted_seg_loss')
+        if self.use_weighted_seg_loss:
+            self.confidence_seg_loss_weight = self.configer.get('protoseg', 'confidence_seg_loss_weight')
+            
+        self.seg_criterion = FSCELoss(configer=configer)
+        
         self.prob_ppc_criterion = ProbPPCLoss(configer=configer)
 
         self.prob_ppd_criterion = ProbPPDLoss(configer=configer)
-        self.seg_criterion = FSCELoss(configer=configer)
+        
 
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
 
@@ -277,18 +285,25 @@ class PixelUncerContrastLoss(nn.Module, ABC):
 
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
-            
-            confidence = preds['confidence']
-            contrast_logits = contrast_logits.reshape(-1, self.num_classes, self.num_prototype)
-            contrast_logits = torch.max(contrast_logits, dim=-1)[0]
-            b_train, h_train, w_train = seg.size(0), seg.size(2), seg.size(3)
-            contrast_logits = contrast_logits.reshape(b_train, h_train, w_train, self.num_classes)
-            uncer_seg_loss = self.uncer_seg_loss(confidence, contrast_logits.permute(0, -1, 1, 2), target)
 
             pred = F.interpolate(input=seg, size=(
                 h, w), mode='bilinear', align_corners=True)
 
-            seg_loss = self.seg_criterion(pred, target)
+            if self.use_weighted_seg_loss:
+                confidence = preds['confidence']
+                contrast_logits = contrast_logits.reshape(-1, self.num_classes, self.num_prototype)
+                contrast_logits = torch.max(contrast_logits, dim=-1)[0]
+                b_train, h_train, w_train = seg.size(0), seg.size(2), seg.size(3)
+                contrast_logits = contrast_logits.reshape(b_train, h_train, w_train, self.num_classes)
+                #! pred is detached when caluclating supervision for uncertainty
+                uncer_seg_loss = self.uncer_seg_loss(confidence, contrast_logits.permute(0, -1, 1, 2).detach(), target)
+                
+                confidence = F.interpolate(input=confidence.unsqueeze(1), size=(
+                h, w), mode='bilinear', align_corners=True) # [b 1 h w]
+                #! confidence is detached when calculating seg loss
+                seg_loss = self.seg_criterion(pred, target, confidence_wieght=confidence.squeeze(1).detach())
+            else:
+                seg_loss = self.seg_criterion(pred, target)
 
             if self.use_context:
                 coarse_pred = preds['coarse_seg']

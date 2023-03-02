@@ -9,6 +9,7 @@ import os
 import cv2
 import numpy as np
 import torch.nn.functional as F
+import wandb
 
 from lib.datasets.tools.transforms import DeNormalize
 from lib.utils.tools.logger import Logger as Log
@@ -23,6 +24,7 @@ class SegVisualizer(object):
 
     def __init__(self, configer=None):
         self.configer = configer
+        self.wandb_mode = self.configer.get('wandb', 'mode')
 
     # vis false negatives
     def vis_fn(self, preds, targets, ori_img_in=None, name='default', sub_dir='fn'):
@@ -204,6 +206,10 @@ class SegVisualizer(object):
         # canvas = cv2.addWeighted(im, 0.3, canvas, 0.7, 0)
         canvas[np.where((gt == [0, 0, 0]).all(axis=2))] = [0, 0, 0]
         return canvas
+    
+    def wandb_log(self, erro_img, file_path):
+        im = wandb.Image(erro_img, caption=file_path)
+        wandb.log({'uncertainty image': [im]})
 
     def vis_error(self, im, pred, gt, name='default'):
         base_dir = os.path.join(self.configer.get('train', 'out_dir'), ERROR_MAP_DIR)
@@ -264,7 +270,9 @@ class SegVisualizer(object):
         # canvas[np.where((gt_img == [0, 0, 0]).all(axis=2))] = [0, 0, 0]
         canvas = cv2.normalize(canvas, None, 0, 255, cv2.NORM_MINMAX)
         canvas = canvas.astype(np.uint8)
-        cv2.imwrite(os.path.join(base_dir, '{}_error_map.jpg'.format(name)), canvas)
-        Log.info('Saving {}_error_map.jpg'.format(name))
+        cv2.imwrite(os.path.join(base_dir, '{}_error.jpg'.format(name)), canvas)
+        Log.info('Saving {}_error.jpg'.format(name))
+        if self.wandb_mode == 'online':
+            self.wandb_log(canvas, '{}_error.jpg'.format(name))
 
         # return canvas
