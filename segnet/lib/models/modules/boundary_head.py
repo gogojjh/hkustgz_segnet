@@ -54,15 +54,16 @@ class BCAModule(nn.Module):
             ModuleHelper.BatchNorm2d(bn_type=bn_type)(mid_channels),
         )
         
-        self.query_down = nn.MaxPool2d(4)
+        self.value_down = nn.MaxPool2d(4)
+        self.key_down = nn.MaxPool2d(4)
         
         nn.init.constant_(self.f_up[1].weight, 0)
         nn.init.constant_(self.f_up[1].bias, 0)
         
     def forward(self, x, y):
         ''' 
-        key: boundary map (downsampled for efficient memory)
-        value/query: feature map
+        key: boundary map (downsampled for efficient memory) / y
+        value/query: feature map / x
         '''
         batch_size = x.size(0)
         fself = self.f_self(x).view(batch_size, self.mid_channels, -1) # [b mid_dim (h w)]
@@ -73,13 +74,16 @@ class BCAModule(nn.Module):
         
         fy = self.f_y(y).view(batch_size, self.mid_channels, -1) # [b mid_dim (h w)]
         
-        #todo downsample !!
-        # [b (h w) mid_dim] @ [b mid_dim (h w)] = [b (h w) (h w)]
+        #! downsample for memory usage
+        fself = self.value_down(fself)
+        fy = self.key_down(fy)
+                
+        # [b (h w) mid_dim] @ [b mid_dim (h w)/R] = [b (h w) (h w)/R]
         sim_map = torch.matmul(fx, fy) 
         
-        sim_map = F.softmax(sim_map, dim=-1)
+        sim_map = F.softmax(sim_map, dim=-1)    
         
-        # [b (h w) (h w)] @ [b (h w) mid_dim] = [b (h w) mid_dim]
+        # [b (h w) (h w)/R] @ [b (h w)/R mid_dim] = [b (h w) mid_dim]
         fout = torch.matmul(sim_map, fself) 
         fout = fout.permute(0, 2, 1).contiguous() # [b mid_dim (h w)]
         fout = fout.view(batch_size, self.mid_channels, *x.size()[2:]) # [b mid_dim h w]

@@ -5,16 +5,17 @@
 
 
 import os
-
 import cv2
 import numpy as np
-import torch.nn.functional as F
 import wandb
 
 from lib.datasets.tools.transforms import DeNormalize
 from lib.utils.tools.logger import Logger as Log
-from lib.utils.distributed import get_world_size, get_rank, is_distributed
-from lib.vis.prototype_visualizer import PrototypeVisualier
+from lib.utils.distributed import get_rank, is_distributed
+import matplotlib.pyplot as plt
+from PIL import Image
+import matplotlib
+matplotlib.use('Agg')
 
 SEG_DIR = 'vis/results/seg'
 ERROR_MAP_DIR = 'vis/results/error_map'
@@ -206,10 +207,14 @@ class SegVisualizer(object):
         # canvas = cv2.addWeighted(im, 0.3, canvas, 0.7, 0)
         canvas[np.where((gt == [0, 0, 0]).all(axis=2))] = [0, 0, 0]
         return canvas
-    
-    def wandb_log(self, erro_img, file_path):
-        im = wandb.Image(erro_img, caption=file_path)
-        wandb.log({'uncertainty image': [im]})
+
+    def wandb_log(self, img_path, file_name):
+        error_img = Image.open(img_path)
+
+        im = wandb.Image(error_img, caption=file_name)
+
+        if get_rank() == 0:
+            wandb.log({'error image': [im]})
 
     def vis_error(self, im, pred, gt, name='default'):
         base_dir = os.path.join(self.configer.get('train', 'out_dir'), ERROR_MAP_DIR)
@@ -249,30 +254,19 @@ class SegVisualizer(object):
             if len(im.size()) == 4:
                 im = im.squeeze(0).data.cpu().numpy().transpose(1, 2, 0)   # [h w]
 
-        gt_img = np.ones((gt.shape[0], gt.shape[1], 3))
-        pred_img = np.ones((pred.shape[0], pred.shape[1], 3))
-        for i in range(gt_img.shape[-1]):
-            gt_img[:, :, i] = gt
-            pred_img[:, :, i] = pred
+        error_map = np.abs(gt - pred)
+        error_map[error_map == -1] = 0  # ignore class
+        error_map[error_map > 0] = 1
 
-        canvas = im.copy()
-        # canvas[np.where((gt_img - pred_img != [0, 0, 0]).all(axis=2))] = [0, 0, 0]
-        canvas[np.where((gt_img - pred_img == [0, 0, 0]).all(axis=2))] = [0, 0, 0]
-        canvas[np.where((gt_img - pred_img != [0, 0, 0]).all(axis=2))] = [255, 255, 255]
-        canvas[np.where((gt_img == [-1, -1, -1]).all(axis=2))] = [0, 0, 0]
+        fig = plt.figure()
+        plt.axis('off')
+        erromap = plt.imshow(error_map, cmap='viridis')
+        # fig.colorbar(errormap)
+        img_path = os.path.join(base_dir, '{}_error.png'.format(name))
+        fig.savefig(img_path,
+                    bbox_inches='tight', transparent=True, pad_inches=0.0)
+        plt.close()
+        Log.info('Saving {}_error.png'.format(name))
 
-        # pred_img[np.where((gt_img - pred_img == [0, 0, 0]).all(axis=2))] = [0, 0, 0]
-        # canvas = cv2.addWeighted(
-        #     canvas.astype(np.float32),
-        #     1.0, pred_img.astype(np.float32),
-        #     1.0, 0)
-        # canvas = cv2.addWeighted(im, 0.3, canvas, 0.7, 0)
-        # canvas[np.where((gt_img == [0, 0, 0]).all(axis=2))] = [0, 0, 0]
-        canvas = cv2.normalize(canvas, None, 0, 255, cv2.NORM_MINMAX)
-        canvas = canvas.astype(np.uint8)
-        cv2.imwrite(os.path.join(base_dir, '{}_error.jpg'.format(name)), canvas)
-        Log.info('Saving {}_error.jpg'.format(name))
         if self.wandb_mode == 'online':
-            self.wandb_log(canvas, '{}_error.jpg'.format(name))
-
-        # return canvas
+            self.wandb_log(img_path, 'Saving {}_error.jpg'.format(name))
