@@ -24,17 +24,31 @@ class EdgeBodyLoss(nn.Module, ABC):
 
         self.num_classes = self.configer.get('data', 'num_classes')
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
 
-    def edge_loss(self, edge_pred, edge_gt):
+    def body_loss(self, body_pred, body_gt, confidence):
         ''' 
-        binary cross-entrpy loss
+        Use confidence map to extract the uncertain body pixels for loss calculation.
+
+        body_pred: # [b 360 h w]
+        body_pred: 
         '''
 
-    def forward(self, preds, target, gt_boundary):
+    def forward(self, preds, target, gt_boundary, sem_gt):
+        ''' 
+        gt_boundary: 1->boundary 0->non-boundary
+        Use contrast target instead of sem_gt for more detailed supervision.
+        '''
         seg_edge = preds['seg_edge']
         seg_body = preds['seg_body']
         contrast_logits = preds['logits']  # [(b h w) (c m)]
         contrast_target = preds['target']  # [(b h w)]
+        confidence = preds['confidence']
         b, _, h, w = seg_edge.size()
         # contrast_target = contrast_target.reshape(-1, h, w) # [b h w]
 
@@ -50,3 +64,8 @@ class EdgeBodyLoss(nn.Module, ABC):
 
             edge_contrast_logits.masked_scatter_(edge_mask.bool(), pred_logits)
             body_contrast_logits.masked_scatter_(~edge_mask.bool(), pred_logits)
+
+        #! set the boundary gt pixel to ignore label to generate body gt
+        contrast_target.masked_fill_(gt_boundary, self.ignore_label)
+
+        body_loss = self.body_loss(seg_body, contrast_target, confidence)
