@@ -117,7 +117,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 10,
+		"test_interval": 2000,
 		"max_iters": 50000
 	},
 	"optim": {

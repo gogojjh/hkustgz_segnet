@@ -472,7 +472,7 @@ class Trainer(object):
                             # [b h w] [1, 256, 512]
                             # uncertainty = outputs['uncertainty']
                             h, w = targets.size(1), targets.size(2)
-                            uncertainty = outputs['confidence']  # [b h w k] 
+                            uncertainty = outputs['confidence']  # [b h w k]
                             # uncertainty = uncertainty.mean(-1)  # [b h w]
                             uncertainty = F.interpolate(
                                 input=uncertainty.unsqueeze(1), size=(h, w),

@@ -16,8 +16,8 @@ from einops import rearrange, repeat
 
 class BoundaryContrastiveLoss(nn.Module, ABC):
     ''' 
-    - pixels belonging to boundary prototype(last proto) have high uncertainty because they are likely to predicted as nearby class
-    - This loss is conducted between the pixels around the boundary.
+    'Contrastive Boundary Learning for Point Cloud Segmentation'
+    This loss is conducted between the pixels around the boundary.
     '''
 
     def __init__(self, configer):
@@ -126,8 +126,8 @@ class AleatoricUncertaintyLoss(nn.Module, ABC):
             (0.5 * torch.abs(target.float() - pred.float()) / x_var + 0.5 * torch.log(x_var)))
 
         return aleatoric_uncer_loss
-    
-    
+
+
 class FocalLoss(nn.Module, ABC):
     ''' focal loss '''
 
@@ -224,8 +224,8 @@ class PatchClsLoss(nn.Module, ABC):
         focal_loss = self.seg_criterion(patch_cls_score, patch_cls_gt[1:, ...])
 
         return focal_loss
-    
-    
+
+
 class BoundaryLoss(nn.Module, ABC):
     ''' 
     Cross entropy loss between boundary prediction and boundary gt.

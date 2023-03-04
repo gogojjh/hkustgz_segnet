@@ -39,24 +39,24 @@ class PredUncertaintyLoss(nn.Module, ABC):
         2. wrong pred: max(1-pred, pred)
 
         pred/sem_gt [b h w]
-        
+
         binary prediction:
         use variance of prediction probability as guidance to generate uncertainty label.
-        
+
         Compard with naive predicitve variance, we also considered the case where a pixel
         has small uncertainty/large pred variance, but with wrong prediction.
         '''
         mask = torch.zeros_like(binary_sem_gt).cuda()  # mask=0:wrong pred, mask=1:correct pred
         mask[binary_sem_gt == 1] = 1
-        
-        uncer_label = torch.zeros_like(binary_sem_gt).cuda() 
-        
+
+        uncer_label = torch.zeros_like(binary_sem_gt).cuda()
+
         # correct pred -> 0
         # wrong pred -> max[pred_var, 1-pred_var]
-        pred_var = torch.cat(((pred_var).unsqueeze(1), (1 - pred_var).unsqueeze(1)), dim=1) 
+        pred_var = torch.cat(((pred_var).unsqueeze(1), (1 - pred_var).unsqueeze(1)), dim=1)
 
-        uncer_label.masked_scatter_(~mask.bool(), torch.max(pred_var, dim=1)[0]) 
-        # uncer_label.masked_scatter_(mask.bool(), torch.min(pred_var, dim=1)[0]) 
+        uncer_label.masked_scatter_(~mask.bool(), torch.max(pred_var, dim=1)[0])
+        uncer_label.masked_scatter_(mask.bool(), torch.min(pred_var, dim=1)[0])
 
         return uncer_label
 
@@ -69,22 +69,22 @@ class PredUncertaintyLoss(nn.Module, ABC):
         binary_label = torch.zeros_like(sem_gt).cuda()
         pred = torch.argmax(pred, dim=1)
         binary_label[pred == sem_gt] = 1  # [b h w]
-        return binary_label 
+        return binary_label
 
     def get_pred_var(self, pred):
         ''' 
         'ARM: A Confidence-Based Adversarial Reweighting Module for Coarse Semantic Segmentation'
-        
+
         Use variance of prediction probability as uncertainty prediction. 
         But we only take the top 4 classes for variance calculation.
         '''
         score_top, _ = pred.topk(k=self.top_k_num, dim=1)  # [b 2/4 h w]
         score_top = F.softmax(score_top, dim=1)  # prob of binary classifiers
-        
+
         mean = 1 / self.top_k_num
-        var_map = torch.sigmoid(score_top - mean) # [b top_k h w]
+        var_map = torch.sigmoid(score_top - mean)  # [b top_k h w]
         pred_var = var_map.var(dim=1)
-        
+
         # normalization
         pred_var = (pred_var - pred_var.min()) / (pred_var.max() - pred_var.min())
         return pred_var
@@ -93,7 +93,7 @@ class PredUncertaintyLoss(nn.Module, ABC):
         ''' 
         confidence: [b h w]
         pred: [b num_cls h w]
-        
+
         Use l1 norm between prediction variance and confidence as supervision of uncertainty.
         L1 norm is used for robustness to outleirs.
         '''

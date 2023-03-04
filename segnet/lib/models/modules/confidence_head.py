@@ -11,9 +11,11 @@ from lib.models.tools.module_helper import ModuleHelper
 class UNetConvBlock(nn.Module):
     def __init__(self, in_size, out_size, bn_type):
         super(UNetConvBlock, self).__init__()
-        
-        self.conv = nn.Conv2d(in_size, out_size, kernel_size=3, stride=1, padding=1, padding_mode='replicate')
-        self.conv2 = nn.Conv2d(out_size, out_size, kernel_size=3, stride=1, padding=1, padding_mode='replicate')
+
+        self.conv = nn.Conv2d(in_size, out_size, kernel_size=3, stride=1,
+                              padding=1, padding_mode='replicate')
+        self.conv2 = nn.Conv2d(out_size, out_size, kernel_size=3, stride=1,
+                               padding=1, padding_mode='replicate')
         self.bn = ModuleHelper.BatchNorm2d(bn_type=bn_type)(out_size)
         self.bn2 = ModuleHelper.BatchNorm2d(bn_type=bn_type)(out_size)
         self.activation = nn.LeakyReLU(negative_slope=0.2, inplace=True)
@@ -32,7 +34,7 @@ class UNetConvBlock(nn.Module):
 class UNetUpBlock(nn.Module):
     def __init__(self, in_size, out_size, bn_type):
         super(UNetUpBlock, self).__init__()
-        
+
         self.conv1 = nn.ConvTranspose2d(in_size, out_size, kernel_size=2, stride=2, padding=0)
         # self.conv1 = nn.Conv2d(in_size, out_size, kernel_size=1, stride=1, padding=0)
         self.conv2_1 = nn.Conv2d(in_size, out_size, kernel_size=3, stride=1, padding=1)
@@ -49,7 +51,7 @@ class UNetUpBlock(nn.Module):
         init.kaiming_normal_(self.conv2_1.weight)
         init.kaiming_normal_(self.conv2_2.weight)
 
-    def forward(self, x, u):#bridge is the corresponding lower layer
+    def forward(self, x, u):  # bridge is the corresponding lower layer
         # _, _, w, h = u.shape()
         # x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=True)
         out = self.activation(self.bn1(self.conv1(x)))
@@ -67,10 +69,10 @@ class ConfidenceHead(nn.Module):
         super(ConfidenceHead, self).__init__()
         self.configer = configer
         self.num_classes = self.configer.get('data', 'num_classes')
-        
+
         ndf = self.configer.get('protoseg', 'ndf_dim')
         bn_type = self.configer.get('network', 'bn_type')
-        
+
         self.activation = nn.LeakyReLU(negative_slope=0.2, inplace=True)
 
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
@@ -94,9 +96,9 @@ class ConfidenceHead(nn.Module):
         self.conv4 = nn.Conv2d(8*ndf, 8*ndf, kernel_size=3, stride=2, padding=1)
 
         self.final_layer = nn.Conv2d(ndf, 1, kernel_size=3, stride=1, padding=1)
-        
+
     def forward(self, x):
-        block_1 = self.down_block_1(x) # ndf*256*256
+        block_1 = self.down_block_1(x)  # ndf*256*256
         x = self.conv1(block_1)
         block_2 = self.down_block_2(x)
         x = self.conv2(block_2)
@@ -111,10 +113,11 @@ class ConfidenceHead(nn.Module):
         out = self.up_block_2(out, block_2)
         out = self.up_block_1(out, block_1)
 
-        out = self.final_layer(out) # [b 1 h w]
-        out = out.squeeze(1) # [b h w]
-        
+        out = self.final_layer(out)  # [b 1 h w]
+        out = out.squeeze(1)  # [b h w]
+
         out = torch.sigmoid(out)
+        #! here we assume the output of confidence head is confidence not uncertainty!
+        out = 1 - out
 
         return out
-

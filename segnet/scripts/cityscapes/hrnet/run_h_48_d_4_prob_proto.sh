@@ -27,7 +27,7 @@ mkdir -p `dirname $LOG_FILE`
 
 PRETRAINED_MODEL="/save_data/hrnetv2_w48_imagenet_pretrained.pth"
 MAX_ITERS=50000
-BATCH_SIZE=4
+BATCH_SIZE=24
 BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
