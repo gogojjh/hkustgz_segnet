@@ -6,6 +6,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from lib.models.tools.module_helper import ModuleHelper
+from lib.utils.tools.logger import Logger as Log
+from lib.models.modules.contrast import upsample
 
 
 class BodyHead(nn.Module):
@@ -13,7 +15,7 @@ class BodyHead(nn.Module):
         super(BodyHead, self).__init__()
         self.configer = configer
 
-        inplane = self.configer.get('protoseg', 'proj_dim')
+        inplane = self.configer.get('protoseg', 'proj_dim') // 2
         bn_type = self.configer.get('network', 'bn_type')
 
         #! depthwise convolution
@@ -47,7 +49,7 @@ class BodyHead(nn.Module):
     def forward(self, x):
         size = x.size()[2:]
         seg_down = self.down(x)
-        seg_down = F.upsample(seg_down, size=size, mode="bilinear", align_corners=True)
+        seg_down = upsample(seg_down, size)
         flow = self.flow_make(torch.cat([x, seg_down], dim=1))
         seg_flow_warp = self.flow_warp(x, flow, size)
         seg_edge = x - seg_flow_warp
@@ -60,16 +62,22 @@ class EdgeHead(nn.Module):
         super(EdgeHead, self).__init__()
         self.configer = configer
         self.backbone = self.configer.get('network', 'backbone')
-
-        self.edge_down = nn.Conv2d(
-            self.configer.get('protoseg', 'proj_dim'),
-            256, kernel_size=3, bias=False)
-        if self.backbone == 'hrnet48':
-            self.bot_fine = nn.Conv2d(96, 48, kernel_size=1, bias=False)
-            self.edge_out = nn.
-
-        inplane = self.configer.get('protoseg', 'proj_dim')
         bn_type = self.configer.get('network', 'bn_type')
+
+        if self.backbone == 'hrnet48':
+            in_channles = 360
+            low_fea_dim = 96
+        else: 
+            Log.error('Backbone is invalid for edge head.')
+            
+        self.bot_fine = nn.Conv2d(low_fea_dim, 48, kernel_size=1, bias=False)
+        self.edge_fusion = nn.Conv2d(in_channles+48, in_channles, kernel_size=1, bias=False)
+        self.edge_out = nn.Sequential(
+            nn.Conv2d(in_channles, 48, kernel_size=3, padding=1, bias=False),
+            ModuleHelper.BatchNorm2d(bn_type=bn_type)(48),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(48, 1, kernel_size=1, bias=False)
+        )
 
     def forward(self, seg_edge, low_fea):
         ''' 
@@ -78,6 +86,15 @@ class EdgeHead(nn.Module):
         # add low-level feature for more details
         low_fea_size = low_fea.size()[2:]
         low_fea = self.bot_fine(low_fea)
-        seg_edge = F.interpolate(seg_edge, size=low_fea_size, mode='bilinear',
-                                 align_corners=True)
-        seg_edge =
+        
+        #! downsample will destroy the edge pred otherwise
+        seg_edge = torch.cat((F.interpolate(seg_edge, size=low_fea_size, mode='bilinear',
+                                 align_corners=True), low_fea)) # 360 + 48
+        seg_edge = self.edge_fusion(seg_edge) # [b 256 h' w']
+        
+        # seg_edge_out = self.edge_out(seg_edge) # [b 1 h' w']
+        
+        return seg_edge
+        
+        
+        

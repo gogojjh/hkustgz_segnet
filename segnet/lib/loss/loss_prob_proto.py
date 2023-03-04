@@ -236,7 +236,7 @@ class PixelProbContrastLoss(nn.Module, ABC):
 
             seg = preds['seg']  # [b c h w]
             contrast_logits = preds['logits']
-            contrast_target = preds['target']  # prototype selection [n]
+            contrast_target = preds['target']  
 
             if self.use_uncertainty:
                 w1 = None

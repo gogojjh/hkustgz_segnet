@@ -211,11 +211,6 @@ class ProbProtoSegHead(nn.Module):
             # correctly predicted pixel embed  [n embed_dim]
             c_q = c_k * c_k_tile
 
-            # if self.use_temperature:
-            #     q_k_tile = repeat(m_k, 'n -> n tile', tile=init_q.shape[-1])
-            #     init_q = init_q * q_k_tile # sim mat of correctly predicted pixels
-
-            # f = m_q.transpose(0, 1) @ c_q  # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
             if self.use_uncertainty and _c_var is not None and not self.cosine_classifier:
                 var_k = _c_var[gt_seg == i, ...]
 
@@ -306,14 +301,9 @@ class ProbProtoSegHead(nn.Module):
 
         return proto_target  # [n]
 
-    def prototype_learning_boundary(self, sim_mat, out_seg, gt_seg, _c, _c_var, gt_boundary=None):
+    def prototype_learning_boundary(self, sim_mat, out_seg, gt_seg, _c, _c_var=None, gt_boundary=None):
         """
-        Prototype selection and update
-        _c: (normalized) feature embedding [(b h w) c]
-        _c_var: [(b h w) c]
-        M = 1 - C, M: cost matrx, C: similarity matrix
-        T: optimal transport plan
-        Class-wise unsupervised clustering, which means this clustering only selects the prototype in its gt class. (Intra-clss unsupervised clustering)
+        Now only support for cosine classifier.
         If use_boundary is True: (m - 1) prototypes for class-wise non-edge pixel embeddings,
         and 1 prototype for class-wise edge pixel embeddings._c_var    
         gt_boundary: 0: non-edge, 1: edge 
@@ -336,13 +326,6 @@ class ProbProtoSegHead(nn.Module):
         _c = _c[non_boundary_mask, ...]
         gt_seg = gt_seg[non_boundary_mask]
 
-        if self.use_prototype and _c_var is not None:
-            _c_var_ori = _c_var.clone()
-            _c_var = _c_var[non_boundary_mask, ...]
-            proto_var = self.proto_var.data.clone()
-            non_edge_proto_var = proto_var[:, :-1, :]
-            edge_proto_var = proto_var[:, -1, :]  # [c k]
-
         # largest score inside a class
         pred_seg = torch.max(out_seg, dim=1)[1]  # [b*h*w]
         mask = (gt_seg == pred_seg.view(-1)[non_boundary_mask])  # [b*h*w] bool
@@ -356,37 +339,16 @@ class ProbProtoSegHead(nn.Module):
             boundary_cls_mask = torch.logical_and(boundary_cls_mask, pred_seg.view(-1) == i)
             # the ones are predicted correctly to class i
             if torch.count_nonzero(boundary_cls_mask) > 0 and self.update_prototype:
-                boundary_c_cls = _c_ori[boundary_cls_mask]  # [n k]
-
-                if not self.use_uncertainty:
+                if self.cosine_classifier:
+                    boundary_c_cls = _c_ori[boundary_cls_mask]  # [n k]
+                    #todo is it sum or mean?
                     boundary_c_cls = torch.sum(boundary_c_cls, dim=0)  # [k]
                     boundary_c_cls = F.normalize(boundary_c_cls, p=2, dim=-1)
                     edge_protos[i, ...] = momentum_update(old_value=edge_protos[i, ...],
-                                                          new_value=boundary_c_cls,
-                                                          momentum=self.mean_gamma)
-                else:
-                    boundary_c_var_cls = _c_var_ori[boundary_cls_mask]  # [n k]
-                    if not self.avg_update_proto:
-                        n = boundary_c_var_cls.shape[0]
-                        b_v = 1 / (((1 / (boundary_c_var_cls + 1e-3)).mean(0)) + 1e-3)
-                        # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
-                        b = ((b_v.unsqueeze(0) / (boundary_c_var_cls.unsqueeze(1) + 1e-3))
-                             * boundary_c_cls.unsqueeze(1)).mean(0)
-                        b = F.normalize(b, p=2, dim=-1)
-                    else:
-                        # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        b = boundary_c_cls.sum(0)
-                        b = F.normalize(b, p=2, dim=-1)
-                        protos[i, n != 0, :] = momentum_update(
-                            old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
-                        f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1)
-                                                                     @ c_q ** 2) / n - (m_q.transpose(0, 1) @ c_q / n) ** 2
-                    edge_protos[i, ...] = momentum_update(old_value=edge_protos[i, ...],
-                                                          new_value=b,
-                                                          momentum=self.mean_gamma)
-                    edge_proto_var[i, ...] = momentum_update(old_value=edge_proto_var[i, ...],
-                                                             new_value=b_v,
-                                                             momentum=self.var_gamma)
+                                                            new_value=boundary_c_cls,
+                                                            momentum=self.mean_gamma)
+                else: 
+                    Log.error('Invalid similarity measure for boundary prototype classifier.')
 
             #!=====non-boundary prototype learning and update ======#
             init_q = sim_mat[..., i]  # [b*h*w, num_proto]
@@ -398,15 +360,6 @@ class ProbProtoSegHead(nn.Module):
 
             q, indexs = distributed_sinkhorn(init_q, sinkhorn_iterations=self.configer.get('protoseg', 'sinkhorn_iterations'), epsilon=self.configer.get(
                 'protoseg', 'sinkhorn_epsilon'))  # q: mapping mat [n, num_proto] indexs: ind of largest proto in this cls[n]
-
-            try:
-                assert torch.isnan(q).int().sum() <= 0
-            except:
-                # process nan
-                Log.info('-'*10 + 'NaN in mapping matrix!' + '-'*10)
-                q[torch.isnan(q)] = 0
-                indexs[torch.isnan(q).int().sum(dim=1)] = 255 - \
-                    (self.num_prototype * i)
 
             m_k = mask[gt_seg == i]
 
@@ -423,51 +376,19 @@ class ProbProtoSegHead(nn.Module):
             # correctly predicted pixel embed  [n embed_dim]
             c_q = c_k * c_k_tile
 
-            if self.use_uncertainty and _c_var is not None:
-
-                var_k = _c_var[gt_seg == i, ...]
-
-                var_q = var_k * c_k_tile
-
             # the prototypes that are being selected calcualted by sum
             n = torch.sum(m_q, dim=0)  # [num_proto]
 
             if self.update_prototype is True and torch.sum(n) > 0:
-                if not self.use_uncertainty:
-                    # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
+                if self.cosine_classifier:
                     f = m_q.transpose(0, 1) @ c_q
                     f = F.normalize(f, p=2, dim=-1)
-                    protos[i, n != 0, :] = momentum_update(
-                        old_value=non_edge_protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
-                else:
-                    m_q_sum = m_q.sum(dim=0)  # [num_proto]
-                    if not self.avg_update_proto:
-                        # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) /
-                                   (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
-                        # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
-                        f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
-                        f = torch.einsum('nm,nmk->mk', m_q, f)
-                        f = f / (m_q_sum.unsqueeze(-1) + 1e-3)
-                        f = F.normalize(f, p=2, dim=-1)
-                    else:
-                        # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        f = m_q.transpose(0, 1) @ c_q
-                        f = F.normalize(f, p=2, dim=-1)
-
-                        protos[i, n != 0, :] = momentum_update(
-                            old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
-
-                        f_v = (m_q.transpose(0, 1) @ (var_q / n)) + (m_q.transpose(0, 1)
-                                                                     @ c_q ** 2) / n - (m_q.transpose(0, 1) @ c_q / n) ** 2
                     non_edge_protos[i, n != 0, :] = momentum_update(
                         old_value=non_edge_protos[i, n != 0, :],
                         new_value=f[n != 0, :],
                         momentum=self.mean_gamma, debug=False)
-                    non_edge_proto_var[i, n != 0, :] = momentum_update(
-                        old_value=non_edge_proto_var[i, n != 0, :],
-                        new_value=f_v[n != 0, :],
-                        momentum=self.var_gamma, debug=False)
+                else: 
+                    Log.error('Invalid similarity measure for boundary prototype classifier.')
 
             # each class has a target id between [0, num_proto * c]
             #! ignore_label are still -1, and not being modified
@@ -483,11 +404,6 @@ class ProbProtoSegHead(nn.Module):
         edge_protos = edge_protos.unsqueeze(1)  # [c 1 k]
         protos = torch.cat((non_edge_protos, edge_protos), dim=1)  # [c m k]
 
-        if self.use_uncertainty:
-            edge_proto_var = edge_proto_var.unsqueeze(1)  # [c 1 k]
-            proto_var = torch.cat((non_edge_proto_var, edge_proto_var), dim=1)  # [c m k]
-            self.proto_var = nn.Parameter(proto_var, requires_grad=False)
-
         self.prototypes = nn.Parameter(
             l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
 
@@ -502,10 +418,6 @@ class ProbProtoSegHead(nn.Module):
             """
             dist.all_reduce(protos.div_(dist.get_world_size()))
             self.prototypes = nn.Parameter(protos, requires_grad=False)
-            if self.use_uncertainty:
-                proto_var = self.proto_var.data.clone()
-                dist.all_reduce(proto_var.div_(dist.get_world_size()))
-                self.proto_var = nn.Parameter(proto_var, requires_grad=False)
 
         return proto_target  # [n]
 

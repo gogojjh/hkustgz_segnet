@@ -18,17 +18,11 @@ import torch.distributed as dist
 from lib.models.backbones.backbone_selector import BackboneSelector
 from lib.models.tools.module_helper import ModuleHelper
 from lib.models.modules.hanet_attention import HANet_Conv
-from lib.models.modules.contrast import momentum_update, l2_normalize, ProjectionHead
+from lib.models.modules.contrast import momentum_update, l2_normalize, ProjectionHead, upsample
 from lib.models.modules.uncertainty_head import UncertaintyHead
 from lib.models.modules.sinkhorn import distributed_sinkhorn
 from lib.models.modules.prob_proto_seg_head import ProbProtoSegHead
-from lib.models.modules.bayesian_uncertainty_head import BayesianUncertaintyHead
 from lib.models.modules.confidence_head import ConfidenceHead
-from lib.models.modules.pmm_module import PMMs
-from lib.models.modules.transformer import build_transformer
-from lib.models.modules.position_encoding import build_position_encoding
-from lib.models.modules.object_contextual_block import SpatialGather_0CR_Module, ContextRelation_Module
-# from lib.models.modules.body_head import BodyHead
 
 from timm.models.layers import trunc_normal_
 from einops import rearrange, repeat
@@ -152,9 +146,6 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
         self.use_ros = self.configer.get('ros', 'use_ros')
-        self.use_attention = self.configer.get('protoseg', 'use_attention')
-        self.bayes_uncertainty = self.configer.get('protoseg', 'bayes_uncertainty')
-        self.use_pmm = self.configer.get('pmm', 'use_pmm')
 
         self.backbone = BackboneSelector(configer).get_backbone()
 
@@ -166,8 +157,13 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         self.mask_norm = nn.LayerNorm(self.num_classes)
 
         in_channels = 720
+        
+        if self.use_boundary:
+            out_channels = 720 // 2
+        else: 
+            out_channels = 720    
         self.cls_head = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels,
+            nn.Conv2d(in_channels, out_channels,
                       kernel_size=3, stride=1, padding=1),
             ModuleHelper.BNReLU(
                 in_channels, bn_type=self.configer.get('network', 'bn_type')),
@@ -176,8 +172,12 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         self.proj_head = ProjectionHead(in_channels, in_channels)
         self.confidence_head = ConfidenceHead(configer=configer)
         
-        # if self.use_boundary:
-        #     self.body_head = BodyHead(configer=configer)
+        if self.use_boundary:
+            from lib.models.modules.body_head import BodyHead, EdgeHead
+            self.fea_down = nn.Conv2d(self.proj_dim, self.proj_dim // 2, kernel_size=3, bias=False)
+            self.body_head = BodyHead(configer=configer)
+            self.edge_head = EdgeHead(configer=configer)
+            self.sigmoid_edge = nn.Sigmoid()
 
     def forward(self, x_, gt_semantic_seg=None, gt_boundary=None, pretrain_prototype=False):
         x = self.backbone(x_) # [48, 96, 192, 384]
@@ -197,11 +197,26 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
 
         gt_size = c.size()[2:]
         
+        c = self.cls_head(c) # [b 360/720 h w]
         if self.use_boundary:
-            seg_body, seg_edge = self.body_head(c)
-        
-
-        c = self.cls_head(c)
+            ''' 
+            We do not use cls head for neither seg_edge_out/seg_body_out.
+            Instead, we use probability from the prototype classifier.
+            '''
+            seg_body, seg_edge = self.body_head(c) # [b 360 h w]
+            # [b 1 h' w'], [b 360 h' w'] h'/w': size of low-level fea
+            seg_edge = self.edge_head(seg_edge, x[1]) 
+            low_fea_size = x[1].size()[2:]
+            
+            # [b 360 h' w']
+            seg_out = seg_edge + upsample(seg_body, low_fea_size) 
+            c = upsample(c, low_fea_size) # [b 360 h' w']
+            c = torch.cat((c, seg_out), dim=1) # [b 720 h' w']
+            c = upsample(c, (h, w)) # [b 720 h w]
+            
+            # seg_edge_out = upsample(seg_edge_out, (h, w)) # [b 1 h w]
+            # seg_edge_out = self.sigmoid_edge(seg_edge_out) #! prob of being edge
+            
         c = self.proj_head(c)
         c = rearrange(c, 'b c h w -> (b h w) c')
         c = self.feat_norm(c)  # ! along channel dimension
@@ -215,6 +230,10 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         preds = self.prob_seg_head(
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
+        
+        if gt_semantic_seg is not None and self.use_boundary:
+            preds['seg_edge'] = seg_edge
+            preds['seg_body'] = seg_body
         
         if gt_semantic_seg is not None or self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
         # get confidence using both img and predictions
@@ -259,6 +278,7 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
         if self.use_uncertainty:
             if self.bayes_uncertainty:
+                from lib.models.modules.bayesian_uncertainty_head import BayesianUncertaintyHead
                 self.bayes_uncertainty_head = BayesianUncertaintyHead(configer=configer)
             else:
                 self.uncertainty_head = UncertaintyHead(configer=configer)
@@ -279,10 +299,13 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         self.proj_head = ProjectionHead(in_channels, in_channels)
 
         if self.use_pmm:
+            from lib.models.modules.pmm_module import PMMs
             self.pmm_k = self.configer.get('pmm', 'pmm_k')
             self.stage_num = self.configer.get('pmm', 'stage_num')
             self.pmm = PMMs(configer=configer)
         if self.use_attention:
+            from lib.models.modules.transformer import build_transformer
+            from lib.models.modules.position_encoding import build_position_encoding
             dropout = 0.1
             self.transformer = build_transformer(
                 self.proj_dim, dropout, nheads=8, dim_feedforward=2048, enc_layers=3, dec_layers=3,
@@ -301,13 +324,14 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
         self.use_context = self.configer.get('protoseg', 'use_context')
         self.reparam_k = self.configer.get('protoseg', 'reparam_k')
         if self.use_context:
+            from lib.models.modules.object_contextual_block import SpatialGather_0CR_Module, ContextRelation_Module
             self.context_dim = self.configer.get('protoseg', 'context_dim')
             self.conv3x3 = nn.Sequential(
                 nn.Conv2d(self.proj_dim, self.context_dim, kernel_size=3, stride=1, padding=1),
                 ModuleHelper.BNReLU(
                     self.context_dim, bn_type=self.configer.get('network', 'bn_type')),)
             self.spatial_gather_module = SpatialGather_0CR_Module(configer=configer)
-        self.context_relation_module = ContextRelation_Module(configer=configer)
+            self.context_relation_module = ContextRelation_Module(configer=configer)
 
     def reparameterize(self, mu, var, k=1):
         sample_z = []
