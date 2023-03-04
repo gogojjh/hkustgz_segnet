@@ -126,7 +126,7 @@ class HRNet_W18_Attn_Prob_Proto(nn.Module):
         del c, c_var
 
         return preds
-    
+
 
 class HRNet_W48_Attn_Uncer_Proto(nn.Module):
     """
@@ -157,11 +157,11 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         self.mask_norm = nn.LayerNorm(self.num_classes)
 
         in_channels = 720
-        
+
         if self.use_boundary:
             out_channels = 720 // 2
-        else: 
-            out_channels = 720    
+        else:
+            out_channels = 720
         self.cls_head = nn.Sequential(
             nn.Conv2d(in_channels, out_channels,
                       kernel_size=3, stride=1, padding=1),
@@ -171,16 +171,24 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         )
         self.proj_head = ProjectionHead(in_channels, in_channels)
         self.confidence_head = ConfidenceHead(configer=configer)
-        
+
         if self.use_boundary:
             from lib.models.modules.body_head import BodyHead, EdgeHead
+            bn_type = self.configer.get('network', 'bn_type')
             self.fea_down = nn.Conv2d(self.proj_dim, self.proj_dim // 2, kernel_size=3, bias=False)
             self.body_head = BodyHead(configer=configer)
             self.edge_head = EdgeHead(configer=configer)
             self.sigmoid_edge = nn.Sigmoid()
+            # DSN for seg body part
+            self.body_cls_head = nn.Sequential(
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+                ModuleHelper.BatchNorm2d(bn_type=bn_type)(out_channels),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_channels, self.num_classes, kernel_size=1, bias=False)
+            )
 
     def forward(self, x_, gt_semantic_seg=None, gt_boundary=None, pretrain_prototype=False):
-        x = self.backbone(x_) # [48, 96, 192, 384]
+        x = self.backbone(x_)  # [48, 96, 192, 384]
         b, _, h, w = x[0].size()  # 128, 256
 
         feat1 = x[0]
@@ -196,27 +204,29 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         del feat1, feat2, feat3, feat4
 
         gt_size = c.size()[2:]
-        
-        c = self.cls_head(c) # [b 360/720 h w]
+
+        c = self.cls_head(c)  # [b 360/720 h w]
         if self.use_boundary:
             ''' 
             We do not use cls head for neither seg_edge_out/seg_body_out.
             Instead, we use probability from the prototype classifier.
             '''
-            seg_body, seg_edge = self.body_head(c) # [b 360 h w]
-            # [b 360 h' w'] h'/w': size of low-level fea
-            seg_edge = self.edge_head(seg_edge, x[1]) 
+            seg_body, seg_edge = self.body_head(c)  # [b 360 h w]
+            # [b 1 h' w'], [b 360 h' w'] h'/w': size of low-level fea
+            seg_edge_out, seg_edge = self.edge_head(seg_edge, x[1])
             low_fea_size = x[1].size()[2:]
-            
+
             # [b 360 h' w']
-            seg_out = seg_edge + upsample(seg_body, low_fea_size) 
-            c = upsample(c, low_fea_size) # [b 360 h' w']
-            c = torch.cat((c, seg_out), dim=1) # [b 720 h' w']
-            c = upsample(c, (h, w)) # [b 720 h w]
-            
-            seg_edge = upsample(seg_edge, (h, w)) # [b 360 h w] # for loss calc
-            # seg_edge_out = self.sigmoid_edge(seg_edge_out) #! prob of being edge
-            
+            seg_out = seg_edge + upsample(seg_body, low_fea_size)
+            c = upsample(c, low_fea_size)  # [b 360 h' w']
+            c = torch.cat((c, seg_out), dim=1)  # [b 720 h' w']
+            c = upsample(c, (h, w))  # [b 720 h w]
+
+            seg_edge_out = upsample(seg_edge_out, (h, w))  # [b 360 h w] # for loss calc
+            seg_edge_out = self.sigmoid_edge(seg_edge_out)  # ! prob of being edge [b 1 h' w']
+
+            seg_body = upsample(self.body_cls_head(seg_body), (h, w))
+
         c = self.proj_head(c)
         c = rearrange(c, 'b c h w -> (b h w) c')
         c = self.feat_norm(c)  # ! along channel dimension
@@ -226,22 +236,23 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
 
         c_var = None
         boundary_pred = None
-        
+
         preds = self.prob_seg_head(
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
-        
+
         if gt_semantic_seg is not None and self.use_boundary:
             preds['seg_edge'] = seg_edge
             preds['seg_body'] = seg_body
-        
-        if gt_semantic_seg is not None or self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
-        # get confidence using both img and predictions
-            sem_pred = preds['seg'] # [b num_cls h w]
-            sem_pred = torch.max(sem_pred, dim=1, keepdim=True)[0] # [b 1 h w]
+
+        if gt_semantic_seg is not None or self.configer.get(
+                'uncertainty_visualizer', 'vis_uncertainty'):
+            # get confidence using both img and predictions
+            sem_pred = preds['seg']  # [b num_cls h w]
+            sem_pred = torch.max(sem_pred, dim=1, keepdim=True)[0]  # [b 1 h w]
             x_ = F.interpolate(x_, size=(
                 h, w), mode="bilinear", align_corners=True)
-            x_ = torch.cat((sem_pred, x_), dim=1) # [b 3 h w] -> [b 4 h w]
+            x_ = torch.cat((sem_pred, x_), dim=1)  # [b 3 h w] -> [b 4 h w]
             confidence = self.confidence_head(x_)
             preds['confidence'] = confidence
 
@@ -411,12 +422,12 @@ class HRNet_W48_Attn_Prob_Proto(nn.Module):
 
             context = self.spatial_gather_module(c, c_coarse)  # [b c/(c m) k]
             c = self.context_relation_module(c, context)
-            
+
             c = rearrange(c, 'b c h w -> (b h w) c')
             c = self.feat_norm(c)  # ! along channel dimension
             c = l2_normalize(c)  # ! l2_norm along num_class dimension
             c = rearrange(c, '(b h w) c -> b c h w',
-                            h=gt_size[0], w=gt_size[1])
+                          h=gt_size[0], w=gt_size[1])
 
         if self.use_uncertainty:
             if self.uncertainty_random_mask or self.uncertainty_aware_fea:

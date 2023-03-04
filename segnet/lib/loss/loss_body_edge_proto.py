@@ -35,8 +35,8 @@ class EdgeBodyLoss(nn.Module, ABC):
         ''' 
         Use confidence map to extract the uncertain body pixels for loss calculation.
 
-        body_pred: # [b 360 h w]
-        body_pred: 
+        body_pred: [b 360 h w]
+        body_gt/confidence: [b h w]
         '''
 
     def forward(self, preds, target, gt_boundary, sem_gt):
@@ -50,7 +50,6 @@ class EdgeBodyLoss(nn.Module, ABC):
         contrast_target = preds['target']  # [(b h w)]
         confidence = preds['confidence']
         b, _, h, w = seg_edge.size()
-        # contrast_target = contrast_target.reshape(-1, h, w) # [b h w]
 
         # extract the pixels predicted as boundary (last prototype in each class)
         edge_contrast_logits = torch.zeros_like(contrast_target).cuda()  # [(b h w)]
@@ -67,5 +66,6 @@ class EdgeBodyLoss(nn.Module, ABC):
 
         #! set the boundary gt pixel to ignore label to generate body gt
         contrast_target.masked_fill_(gt_boundary, self.ignore_label)
+        contrast_target = contrast_target.reshape(-1, h, w)  # [b h w]
 
         body_loss = self.body_loss(seg_body, contrast_target, confidence)

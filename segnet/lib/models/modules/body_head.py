@@ -67,9 +67,9 @@ class EdgeHead(nn.Module):
         if self.backbone == 'hrnet48':
             in_channles = 360
             low_fea_dim = 96
-        else: 
+        else:
             Log.error('Backbone is invalid for edge head.')
-            
+
         self.bot_fine = nn.Conv2d(low_fea_dim, 48, kernel_size=1, bias=False)
         self.edge_fusion = nn.Conv2d(in_channles+48, in_channles, kernel_size=1, bias=False)
         self.edge_out = nn.Sequential(
@@ -86,15 +86,12 @@ class EdgeHead(nn.Module):
         # add low-level feature for more details
         low_fea_size = low_fea.size()[2:]
         low_fea = self.bot_fine(low_fea)
-        
+
         #! downsample will destroy the edge pred otherwise
         seg_edge = torch.cat((F.interpolate(seg_edge, size=low_fea_size, mode='bilinear',
-                                 align_corners=True), low_fea)) # 360 + 48
-        seg_edge = self.edge_fusion(seg_edge) # [b 256 h' w']
-        
-        # seg_edge_out = self.edge_out(seg_edge) # [b 1 h' w']
-        
-        return seg_edge
-        
-        
-        
+                                            align_corners=True), low_fea))  # 360 + 48
+        seg_edge = self.edge_fusion(seg_edge)  # [b 256 h' w']
+
+        seg_edge_out = self.edge_out(seg_edge)  # [b 1 h' w']
+
+        return seg_edge_out, seg_edge
