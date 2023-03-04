@@ -150,7 +150,7 @@ class ProbProtoSegHead(nn.Module):
             else:
                 Log.error('Similarity measure is invalid.')
             del x_var, x, proto_mean, proto_var
-        else: 
+        else:
             if sim_measure == 'cosine':
                 # batch product (toward d dimension) -> cosine simialrity between fea and prototypes
                 # n: h*w, k: num_class, m: num_prototype
@@ -301,7 +301,8 @@ class ProbProtoSegHead(nn.Module):
 
         return proto_target  # [n]
 
-    def prototype_learning_boundary(self, sim_mat, out_seg, gt_seg, _c, _c_var=None, gt_boundary=None):
+    def prototype_learning_boundary(
+            self, sim_mat, out_seg, gt_seg, _c, _c_var=None, gt_boundary=None):
         """
         Now only support for cosine classifier.
         If use_boundary is True: (m - 1) prototypes for class-wise non-edge pixel embeddings,
@@ -341,13 +342,13 @@ class ProbProtoSegHead(nn.Module):
             if torch.count_nonzero(boundary_cls_mask) > 0 and self.update_prototype:
                 if self.cosine_classifier:
                     boundary_c_cls = _c_ori[boundary_cls_mask]  # [n k]
-                    #todo is it sum or mean?
+                    # todo is it sum or mean?
                     boundary_c_cls = torch.sum(boundary_c_cls, dim=0)  # [k]
                     boundary_c_cls = F.normalize(boundary_c_cls, p=2, dim=-1)
                     edge_protos[i, ...] = momentum_update(old_value=edge_protos[i, ...],
-                                                            new_value=boundary_c_cls,
-                                                            momentum=self.mean_gamma)
-                else: 
+                                                          new_value=boundary_c_cls,
+                                                          momentum=self.mean_gamma)
+                else:
                     Log.error('Invalid similarity measure for boundary prototype classifier.')
 
             #!=====non-boundary prototype learning and update ======#
@@ -387,7 +388,7 @@ class ProbProtoSegHead(nn.Module):
                         old_value=non_edge_protos[i, n != 0, :],
                         new_value=f[n != 0, :],
                         momentum=self.mean_gamma, debug=False)
-                else: 
+                else:
                     Log.error('Invalid similarity measure for boundary prototype classifier.')
 
             # each class has a target id between [0, num_proto * c]
