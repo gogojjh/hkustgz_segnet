@@ -28,16 +28,19 @@ class EdgeBodyLoss(nn.Module, ABC):
     def forward(self, preds, target, gt_boundary):
         seg_edge = preds['seg_edge']
         seg_body = preds['seg_body']
-        contrast_logits = preds['logits']
+        contrast_logits = preds['logits'] # [(b h w) (c m)]
         contrast_target = preds['target']  # [(b h w)]
         b, _, h, w = seg_edge.size()
-        contrast_target = contrast_target.reshape(-1, h, w)
+        # contrast_target = contrast_target.reshape(-1, h, w) # [b h w]
+        # [(b h w) c m]
+        contrast_logits = contrast_logits.reshape(-1, self.num_classes, self.num_prototype) 
         
         # extract the pixels predicted as boundary (last prototype in each class)
         edge_contrast_logits = torch.zeros_like(contrast_target).cuda() # [(b h w)]
         for i in range(self.num_classes):
+            edge_cls_logits = contrast_logits
             edge_mask = contrast_target == float(
-                self.num_prototype - 1) + (self.num_prototype * i) 
+                self.num_prototype - 1) + (self.num_prototype * i)  # [(b h w)]
             edge_contrast_logits.masked_scatter_(edge_mask.bool(), 1)
         
         
