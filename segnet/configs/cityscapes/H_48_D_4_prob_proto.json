@@ -117,7 +117,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 20,
+		"test_interval": 10,
 		"max_iters": 50000
 	},
 	"optim": {
@@ -170,7 +170,7 @@
 		"kl_loss_weight": 0.01,
 		"coarse_seg_weight": 0.05,
 		"uncer_seg_loss_weight": 0.05,
-		"confidence_seg_loss_weight": 0.1,
+		"confidence_seg_loss_weight": 0.2,
 		"proj_dim": 720,
 		"key_dim": 256,
 		"context_dim": 720,
@@ -193,7 +193,8 @@
 		"local_refinement": false,
 		"bayes_uncertainty": true,
 		"cosine_classifier": true,
-		"uncertainty_aware_loss": true
+		"uncertainty_aware_loss": true,
+		"top_k_num": 3
 	},
 	"pmm": {
 		"use_pmm": false,

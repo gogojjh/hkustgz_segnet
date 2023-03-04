@@ -5,14 +5,17 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 
+from lib.models.tools.module_helper import ModuleHelper
+
 
 class UNetConvBlock(nn.Module):
-    def __init__(self, in_size, out_size):
+    def __init__(self, in_size, out_size, bn_type):
         super(UNetConvBlock, self).__init__()
+        
         self.conv = nn.Conv2d(in_size, out_size, kernel_size=3, stride=1, padding=1, padding_mode='replicate')
         self.conv2 = nn.Conv2d(out_size, out_size, kernel_size=3, stride=1, padding=1, padding_mode='replicate')
-        self.bn = nn.BatchNorm2d(out_size)
-        self.bn2 = nn.BatchNorm2d(out_size)
+        self.bn = ModuleHelper.BatchNorm2d(bn_type=bn_type)(out_size)
+        self.bn2 = ModuleHelper.BatchNorm2d(bn_type=bn_type)(out_size)
         self.activation = nn.LeakyReLU(negative_slope=0.2, inplace=True)
         self.dropout = nn.Dropout(p=0.5)
 
@@ -27,15 +30,16 @@ class UNetConvBlock(nn.Module):
 
 
 class UNetUpBlock(nn.Module):
-    def __init__(self, in_size, out_size):
+    def __init__(self, in_size, out_size, bn_type):
         super(UNetUpBlock, self).__init__()
+        
         self.conv1 = nn.ConvTranspose2d(in_size, out_size, kernel_size=2, stride=2, padding=0)
         # self.conv1 = nn.Conv2d(in_size, out_size, kernel_size=1, stride=1, padding=0)
         self.conv2_1 = nn.Conv2d(in_size, out_size, kernel_size=3, stride=1, padding=1)
         self.conv2_2 = nn.Conv2d(out_size, out_size, kernel_size=3, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm2d(out_size)
-        self.bn2_1 = nn.BatchNorm2d(out_size)
-        self.bn2_2 = nn.BatchNorm2d(out_size)
+        self.bn1 = ModuleHelper.BatchNorm2d(bn_type=bn_type)(out_size)
+        self.bn2_1 = ModuleHelper.BatchNorm2d(bn_type=bn_type)(out_size)
+        self.bn2_2 = ModuleHelper.BatchNorm2d(bn_type=bn_type)(out_size)
         self.activation = nn.LeakyReLU(negative_slope=0.2, inplace=True)
         self.dropout_1 = nn.Dropout(p=0.5)
         self.dropout_2 = nn.Dropout(p=0.5)
@@ -65,6 +69,7 @@ class ConfidenceHead(nn.Module):
         self.num_classes = self.configer.get('data', 'num_classes')
         
         ndf = self.configer.get('protoseg', 'ndf_dim')
+        bn_type = self.configer.get('network', 'bn_type')
         
         self.activation = nn.LeakyReLU(negative_slope=0.2, inplace=True)
 
@@ -72,16 +77,16 @@ class ConfidenceHead(nn.Module):
 
         # in_channel = self.num_classes + 3 # 22
         in_channel = 4
-        self.down_block_1 = UNetConvBlock(in_channel, ndf)
-        self.down_block_2 = UNetConvBlock(ndf, 2*ndf)
-        self.down_block_3 = UNetConvBlock(2*ndf, 4*ndf)
-        self.down_block_4 = UNetConvBlock(4*ndf, 8*ndf)
-        self.down_block_5 = UNetConvBlock(8*ndf, 16*ndf)
+        self.down_block_1 = UNetConvBlock(in_channel, ndf, bn_type)
+        self.down_block_2 = UNetConvBlock(ndf, 2*ndf, bn_type)
+        self.down_block_3 = UNetConvBlock(2*ndf, 4*ndf, bn_type)
+        self.down_block_4 = UNetConvBlock(4*ndf, 8*ndf, bn_type)
+        self.down_block_5 = UNetConvBlock(8*ndf, 16*ndf, bn_type)
 
-        self.up_block_4 = UNetUpBlock(16*ndf, 8*ndf)
-        self.up_block_3 = UNetUpBlock(8*ndf, 4*ndf)
-        self.up_block_2 = UNetUpBlock(4*ndf, 2*ndf)
-        self.up_block_1 = UNetUpBlock(2*ndf, ndf)
+        self.up_block_4 = UNetUpBlock(16*ndf, 8*ndf, bn_type)
+        self.up_block_3 = UNetUpBlock(8*ndf, 4*ndf, bn_type)
+        self.up_block_2 = UNetUpBlock(4*ndf, 2*ndf, bn_type)
+        self.up_block_1 = UNetUpBlock(2*ndf, ndf, bn_type)
 
         self.conv1 = nn.Conv2d(ndf, ndf, kernel_size=3, stride=2, padding=1)
         self.conv2 = nn.Conv2d(2*ndf, 2*ndf, kernel_size=3, stride=2, padding=1)
@@ -108,6 +113,8 @@ class ConfidenceHead(nn.Module):
 
         out = self.final_layer(out) # [b 1 h w]
         out = out.squeeze(1) # [b h w]
+        
+        out = torch.sigmoid(out)
 
         return out
 

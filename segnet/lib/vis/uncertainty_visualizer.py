@@ -51,11 +51,11 @@ class UncertaintyVisualizer(object):
         fig = plt.figure()
         plt.axis('off')
         heatmap = plt.imshow(uncertainty, cmap='viridis')
-        # fig.colorbar(heatmap)
+        fig.colorbar(heatmap)
         img_path = os.path.join(base_dir, '{}_uncertainty.png'.format(name))
         fig.savefig(img_path,
                     bbox_inches='tight', transparent=True, pad_inches=0.0)
-        plt.close()
+        plt.close('all')
         Log.info('Saving {}_uncertainty.jpg'.format(name))
 
         if self.wandb_mode == 'online':

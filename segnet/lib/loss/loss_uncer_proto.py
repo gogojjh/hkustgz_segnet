@@ -1,7 +1,3 @@
-"""
-Probabilistic contrastive loss with each pixel being a Gaussian.
-"""
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -35,32 +31,32 @@ class PredUncertaintyLoss(nn.Module, ABC):
                 'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
+        self.top_k_num = self.configer.get('protoseg', 'top_k_num')
 
-    def get_uncertainty_label(self, binary_pred, binary_sem_gt):
+    def get_uncer_label(self, pred_var, binary_sem_gt):
         ''' 
         1. correct pred: min(1-pred, pred)
         2. wrong pred: max(1-pred, pred)
 
         pred/sem_gt [b h w]
+        
+        binary prediction:
+        use variance of prediction probability as guidance to generate uncertainty label.
+        
+        Compard with naive predicitve variance, we also considered the case where a pixel
+        has small uncertainty/large pred variance, but with wrong prediction.
         '''
-        mask = torch.zeros_like(binary_sem_gt)  # mask=0:wrong pred, mask=1:correct pred
+        mask = torch.zeros_like(binary_sem_gt).cuda()  # mask=0:wrong pred, mask=1:correct pred
         mask[binary_sem_gt == 1] = 1
+        
+        uncer_label = torch.zeros_like(binary_sem_gt).cuda() 
+        
+        # correct pred -> 0
+        # wrong pred -> max[pred_var, 1-pred_var]
+        pred_var = torch.cat(((pred_var).unsqueeze(1), (1 - pred_var).unsqueeze(1)), dim=1) 
 
-        correct_uncer_label = torch.cat(
-            (binary_pred.unsqueeze(1),
-             (1 - binary_pred).unsqueeze(1)),
-            dim=1)  # [b 2 h w]
-        correct_uncer_label = binary_sem_gt * torch.min(correct_uncer_label, dim=1)[0]  # [b h w]
-
-        wrong_uncer_label = torch.cat(
-            (binary_pred.unsqueeze(1),
-             (1 - binary_pred).unsqueeze(1)),
-            dim=1)  # [b 2 h w]
-        wrong_uncer_label = (1 - binary_sem_gt) * torch.max(wrong_uncer_label, dim=1)[0]  # [b h w]
-
-        uncer_label = torch.zeros_like(mask)
-        uncer_label.masked_scatter_(mask.bool(), correct_uncer_label)
-        uncer_label.masked_scatter_(~(mask.bool()), wrong_uncer_label)
+        uncer_label.masked_scatter_(~mask.bool(), torch.max(pred_var, dim=1)[0]) 
+        # uncer_label.masked_scatter_(mask.bool(), torch.min(pred_var, dim=1)[0]) 
 
         return uncer_label
 
@@ -73,20 +69,33 @@ class PredUncertaintyLoss(nn.Module, ABC):
         binary_label = torch.zeros_like(sem_gt).cuda()
         pred = torch.argmax(pred, dim=1)
         binary_label[pred == sem_gt] = 1  # [b h w]
-        return binary_label
+        return binary_label 
 
-    def get_binary_prediction(self, pred):
+    def get_pred_var(self, pred):
         ''' 
-        Use the top2 segmentation probability to contruct a binary classifier.
+        'ARM: A Confidence-Based Adversarial Reweighting Module for Coarse Semantic Segmentation'
+        
+        Use variance of prediction probability as uncertainty prediction. 
+        But we only take the top 4 classes for variance calculation.
         '''
-        score_top, _ = pred.topk(k=2, dim=1)  # [b 2 h w]
+        score_top, _ = pred.topk(k=self.top_k_num, dim=1)  # [b 2/4 h w]
         score_top = F.softmax(score_top, dim=1)  # prob of binary classifiers
-        return score_top
+        
+        mean = 1 / self.top_k_num
+        var_map = torch.sigmoid(score_top - mean) # [b top_k h w]
+        pred_var = var_map.var(dim=1)
+        
+        # normalization
+        pred_var = (pred_var - pred_var.min()) / (pred_var.max() - pred_var.min())
+        return pred_var
 
     def forward(self, confidence, pred, sem_gt):
         ''' 
         confidence: [b h w]
         pred: [b num_cls h w]
+        
+        Use l1 norm between prediction variance and confidence as supervision of uncertainty.
+        L1 norm is used for robustness to outleirs.
         '''
         h, w = confidence.size(1), confidence.size(2)
         sem_gt = F.interpolate(input=sem_gt.unsqueeze(1).float(), size=(
@@ -94,15 +103,14 @@ class PredUncertaintyLoss(nn.Module, ABC):
         sem_gt = sem_gt.squeeze(1)
 
         binary_label = self.get_binary_sem_label(pred, sem_gt)  # [b h w]
-        binary_pred = self.get_binary_prediction(pred)  # [b 2 h w]
+        pred_var = self.get_pred_var(pred)  # [b h w]
 
-        binary_pred = torch.max(binary_pred, dim=1)[0]  # [b h w]
-        uncer_label = self.get_uncertainty_label(binary_pred, binary_label)  # [b h w]
+        uncer_label = self.get_uncer_label(pred_var, binary_label)  # [b h w]
 
         # mask out the ignored label
         mask = sem_gt != self.ignore_label
 
-        uncer_seg_loss = self.seg_criterion(confidence[mask].float(), uncer_label[mask])
+        uncer_seg_loss = torch.abs((confidence[mask].float() - uncer_label[mask])).mean()
 
         return uncer_seg_loss
 

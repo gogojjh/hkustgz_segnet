@@ -265,7 +265,7 @@ class SegVisualizer(object):
         img_path = os.path.join(base_dir, '{}_error.png'.format(name))
         fig.savefig(img_path,
                     bbox_inches='tight', transparent=True, pad_inches=0.0)
-        plt.close()
+        plt.close('all')
         Log.info('Saving {}_error.png'.format(name))
 
         if self.wandb_mode == 'online':
