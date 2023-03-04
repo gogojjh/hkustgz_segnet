@@ -25,6 +25,13 @@ class UncertaintyVisualizer(object):
         self.configer = configer
         self.wandb_mode = self.configer.get('wandb', 'mode')
 
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+
     def wandb_log(self, img_path, file_name):
         uncer_img = Image.open(img_path)
 
@@ -32,7 +39,9 @@ class UncertaintyVisualizer(object):
         if get_rank() == 0:
             wandb.log({'uncertainty image': [im]})
 
-    def vis_uncertainty(self, uncertainty, name='default'):
+    def vis_uncertainty(self, uncertainty, gt, name='default'):
+        uncertainty[gt == self.ignore_label] = 0
+
         base_dir = os.path.join(self.configer.get('train', 'out_dir'), UNCERTAINTY_DIR)
 
         if not isinstance(uncertainty, np.ndarray):
@@ -40,7 +49,6 @@ class UncertaintyVisualizer(object):
                 Log.error('Tensor size of uncertainty is not valid.')
                 exit(1)
 
-            # uncertainty = uncertainty.data.cpu().numpy().transpose(1, 0)
             uncertainty = uncertainty.data.cpu().numpy()
 
         if not is_distributed() or get_rank() == 0:

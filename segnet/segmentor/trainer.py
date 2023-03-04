@@ -486,7 +486,7 @@ class Trainer(object):
                                 if vis_interval_img <= batch_size:
                                     for i in range(0, vis_interval_img, batch_size):
                                         self.uncer_visualizer.vis_uncertainty(
-                                            uncertainty[i], name='{}'.format(names[i]))
+                                            uncertainty[i], targets[i], name='{}'.format(names[i]))
 
                                         pred = outputs['seg']  # [b c h w]
                                         pred = torch.argmax(

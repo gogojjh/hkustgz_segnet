@@ -27,6 +27,13 @@ class SegVisualizer(object):
         self.configer = configer
         self.wandb_mode = self.configer.get('wandb', 'mode')
 
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+
     # vis false negatives
     def vis_fn(self, preds, targets, ori_img_in=None, name='default', sub_dir='fn'):
         base_dir = os.path.join(self.configer.get('project_dir'), SEG_DIR, sub_dir)
@@ -199,15 +206,6 @@ class SegVisualizer(object):
 
             cv2.imwrite(os.path.join(base_dir, '{}_{}.jpg'.format(name, img_id)), image_result)
 
-    def error_map(self, im, pred, gt):
-        canvas = im.copy()
-        canvas[np.where((gt - pred != [0, 0, 0]).all(axis=2))] = [0, 0, 0]
-        pred[np.where((gt - pred == [0, 0, 0]).all(axis=2))] = [0, 0, 0]
-        canvas = cv2.addWeighted(canvas, 1.0, pred, 1.0, 0)
-        # canvas = cv2.addWeighted(im, 0.3, canvas, 0.7, 0)
-        canvas[np.where((gt == [0, 0, 0]).all(axis=2))] = [0, 0, 0]
-        return canvas
-
     def wandb_log(self, img_path, file_name):
         error_img = Image.open(img_path)
 
@@ -255,7 +253,7 @@ class SegVisualizer(object):
                 im = im.squeeze(0).data.cpu().numpy().transpose(1, 2, 0)   # [h w]
 
         error_map = np.abs(gt - pred)
-        error_map[error_map == -1] = 0  # ignore class
+        error_map[gt == self.ignore_label] = 0  # ignore class
         error_map[error_map > 0] = 1
 
         fig = plt.figure()
