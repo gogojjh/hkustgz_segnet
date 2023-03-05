@@ -225,7 +225,7 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
             seg_edge_out = upsample(seg_edge_out, (h, w))  # [b 360 h w] # for loss calc
             seg_edge_out = self.sigmoid_edge(seg_edge_out)  # ! prob of being edge [b 1 h' w']
 
-            seg_body = upsample(self.body_cls_head(seg_body), (h, w))
+            seg_body = upsample(self.body_cls_head(seg_body), (h, w))  # [b num_cls h w]
 
         c = self.proj_head(c)
         c = rearrange(c, 'b c h w -> (b h w) c')

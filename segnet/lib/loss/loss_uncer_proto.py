@@ -14,12 +14,6 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
-class RelaxSegLoss(nn.Module, ABC):
-    ''' 
-
-    '''
-
-
 class PredUncertaintyLoss(nn.Module, ABC):
     ''' 
     Construct the multi-class classification problem into binary classification problem using the 

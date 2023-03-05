@@ -1,6 +1,4 @@
 """
-Code adapted from 'Improving Semantic Segmentation via Decoupled Body and Edge Supervision'.
-
 Use predictio from boundary prototype classifier for boundary/body loss calculation.
 """
 
@@ -15,8 +13,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from lib.utils.tools.logger import Logger as Log
+from lib.loss.loss_helper import FSCELoss
 
 
+# todo class uniform sampling in cropping the images using confidence map
 class EdgeBodyLoss(nn.Module, ABC):
     def __init__(self, configer):
         super(EdgeBodyLoss, self).__init__()
@@ -31,13 +31,9 @@ class EdgeBodyLoss(nn.Module, ABC):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
 
-    def body_loss(self, body_pred, body_gt, confidence):
-        ''' 
-        Use confidence map to extract the uncertain body pixels for loss calculation.
+        self.body_seg_criterion = FSCELoss(configer=configer)
 
-        body_pred: [b 360 h w]
-        body_gt/confidence: [b h w]
-        '''
+    # def edge_loss_(self, edge_pred, gt_edge):
 
     def forward(self, preds, target, gt_boundary, sem_gt):
         ''' 
@@ -50,6 +46,7 @@ class EdgeBodyLoss(nn.Module, ABC):
         contrast_target = preds['target']  # [(b h w)]
         confidence = preds['confidence']
         b, _, h, w = seg_edge.size()
+        h_gt, w_gt = target.size()[1:]
 
         # extract the pixels predicted as boundary (last prototype in each class)
         edge_contrast_logits = torch.zeros_like(contrast_target).cuda()  # [(b h w)]
@@ -68,4 +65,11 @@ class EdgeBodyLoss(nn.Module, ABC):
         contrast_target.masked_fill_(gt_boundary, self.ignore_label)
         contrast_target = contrast_target.reshape(-1, h, w)  # [b h w]
 
-        body_loss = self.body_loss(seg_body, contrast_target, confidence)
+        seg_body = F.interpolate(input=seg_body, size=(
+            h_gt, w_gt), mode='bilinear', align_corners=True)
+        gt_body = torch.ones_like(sem_gt) * self.ignore_label
+        gt_body.masked_scatter_(~gt_boundary.bool(), sem_gt)
+        confidence = F.interpolate(input=confidence.unsqueeze(1), size=(
+            h_gt, w_gt), mode='bilinear', align_corners=True)  # [b 1 h w]
+        body_loss = self.body_seg_criterion(
+            seg_body, gt_body, confidence_wieght=confidence.squeeze(1).detach())
