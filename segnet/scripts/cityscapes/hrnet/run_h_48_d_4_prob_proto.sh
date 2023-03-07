@@ -27,7 +27,7 @@ mkdir -p `dirname $LOG_FILE`
 
 PRETRAINED_MODEL="/save_data/hrnetv2_w48_imagenet_pretrained.pth"
 MAX_ITERS=50000
-BATCH_SIZE=24
+BATCH_SIZE=12
 BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
@@ -39,7 +39,7 @@ if [ "$1"x == "train"x ]; then
                        --log_to_file n \
                        --backbone ${BACKBONE} \
                        --model_name ${MODEL_NAME} \
-                       --gpu 0 1\
+                       --gpu 0 1 3\
                        --data_dir ${DATA_DIR} \
                        --loss_type ${LOSS_TYPE} \
                        --max_iters ${MAX_ITERS} \

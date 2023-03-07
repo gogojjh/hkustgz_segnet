@@ -465,8 +465,6 @@ class Trainer(object):
                     if not is_distributed():
                         outputs = self.module_runner.gather(outputs)
                     if isinstance(outputs, dict):
-                        # sim_mat = outputs['logits']  # [b h w (c m)]
-                        # outputs = outputs['seg']
                         # ============== visualize==============#
                         if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
                             # [b h w] [1, 256, 512]
@@ -498,18 +496,20 @@ class Trainer(object):
                             inputs = data_dict['img']
                             metas = data_dict['meta']
                             names = data_dict['name']
+                            sim_mat = outputs['logits']  # [(b h w) (c m)]
+                            b, _, h, w, = pred.size()
+                            sim_mat = sim_mat.reshape(b, h, w, -1)  # [b h w (c m)]
+                            pred = torch.argmax(sim_mat, dim=1)  # [b h w]
 
-                            if isinstance(outputs, torch.Tensor):
-                                outputs = outputs.permute(0, 2, 3, 1).cpu().numpy()
-                                n = outputs.shape[0]
+                            if isinstance(pred, torch.Tensor):
+                                pred = pred.permute(0, 2, 3, 1).cpu().numpy()
+                                n = pred.shape[0]
                                 sim_mat = sim_mat.cpu().numpy()
                             else:
                                 # outputs: [b c h w] -> [b h w c]
-                                # outputs = [output.permute(0, 2, 3, 1).cpu().numpy().squeeze()
-                                #            for output in outputs]
-                                outputs = outputs.permute(0, 2, 3, 1).cpu().numpy().squeeze()
+                                pred = pred.permute(0, 2, 3, 1).cpu().numpy()
 
-                                n = outputs.shape[0]
+                                n = pred.shape[0]  # b
                             for k in range(n):
                                 ori_img_size = metas[k]['ori_img_size']  # [1024, 2048]
                                 border_size = metas[k]['border_size']  # [1024, 2048]
@@ -520,8 +520,8 @@ class Trainer(object):
                                     interpolation=cv2.INTER_CUBIC)  # [1024, 2048, c]
 
                                 logits = cv2.resize(
-                                    outputs[k][: border_size[1],
-                                               : border_size[0]],
+                                    pred[k][: border_size[1],
+                                            : border_size[0]],
                                     tuple(ori_img_size),
                                     interpolation=cv2.INTER_CUBIC)  # [1024, 2048, c]
                                 # [1024, 2048]

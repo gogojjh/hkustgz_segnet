@@ -20,7 +20,7 @@
 		"out_dir": "/save_data/cityscapes"
 	},
 	"val": {
-		"batch_size": 2,
+		"batch_size": 3,
 		"mode": "ss_test",
 		"data_transformer": {
 			"size_mode": "fix_size",
@@ -176,7 +176,7 @@
 		"context_dim": 720,
 		"ndf_dim": 32,
 		"edge_dim": 256,
-		"use_boundary": false,
+		"use_boundary": true,
 		"bin_size_h": 4,
 		"bin_size_w": 8,
 		"reparam_k": 4,
@@ -221,7 +221,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 0

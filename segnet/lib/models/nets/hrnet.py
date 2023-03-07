@@ -166,7 +166,7 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
             nn.Conv2d(in_channels, out_channels,
                       kernel_size=3, stride=1, padding=1),
             ModuleHelper.BNReLU(
-                in_channels, bn_type=self.configer.get('network', 'bn_type')),
+                out_channels, bn_type=self.configer.get('network', 'bn_type')),
             nn.Dropout2d(0.10)
         )
         self.proj_head = ProjectionHead(in_channels, in_channels)

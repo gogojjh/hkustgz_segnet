@@ -88,9 +88,10 @@ class EdgeHead(nn.Module):
         low_fea = self.bot_fine(low_fea)
 
         #! downsample will destroy the edge pred otherwise
+        # low_fea_size: [64 128] # [b 360 + 48 64 128]
         seg_edge = torch.cat((F.interpolate(seg_edge, size=low_fea_size, mode='bilinear',
-                                            align_corners=True), low_fea))  # 360 + 48
-        seg_edge = self.edge_fusion(seg_edge)  # [b 256 h' w']
+                                            align_corners=True), low_fea), dim=1)
+        seg_edge = self.edge_fusion(seg_edge)  # [b 360 h'/64 w'/128]
 
         seg_edge_out = self.edge_out(seg_edge)  # [b 1 h' w']
 

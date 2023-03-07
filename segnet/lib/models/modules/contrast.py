@@ -16,6 +16,7 @@ def momentum_update(old_value, new_value, momentum, debug=False):
 def l2_normalize(x):
     return F.normalize(x, p=2, dim=-1)
 
+
 def upsample(x, size):
     """
     Wrapper Around the Upsample Call
