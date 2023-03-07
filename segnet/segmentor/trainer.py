@@ -273,8 +273,8 @@ class Trainer(object):
                         loss['prob_ppd_loss']) / get_world_size()
                     # coarse_seg_loss = reduce_tensor(
                     #     loss['coarse_seg_loss']) / get_world_size()
-                    # kl_loss = reduce_tensor(
-                    #     loss['kl_loss']) / get_world_size()
+                    # edge_body_loss = reduce_tensor(
+                    #     loss['edge_body_loss']) / get_world_size()
                     uncer_seg_loss = reduce_tensor(
                         loss['uncer_seg_loss']) / get_world_size()
                     display_loss = reduce_tensor(

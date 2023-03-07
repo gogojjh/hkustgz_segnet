@@ -164,24 +164,23 @@ class ProbPPCLoss(nn.Module, ABC):
         self.num_classes = self.configer.get('data', 'num_classes')
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
         self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
+        self.confidence_seg_loss_weight = self.configer.get('protoseg', 'confidence_seg_loss_weight')
 
-    def forward(self, contrast_logits, contrast_target, w1=None, w2=None, proto_confidence=None):
+    def forward(self, contrast_logits, contrast_target, confidence=None):
         ''' 
-        x_var: [c m k]
+        confidence: [b h w]
+        contrast_logits: [n c m]
         '''
-        if proto_confidence is not None:
-            # proto_confidence: [(num_cls num_proto)]
-            # contrast_logits: [n c m]
-            proto_confidence = rearrange(proto_confidence, 'c m -> (c m)')
-            contrast_logits = contrast_logits / proto_confidence.unsqueeze(0)
-
         contrast_logits = self.proto_norm(contrast_logits)
-        prob_ppc_loss = F.cross_entropy(
-            contrast_logits, contrast_target.long(), ignore_index=self.ignore_label)
-
-        if w1 is not None and w2 is not None:
-            # w2 = torch.log(x_var).mean()
-            prob_ppc_loss = 1 / (4 * w1 + 1e-3) * prob_ppc_loss + w2 * 0.5
+        if confidence is not None:
+            confidence = rearrange(confidence, 'b h w -> (b h w)')
+            confidence = 1 + self.confidence_seg_loss_weight * torch.sigmoid(confidence)
+            prob_ppc_loss = F.cross_entropy(
+                contrast_logits, contrast_target.long(), ignore_index=self.ignore_label, reduction='none') * confidence
+            prob_ppc_loss = torch.mean(prob_ppc_loss)
+        else: 
+            prob_ppc_loss = F.cross_entropy(
+                contrast_logits, contrast_target.long(), ignore_index=self.ignore_label)
 
         return prob_ppc_loss
 
@@ -258,11 +257,15 @@ class PixelUncerContrastLoss(nn.Module, ABC):
         self.prob_ppd_criterion = ProbPPDLoss(configer=configer)
 
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
-
         self.use_temperature = self.configer.get('protoseg', 'use_temperature')
-        self.use_context = self.configer.get('protoseg', 'use_context')
         self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
         self.uncer_seg_loss = PredUncertaintyLoss(configer=configer)
+        
+        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
+        if self.use_boundary:
+            from lib.loss.loss_body_edge_proto import EdgeBodyLoss
+            self.edge_body_loss = EdgeBodyLoss(configer=configer)
+            self.edge_body_loss_weight = self.configer.get('protoseg', 'edge_body_loss_weight')
 
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
@@ -281,23 +284,6 @@ class PixelUncerContrastLoss(nn.Module, ABC):
             contrast_logits = preds['logits']
             contrast_target = preds['target']  # prototype selection [n]
 
-            if self.use_uncertainty:
-                w1 = None
-                w2 = None
-                proto_confidence = None
-                if self.use_temperature:
-                    proto_confidence = preds['proto_confidence']
-                if self.weighted_ppd_loss:
-                    w1 = preds['w1']
-                    w2 = preds['w2']
-
-                prob_ppc_loss = self.prob_ppc_criterion(
-                    contrast_logits, contrast_target, w1=w1, w2=w2,
-                    proto_confidence=proto_confidence)
-
-            else:
-                prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
-
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
 
@@ -306,6 +292,9 @@ class PixelUncerContrastLoss(nn.Module, ABC):
 
             if self.use_weighted_seg_loss:
                 confidence = preds['confidence']
+                # uncertainty wiehgted prob_ppc_loss
+                prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target, confidence=confidence.squeeze(1).detach())
+                # uncer_seg_loss
                 contrast_logits = contrast_logits.reshape(-1, self.num_classes, self.num_prototype)
                 contrast_logits = torch.max(contrast_logits, dim=-1)[0]
                 b_train, h_train, w_train = seg.size(0), seg.size(2), seg.size(3)
@@ -315,17 +304,28 @@ class PixelUncerContrastLoss(nn.Module, ABC):
                 uncer_seg_loss = self.uncer_seg_loss(
                     confidence, contrast_logits.permute(0, -1, 1, 2).detach(), target)
 
-                confidence = F.interpolate(input=confidence.unsqueeze(1), size=(
-                    h, w), mode='bilinear', align_corners=True)  # [b 1 h w]
+                # confidence = F.interpolate(input=confidence.unsqueeze(1), size=(
+                #     h, w), mode='bilinear', align_corners=True)  # [b 1 h w]
                 #! confidence is detached when calculating seg loss
-                seg_loss = self.seg_criterion(
-                    pred, target, confidence_wieght=confidence.squeeze(1).detach())
-            else:
+                #todo debug
+                # seg_loss = self.seg_criterion(
+                #     pred, target, confidence_wieght=confidence.squeeze(1).detach())
                 seg_loss = self.seg_criterion(pred, target)
+            else:
+                prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
+                
+            seg_loss = self.seg_criterion(pred, target)
 
-            if self.use_context:
-                coarse_pred = preds['coarse_seg']
-                coarse_seg_loss = self.seg_criterion(coarse_pred, target)
+            # if self.use_boundary:
+            #     assert gt_boundary is not None
+            #     edge_body_loss = self.edge_body_loss(preds, gt_boundary, target)
+                
+            #     loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
+            #     prob_ppd_loss + self.uncer_seg_loss_weight * uncer_seg_loss + self.edge_body_loss_weight * edge_body_loss
+            #     assert not torch.isnan(loss)
+
+            #     return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss, 'edge_body_loss': edge_body_loss}
+                
 
             loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
                 prob_ppd_loss + self.uncer_seg_loss_weight * uncer_seg_loss

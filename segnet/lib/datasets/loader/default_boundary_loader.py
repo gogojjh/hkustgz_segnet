@@ -129,13 +129,13 @@ class DefaultBoundaryLoader(data.Dataset):
         edge_label_list = list()
         image_dir = os.path.join(root_dir, dataset, 'image')
         label_dir = os.path.join(root_dir, dataset, 'label')
-        edge_label_dir = os.path.join(root_dir, dataset, 'edge')
+        edge_label_dir = os.path.join(root_dir, dataset, 'label_non_edge_void')
 
         # only change the ground-truth labels of training set
-        if self.configer.exists('data', 'label_edge2void'):
-            label_dir = os.path.join(root_dir, dataset, 'label_edge_void')
-        elif self.configer.exists('data', 'label_non_edge2void'):
-            label_dir = os.path.join(root_dir, dataset, 'label_non_edge_void')
+        # if self.configer.exists('data', 'label_edge2void'):
+        #     label_dir = os.path.join(root_dir, dataset, 'label_edge_void')
+        # elif self.configer.exists('data', 'label_non_edge2void'):
+        #     label_dir = os.path.join(root_dir, dataset, 'label_non_edge_void')
 
         img_extension = os.listdir(image_dir)[0].split('.')[-1]
 

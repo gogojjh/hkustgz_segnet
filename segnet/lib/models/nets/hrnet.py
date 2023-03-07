@@ -242,7 +242,7 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
             gt_boundary=gt_boundary)
 
         if gt_semantic_seg is not None and self.use_boundary:
-            preds['seg_edge'] = seg_edge
+            preds['seg_edge'] = seg_edge_out
             preds['seg_body'] = seg_body
 
         if gt_semantic_seg is not None or self.configer.get(
