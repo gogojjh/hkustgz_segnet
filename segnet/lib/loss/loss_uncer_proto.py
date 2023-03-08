@@ -286,6 +286,8 @@ class PixelUncerContrastLoss(nn.Module, ABC):
 
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
+            
+            prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
 
             pred = F.interpolate(input=seg, size=(
                 h, w), mode='bilinear', align_corners=True)
@@ -293,7 +295,7 @@ class PixelUncerContrastLoss(nn.Module, ABC):
             if self.use_weighted_seg_loss:
                 confidence = preds['confidence']
                 # uncertainty wiehgted prob_ppc_loss
-                prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target, confidence=confidence.squeeze(1).detach())
+                # prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target, confidence=confidence.squeeze(1).detach())
                 # uncer_seg_loss
                 contrast_logits = contrast_logits.reshape(-1, self.num_classes, self.num_prototype)
                 contrast_logits = torch.max(contrast_logits, dim=-1)[0]
@@ -310,10 +312,7 @@ class PixelUncerContrastLoss(nn.Module, ABC):
                 #todo debug
                 # seg_loss = self.seg_criterion(
                 #     pred, target, confidence_wieght=confidence.squeeze(1).detach())
-                seg_loss = self.seg_criterion(pred, target)
-            else:
-                prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
-                
+
             seg_loss = self.seg_criterion(pred, target)
 
             # if self.use_boundary:

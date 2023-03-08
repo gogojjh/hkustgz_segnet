@@ -7,11 +7,11 @@ from PIL import Image
 
 from lib.datasets.tools.transforms import DeNormalize
 from lib.utils.tools.logger import Logger as Log
-from lib.utils.helpers.file_helper import FileHelper
 from lib.utils.helpers.image_helper import ImageHelper
 from einops import rearrange, repeat
+from lib.utils.distributed import get_rank, is_distributed
 
-PROTOTYPE_DIR = '/vis/results/prototype'
+PROTOTYPE_DIR = 'vis/results/prototype'
 
 
 def get_prototoype_colors():
@@ -61,12 +61,20 @@ class PrototypeVisualier(object):
                 'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
+        
+        self.colors = get_prototoype_colors()
 
     def vis_prototype(self, sim_mat, ori_img, name):
         '''
         sim_mat: [h w c m]
         ori_img: inputs[k] [3 h w]
         '''
+        base_dir = os.path.join(self.configer.get('train', 'out_dir'), PROTOTYPE_DIR)
+        if not is_distributed() or get_rank() == 0:
+            if not os.path.exists(base_dir):
+                Log.error('Dir:{} not exists!'.format(base_dir))
+                os.makedirs(base_dir)
+        
         # ori image
         mean = self.configer.get('normalize', 'mean')
         std = self.configer.get('normalize', 'std')
@@ -76,26 +84,31 @@ class PrototypeVisualier(object):
         ori_img = cv2.cvtColor(ori_img, cv2.COLOR_BGR2RGB)
 
         h, w = sim_mat.shape[0], sim_mat.shape[1]
+        h_ori, w_ori = ori_img.shape[0], ori_img.shape[1]
 
         sem_pred = torch.max(sim_mat, dim=-1)[0] # [h w c]
         sem_pred = torch.argmax(sem_pred, dim=-1) # [h w]
         sim_mat = rearrange(sim_mat, 'h w c m -> h w (c m)') # [h w (c m)]
         proto_pred = torch.argmax(sim_mat, dim=-1) # [h w]
-        proto_pred = proto_pred % self.num_prototype # proto id inside the predicted cls
+        proto_pred = proto_pred % self.num_prototype + 1 # proto id inside the predicted cls
         # save an img for each class
         for i in range(1, self.num_classes):
             mask = sem_pred == i
+            cls_proto_pred  = torch.zeros_like(proto_pred) 
+            cls_proto_pred.masked_scatter_(mask.bool(), proto_pred)
+            cls_proto_pred = cls_proto_pred.cpu().numpy()
+            cls_proto_pred = cv2.resize(cls_proto_pred,
+                                    (w_ori, h_ori),
+                                    interpolation=cv2.INTER_NEAREST)  # [1024, 2048]
+            cls_proto_pred = np.asarray(cls_proto_pred, dtype=np.uint8)
+            cls_proto_pred = Image.fromarray(cls_proto_pred)
+            cls_proto_pred.putpalette(self.colors)
+            cls_proto_pred = np.asarray(cls_proto_pred.convert('RGB'), np.uint8)
             
+            cls_proto_pred = cv2.addWeighted(ori_img, 0.5, cls_proto_pred, 0.5, 0.0)
+            cls_proto_pred = cv2.cvtColor(cls_proto_pred, cv2.COLOR_RGB2BGR) 
             
-            proto_pred = Image.fromarray(proto_pred, 'P')
-            colors = get_prototoype_colors()
-            proto_pred.putpalette(colors)
-            proto_pred = np.asarray(proto_pred.convert('RGB'), np.uint8)
-
-            proto_pred = cv2.addWeighted(ori_img, 0.5, proto_pred, 0.5, 0.0)
-
-            save_path = os.path.join(PROTOTYPE_DIR,
+            save_path = os.path.join(base_dir,
                                      '{}_{}_cls_proto.png'.format(name, i))
-            FileHelper.make_dirs(save_path, is_file=True)
-            ImageHelper.save(proto_pred, save_path=save_path)
+            ImageHelper.save(cls_proto_pred, save_path=save_path)
             Log.info('{} saved.'.format(save_path))

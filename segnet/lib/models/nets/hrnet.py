@@ -157,7 +157,6 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         self.mask_norm = nn.LayerNorm(self.num_classes)
 
         in_channels = 720
-        #todo debug
         # if self.use_boundary:
         #     out_channels = 720 // 2
         # else:
@@ -207,12 +206,8 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         gt_size = c.size()[2:]
 
         c = self.cls_head(c)  # [b 360/720 h w]
-        #todo debug
+
         # if self.use_boundary:
-        #     ''' 
-        #     We do not use cls head for neither seg_edge_out/seg_body_out.
-        #     Instead, we use probability from the prototype classifier.
-        #     '''
         #     seg_body, seg_edge = self.body_head(c)  # [b 360 h w]
         #     # [b 1 h' w'], [b 360 h' w'] h'/w': size of low-level fea
         #     seg_edge_out, seg_edge = self.edge_head(seg_edge, x[1])
@@ -243,9 +238,9 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
             gt_boundary=gt_boundary)
 
-        if gt_semantic_seg is not None and self.use_boundary:
-            preds['seg_edge'] = seg_edge_out
-            preds['seg_body'] = seg_body
+        # if gt_semantic_seg is not None and self.use_boundary:
+        #     preds['seg_edge'] = seg_edge_out
+        #     preds['seg_body'] = seg_body
 
         if gt_semantic_seg is not None or self.configer.get(
                 'uncertainty_visualizer', 'vis_uncertainty'):

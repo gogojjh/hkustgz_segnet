@@ -503,7 +503,7 @@ class ProbProtoSegHead(nn.Module):
                     return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
-        if self.configer.get('val', 'vis_prototype') or self.configer.get('test', 'vis_prototype'):
+        if self.configer.get('proto_visualizer', 'vis_prototype'):
             sim_mat = sim_mat.reshape(b_size, h_size, -1, self.num_classes * self.num_prototype)
             return {'seg': out_seg, 'logits': sim_mat}
         else:

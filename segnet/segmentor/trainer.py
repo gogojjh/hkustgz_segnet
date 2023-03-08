@@ -492,27 +492,24 @@ class Trainer(object):
                                         self.seg_visualizer.vis_error(
                                             imgs[i], pred[i], targets[i], names[i])
                         if self.vis_prototype:
-                            inputs = data_dict['img']
-                            metas = data_dict['meta']
-                            names = data_dict['name']
-                            sim_mat = outputs['logits']  # [(b h w) (c m)]
-                            pred = outputs['seg']  # [b c h w]
-                            num_classes = self.configer.get('data', 'num_classes')
-                            num_prototype = self.configer.get('protoseg', 'num_prototype')
-                            b, _, h, w, = pred.size()
-                            sim_mat = sim_mat.reshape(b, h, w, num_classes, num_prototype)  # [b h w c m]
-                            n = pred.shape[0]  # b
-                            for k in range(n):
-                                ori_img_size = metas[k]['ori_img_size']  # [1024, 2048]
-                                border_size = metas[k]['border_size']  # [1024, 2048]
-                                logits = cv2.resize(
-                                    sim_mat[k][: border_size[1],
-                                               : border_size[0]],
-                                    tuple(ori_img_size),
-                                    interpolation=cv2.INTER_CUBIC)  # [1024, 2048, (c m)]
-                                # inputs[k]: [3, 1024, 2048]
-                                self.proto_visualizer.vis_prototype(
-                                    logits, inputs[k], names[k], ori_img_size, border_size)
+                            if (j % (self.configer.get(
+                                    'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
+                                inputs = data_dict['img']
+                                # metas = data_dict['meta']
+                                names = data_dict['name']
+                                sim_mat = outputs['logits']  # [(b h w) (c m)]
+                                pred = outputs['seg']  # [b c h w]
+                                num_classes = self.configer.get('data', 'num_classes')
+                                num_prototype = self.configer.get('protoseg', 'num_prototype')
+                                b, _, h, w, = pred.size()
+                                sim_mat = sim_mat.reshape(b, h, w, num_classes, num_prototype)  # [b h w c m]
+                                n = pred.shape[0]  # b
+                                for k in range(n):
+                                    # ori_img_size = metas[k]['ori_img_size']  # [2048, 1024]
+                                    # border_size = metas[k]['border_size']  # [2048, 1024]
+                                    # inputs[k]: [3, 1024, 2048]
+                                    self.proto_visualizer.vis_prototype(
+                                        sim_mat[k], inputs[k], names[k])
 
                         outputs = outputs['seg']
                     self.evaluator.update_score(outputs, data_dict['meta'])

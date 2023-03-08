@@ -164,7 +164,5 @@ class BoundaryHead(nn.Module):
         
         self.attn_module(c, e)
         
-            
-        
         return x
         

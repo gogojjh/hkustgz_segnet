@@ -27,7 +27,8 @@
 			"input_size": [2048, 1024],
 			"align_method": "only_pad"
 		},
-		"vis_prototype": false,
+		"vis_prototype": true,
+		"vis_proto_inter": 60,
 		"vis_pred": false
 	},
 	"test": {
@@ -117,7 +118,7 @@
 	},
 	"solver": {
 		"display_iter": 10,
-		"test_interval": 2000,
+		"test_interval": 1000,
 		"max_iters": 50000
 	},
 	"optim": {
@@ -209,6 +210,12 @@
 		"vis_inter_iter": 40,
 		"dataset": "val"
 	},
+	"proto_visualizer": {
+		"vis_prototype": true,
+		"vis_interval_img": 1,
+		"vis_inter_iter": 60,
+		"dataset": "val"
+	},
 	"rampdownscheduler": {
 		"begin_epoch": 0,
 		"max_epoch": 300,
@@ -222,7 +229,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 0

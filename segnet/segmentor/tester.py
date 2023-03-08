@@ -65,7 +65,7 @@ class Tester(object):
         self.infer_cnt = 0
         self._init_model()
 
-        self.vis_prototype = self.configer.get('test', 'vis_prototype')
+        self.vis_prototype = self.configer.get('proto_visualizer', 'vis_prototype')
         self.vis_pred = self.configer.get('test', 'vis_pred')
         if self.vis_prototype:
             from lib.vis.prototype_visualizer import PrototypeVisualier
