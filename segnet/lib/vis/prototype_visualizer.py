@@ -94,6 +94,8 @@ class PrototypeVisualier(object):
         # save an img for each class
         for i in range(1, self.num_classes):
             mask = sem_pred == i
+            if torch.count_nonzero(mask) == 0:
+                continue
             cls_proto_pred  = torch.zeros_like(proto_pred) 
             cls_proto_pred.masked_scatter_(mask.bool(), proto_pred)
             cls_proto_pred = cls_proto_pred.cpu().numpy()
