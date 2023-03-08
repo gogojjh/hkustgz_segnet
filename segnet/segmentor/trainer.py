@@ -491,7 +491,7 @@ class Trainer(object):
 
                                         self.seg_visualizer.vis_error(
                                             imgs[i], pred[i], targets[i], names[i])
-                        if self.vis_prototype:
+                        if self.vis_prototype and self.configer.get('iters') % (self.configer.get('solver', 'test_interval') * 4) == 0:
                             if (j % (self.configer.get(
                                     'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
                                 inputs = data_dict['img']

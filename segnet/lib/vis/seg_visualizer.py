@@ -267,4 +267,4 @@ class SegVisualizer(object):
         Log.info('Saving {}_error.png'.format(name))
 
         if self.wandb_mode == 'online':
-            self.wandb_log(img_path, 'Saving {}_error.jpg'.format(name))
+            self.wandb_log(img_path, '{}_error.jpg'.format(name))

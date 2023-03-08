@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import torch
 from PIL import Image
+import wandb
 
 from lib.datasets.tools.transforms import DeNormalize
 from lib.utils.tools.logger import Logger as Log
@@ -63,6 +64,17 @@ class PrototypeVisualier(object):
                 'ce_ignore_index']
         
         self.colors = get_prototoype_colors()
+        self.wandb_mode = self.configer.get('wandb', 'mode')
+        
+        self.background_cls = [0, 1, 2, 3, 8, 9, 10]
+        
+    def wandb_log(self, img_path, file_name):
+        proto_img = Image.open(img_path)
+
+        im = wandb.Image(proto_img, caption=file_name)
+        if get_rank() == 0:
+            wandb.log({'prototype image': [im]})
+        proto_img.close()
 
     def vis_prototype(self, sim_mat, ori_img, name):
         '''
@@ -93,6 +105,8 @@ class PrototypeVisualier(object):
         proto_pred = proto_pred % self.num_prototype + 1 # proto id inside the predicted cls
         # save an img for each class
         for i in range(1, self.num_classes):
+            if i in self.background_cls:
+                continue
             mask = sem_pred == i
             if torch.count_nonzero(mask) == 0:
                 continue
@@ -113,4 +127,7 @@ class PrototypeVisualier(object):
             save_path = os.path.join(base_dir,
                                      '{}_{}_cls_proto.png'.format(name, i))
             ImageHelper.save(cls_proto_pred, save_path=save_path)
-            Log.info('{} saved.'.format(save_path))
+            Log.info('Saving {}_{}_cls_proto.png'.format(name, i))
+            
+            if self.wandb_mode == 'online':
+                self.wandb_log(save_path, '{}_{}_cls_proto.png'.format(name, i))

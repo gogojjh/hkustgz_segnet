@@ -67,4 +67,4 @@ class UncertaintyVisualizer(object):
         Log.info('Saving {}_uncertainty.jpg'.format(name))
 
         if self.wandb_mode == 'online':
-            self.wandb_log(img_path, 'Saving {}_uncertainty.jpg'.format(name))
+            self.wandb_log(img_path, '{}_uncertainty.jpg'.format(name))
