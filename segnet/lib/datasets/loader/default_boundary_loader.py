@@ -57,6 +57,7 @@ class DefaultBoundaryLoader(data.Dataset):
         # 0: non-edge, 255: edge
         boundary_map = ImageHelper.read_image(self.edge_label_list[index], tool=self.configer.get(
             'data', 'image_tool'), mode='P')  # ! 0: non-edge, 255： edge, but contains void class
+        assert len(np.unique(boundary_map)) == 2
         
         if self.configer.exists('data', 'label_list'):
             labelmap = self._encode_label(labelmap)
@@ -129,13 +130,7 @@ class DefaultBoundaryLoader(data.Dataset):
         edge_label_list = list()
         image_dir = os.path.join(root_dir, dataset, 'image')
         label_dir = os.path.join(root_dir, dataset, 'label')
-        edge_label_dir = os.path.join(root_dir, dataset, 'label_non_edge_void')
-
-        # only change the ground-truth labels of training set
-        # if self.configer.exists('data', 'label_edge2void'):
-        #     label_dir = os.path.join(root_dir, dataset, 'label_edge_void')
-        # elif self.configer.exists('data', 'label_non_edge2void'):
-        #     label_dir = os.path.join(root_dir, dataset, 'label_non_edge_void')
+        edge_label_dir = os.path.join(root_dir, dataset, 'edge')
 
         img_extension = os.listdir(image_dir)[0].split('.')[-1]
 
@@ -168,6 +163,7 @@ class DefaultBoundaryLoader(data.Dataset):
             edge_label_name = image_name.replace(
                 'leftImg8bit', 'gtFine_color') + '.png'
             edge_label_path = os.path.join(edge_label_dir, '{}'.format(seq_name), edge_label_name)
+            
             # Log.info('{} {} {}'.format(image_name, img_path, label_path))
             if not os.path.exists(label_path) or not os.path.exists(img_path):
                 Log.error('Label Path: {} {} not exists.'.format(
@@ -187,19 +183,17 @@ class DefaultBoundaryLoader(data.Dataset):
             Log.info("Use validation dataset for training.")
             image_dir = os.path.join(root_dir, 'val/image')
             label_dir = os.path.join(root_dir, 'val/label')
+            edge_label_dir = os.path.join(root_dir, 'val/edge')
 
             # we only use trainval set for training if set include_val
             if self.configer.get('dataset') == 'pascal_voc':
                 image_dir = os.path.join(root_dir, 'trainval/image')
                 label_dir = os.path.join(root_dir, 'trainval/label')
+                edge_label_dir = os.path.join(root_dir, 'trainval/edge')
                 img_list.clear()
                 label_list.clear()
                 name_list.clear()
-
-            if self.configer.exists('data', 'label_edge2void'):
-                label_dir = os.path.join(root_dir, 'val/label_edge_void')
-            elif self.configer.exists('data', 'label_non_edge2void'):
-                label_dir = os.path.join(root_dir, 'val/label_non_edge_void')
+                edge_label_list.clear()
 
             if file_list_txt is None:
                 files = sorted(os.listdir(image_dir))
@@ -212,6 +206,7 @@ class DefaultBoundaryLoader(data.Dataset):
                 image_name = '.'.join(file_name.split('.')[:-1])
                 img_path = os.path.join(image_dir, '{}'.format(file_name))
                 label_path = os.path.join(label_dir, image_name + '.png')
+                edge_label_path = os.path.join(edge_label_dir, image_name + '.png')
                 if not os.path.exists(label_path) or not os.path.exists(img_path):
                     Log.error('Label Path: {} {} not exists.'.format(
                         label_path, img_path))
@@ -220,6 +215,7 @@ class DefaultBoundaryLoader(data.Dataset):
                 img_list.append(img_path)
                 label_list.append(label_path)
                 name_list.append(image_name)
+                edge_label_list.append(edge_label_path)
 
         if dataset == 'train' and self.configer.get('data', 'include_coarse'):
             Log.info("Use Coarse labeled dataset for training.")

@@ -38,6 +38,7 @@ from lib.utils.distributed import get_world_size, get_rank, is_distributed
 from lib.vis.uncertainty_visualizer import UncertaintyVisualizer
 # from mmcv.cnn import get_model_complexity_info
 from ptflops import get_model_complexity_info
+from einops import rearrange, repeat
 
 
 class Trainer(object):
@@ -271,8 +272,6 @@ class Trainer(object):
                         loss['prob_ppc_loss']) / get_world_size()
                     prob_ppd_loss = reduce_tensor(
                         loss['prob_ppd_loss']) / get_world_size()
-                    # coarse_seg_loss = reduce_tensor(
-                    #     loss['coarse_seg_loss']) / get_world_size()
                     # edge_body_loss = reduce_tensor(
                     #     loss['edge_body_loss']) / get_world_size()
                     uncer_seg_loss = reduce_tensor(
@@ -497,38 +496,23 @@ class Trainer(object):
                             metas = data_dict['meta']
                             names = data_dict['name']
                             sim_mat = outputs['logits']  # [(b h w) (c m)]
+                            pred = outputs['seg']  # [b c h w]
+                            num_classes = self.configer.get('data', 'num_classes')
+                            num_prototype = self.configer.get('protoseg', 'num_prototype')
                             b, _, h, w, = pred.size()
-                            sim_mat = sim_mat.reshape(b, h, w, -1)  # [b h w (c m)]
-                            pred = torch.argmax(sim_mat, dim=1)  # [b h w]
-
-                            if isinstance(pred, torch.Tensor):
-                                pred = pred.permute(0, 2, 3, 1).cpu().numpy()
-                                n = pred.shape[0]
-                                sim_mat = sim_mat.cpu().numpy()
-                            else:
-                                # outputs: [b c h w] -> [b h w c]
-                                pred = pred.permute(0, 2, 3, 1).cpu().numpy()
-
-                                n = pred.shape[0]  # b
+                            sim_mat = sim_mat.reshape(b, h, w, num_classes, num_prototype)  # [b h w c m]
+                            n = pred.shape[0]  # b
                             for k in range(n):
                                 ori_img_size = metas[k]['ori_img_size']  # [1024, 2048]
                                 border_size = metas[k]['border_size']  # [1024, 2048]
-                                logits_proto = cv2.resize(
+                                logits = cv2.resize(
                                     sim_mat[k][: border_size[1],
                                                : border_size[0]],
                                     tuple(ori_img_size),
-                                    interpolation=cv2.INTER_CUBIC)  # [1024, 2048, c]
-
-                                logits = cv2.resize(
-                                    pred[k][: border_size[1],
-                                            : border_size[0]],
-                                    tuple(ori_img_size),
-                                    interpolation=cv2.INTER_CUBIC)  # [1024, 2048, c]
-                                # [1024, 2048]
-                                preds = np.asarray(np.argmax(logits, axis=-1), dtype=np.uint8)
-                                # inputs[k]: [3, 1024, 2048], sim_mat: [b h w c m]
+                                    interpolation=cv2.INTER_CUBIC)  # [1024, 2048, (c m)]
+                                # inputs[k]: [3, 1024, 2048]
                                 self.proto_visualizer.vis_prototype(
-                                    logits_proto, preds, inputs[k], names[k])
+                                    logits, inputs[k], names[k], ori_img_size, border_size)
 
                         outputs = outputs['seg']
                     self.evaluator.update_score(outputs, data_dict['meta'])

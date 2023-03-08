@@ -20,7 +20,7 @@
 		"out_dir": "/save_data/cityscapes"
 	},
 	"val": {
-		"batch_size": 3,
+		"batch_size": 2,
 		"mode": "ss_test",
 		"data_transformer": {
 			"size_mode": "fix_size",

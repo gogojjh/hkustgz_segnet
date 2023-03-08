@@ -157,11 +157,12 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         self.mask_norm = nn.LayerNorm(self.num_classes)
 
         in_channels = 720
-
-        if self.use_boundary:
-            out_channels = 720 // 2
-        else:
-            out_channels = 720
+        #todo debug
+        # if self.use_boundary:
+        #     out_channels = 720 // 2
+        # else:
+        #     out_channels = 720
+        out_channels = 720
         self.cls_head = nn.Sequential(
             nn.Conv2d(in_channels, out_channels,
                       kernel_size=3, stride=1, padding=1),
@@ -206,26 +207,27 @@ class HRNet_W48_Attn_Uncer_Proto(nn.Module):
         gt_size = c.size()[2:]
 
         c = self.cls_head(c)  # [b 360/720 h w]
-        if self.use_boundary:
-            ''' 
-            We do not use cls head for neither seg_edge_out/seg_body_out.
-            Instead, we use probability from the prototype classifier.
-            '''
-            seg_body, seg_edge = self.body_head(c)  # [b 360 h w]
-            # [b 1 h' w'], [b 360 h' w'] h'/w': size of low-level fea
-            seg_edge_out, seg_edge = self.edge_head(seg_edge, x[1])
-            low_fea_size = x[1].size()[2:]
+        #todo debug
+        # if self.use_boundary:
+        #     ''' 
+        #     We do not use cls head for neither seg_edge_out/seg_body_out.
+        #     Instead, we use probability from the prototype classifier.
+        #     '''
+        #     seg_body, seg_edge = self.body_head(c)  # [b 360 h w]
+        #     # [b 1 h' w'], [b 360 h' w'] h'/w': size of low-level fea
+        #     seg_edge_out, seg_edge = self.edge_head(seg_edge, x[1])
+        #     low_fea_size = x[1].size()[2:]
 
-            # [b 360 h' w']
-            seg_out = seg_edge + upsample(seg_body, low_fea_size)
-            c = upsample(c, low_fea_size)  # [b 360 h' w']
-            c = torch.cat((c, seg_out), dim=1)  # [b 720 h' w']
-            c = upsample(c, (h, w))  # [b 720 h w]
+        #     # [b 360 h' w']
+        #     seg_out = seg_edge + upsample(seg_body, low_fea_size)
+        #     c = upsample(c, low_fea_size)  # [b 360 h' w']
+        #     c = torch.cat((c, seg_out), dim=1)  # [b 720 h' w']
+        #     c = upsample(c, (h, w))  # [b 720 h w]
 
-            seg_edge_out = upsample(seg_edge_out, (h, w))  # [b 360 h w] # for loss calc
-            seg_edge_out = self.sigmoid_edge(seg_edge_out)  # ! prob of being edge [b 1 h' w']
+        #     seg_edge_out = upsample(seg_edge_out, (h, w))  # [b 360 h w] # for loss calc
+        #     seg_edge_out = self.sigmoid_edge(seg_edge_out)  # ! prob of being edge [b 1 h' w']
 
-            seg_body = upsample(self.body_cls_head(seg_body), (h, w))  # [b num_cls h w]
+        #     seg_body = upsample(self.body_cls_head(seg_body), (h, w))  # [b num_cls h w]
 
         c = self.proj_head(c)
         c = rearrange(c, 'b c h w -> (b h w) c')

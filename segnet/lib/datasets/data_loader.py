@@ -48,7 +48,7 @@ class DataLoader(object):
         self.label_transform = trans.Compose([
             trans.ToLabel(),
             trans.ReLabel(255, -1), ])
-        
+        #! label transform for edge label
         self.boundary_label_transform = trans.Compose([
             trans.ToLabel(),
             trans.ReLabel(255, 1), ]) # 0->0: non-edge, 255->1: edge

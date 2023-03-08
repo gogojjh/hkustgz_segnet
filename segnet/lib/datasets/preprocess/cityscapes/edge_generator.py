@@ -138,13 +138,13 @@ def calculate_edge(edge_path):
 
 
 if __name__ == "__main__":
-    label_path = "/data/Cityscapes/val/label/"
-    edge_path = "/data/Cityscapes/val/edge/"
+    label_path = "/data/Cityscapes/train/label/"
+    edge_path = "/data/Cityscapes/train/edge/"
     # label_path = "/data/Cityscapes/val/label/"
     # edge_path = "/data/Cityscapes/val/edge/"
     for seq in os.listdir(label_path):
         generate_train_val_edge(os.path.join(label_path, seq), os.path.join(edge_path, seq), 5)
-        label_nedge2void_path = "/data/Cityscapes/val/label_non_edge_void/"
+        label_nedge2void_path = "/data/Cityscapes/train/label_non_edge_void/"
         label_nedge2void(os.path.join(label_path, seq), os.path.join(edge_path, seq), os.path.join(label_nedge2void_path, seq))
 
     # calculate_edge(edge_path)

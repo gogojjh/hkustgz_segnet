@@ -9,6 +9,7 @@ from lib.datasets.tools.transforms import DeNormalize
 from lib.utils.tools.logger import Logger as Log
 from lib.utils.helpers.file_helper import FileHelper
 from lib.utils.helpers.image_helper import ImageHelper
+from einops import rearrange, repeat
 
 PROTOTYPE_DIR = '/vis/results/prototype'
 
@@ -54,12 +55,19 @@ class PrototypeVisualier(object):
         self.num_classes = self.configer.get('data', 'num_classes')
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
         self.save_dir = self.configer.get('test', 'out_dir')
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
 
-    def vis_prototype(self, sim_mat, preds, ori_img, name):
+    def vis_prototype(self, sim_mat, ori_img, name):
         '''
-        sim_mat: [h w (c m)]
-        ori_img: inputs[k]
+        sim_mat: [h w c m]
+        ori_img: inputs[k] [3 h w]
         '''
+        # ori image
         mean = self.configer.get('normalize', 'mean')
         std = self.configer.get('normalize', 'std')
         div_value = self.configer.get('normalize', 'div_value')
@@ -69,11 +77,16 @@ class PrototypeVisualier(object):
 
         h, w = sim_mat.shape[0], sim_mat.shape[1]
 
+        sem_pred = torch.max(sim_mat, dim=-1)[0] # [h w c]
+        sem_pred = torch.argmax(sem_pred, dim=-1) # [h w]
+        sim_mat = rearrange(sim_mat, 'h w c m -> h w (c m)') # [h w (c m)]
+        proto_pred = torch.argmax(sim_mat, dim=-1) # [h w]
+        proto_pred = proto_pred % self.num_prototype # proto id inside the predicted cls
+        # save an img for each class
         for i in range(1, self.num_classes):
-            mask = np.zeros((h, w), dtype=int)  # [h w]
-            mask[preds == i] = i
-            proto_pred = np.argmax((sim_mat[mask, i, :]), axis=-1)  # [1024 2048]
-            proto_pred = proto_pred % self.num_prototype + 1
+            mask = sem_pred == i
+            
+            
             proto_pred = Image.fromarray(proto_pred, 'P')
             colors = get_prototoype_colors()
             proto_pred.putpalette(colors)
