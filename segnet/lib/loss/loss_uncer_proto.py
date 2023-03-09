@@ -14,6 +14,67 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
+class ProtoDiverseLoss(nn.Module, ABC):
+    def __init__(self, configer):
+        super(PixelContrastiveLoss, self).__init__()
+        self.configer = configer
+        
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+            
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+    
+    def forward(self, proto):
+        ''' 
+        Minimize the similarity between different prototypes.
+        prototypes:[c m k]
+        '''
+        proto = rearrange(proto, 'c m k -> (c m) k') # [(c m) k]
+        proto_inv = proto.permute(1, 0) # [k (c m)]
+        proto_sim_mat = torch.einsum('nk,kn->nn', proto, proto_inv) # [(c m) (c m)]
+        
+        proto_diverse_loss = proto_sim_mat.mean()
+        
+        return proto_diverse_loss
+        
+
+class PixelContrastiveLoss(nn.Module, ABC):
+    ''' 
+    Confidence-guided hard example sampling.
+    '''
+    def __init__(self, configer):
+        super(PixelContrastiveLoss, self).__init__()
+        self.configer = configer
+        
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+            
+    # def _construct_region_center(self, feats, sem_gt, pred, confidence):
+        
+            
+    def forward(self, feats, confidence, sem_gt):
+        sem_gt = sem_gt.unsqueeze(1).float().clone()
+        sem_gt = F.interpolate(sem_gt,
+                                (feats.shape[2], feats.shape[3]), mode='nearest')
+        sem_gt = sem_gt.squeeze(1).long()
+        
+        batch_size = feats.shape[0]
+        
+        labels = labels.contiguous().view(batch_size, -1)
+        predict = predict.contiguous().view(batch_size, -1)
+        feats = feats.permute(0, 2, 3, 1)
+        feats = feats.contiguous().view(feats.shape[0], -1, feats.shape[-1])
+        
+        
 class PredUncertaintyLoss(nn.Module, ABC):
     ''' 
     Construct the multi-class classification problem into binary classification problem using the 
@@ -260,6 +321,8 @@ class PixelUncerContrastLoss(nn.Module, ABC):
         self.use_temperature = self.configer.get('protoseg', 'use_temperature')
         self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
         self.uncer_seg_loss = PredUncertaintyLoss(configer=configer)
+        #todo debug
+        self.proto_diverse_loss = ProtoDiverseLoss(configer=configer)
         
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
         if self.use_boundary:
@@ -314,6 +377,9 @@ class PixelUncerContrastLoss(nn.Module, ABC):
                 #     pred, target, confidence_wieght=confidence.squeeze(1).detach())
 
             seg_loss = self.seg_criterion(pred, target)
+            
+            proto = preds['proto']
+            proto_diverse_loss = self.proto_diverse_loss(proto)
 
             # if self.use_boundary:
             #     assert gt_boundary is not None
@@ -327,10 +393,10 @@ class PixelUncerContrastLoss(nn.Module, ABC):
                 
 
             loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
-                prob_ppd_loss + self.uncer_seg_loss_weight * uncer_seg_loss
+                prob_ppd_loss + self.uncer_seg_loss_weight * uncer_seg_loss + proto_diverse_loss
             assert not torch.isnan(loss)
 
-            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss}
+            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss, 'proto_diverse_loss': proto_diverse_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(

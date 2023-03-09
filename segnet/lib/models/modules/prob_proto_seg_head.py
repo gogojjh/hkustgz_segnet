@@ -31,7 +31,6 @@ class ProbProtoSegHead(nn.Module):
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
         self.use_boundary = self.configer.get('protoseg', 'use_boundary')
         self.proj_dim = self.configer.get('protoseg', 'proj_dim')
-        self.use_attention = self.configer.get('protoseg', 'use_attention')
         self.pretrain_prototype = self.configer.get(
             'protoseg', 'pretrain_prototype')
         self.mean_gamma = self.configer.get('protoseg', 'mean_gamma')
@@ -502,7 +501,7 @@ class ProbProtoSegHead(nn.Module):
                     x_var = x_var.reshape(b_size, h_size, -1, k_size)
                     return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
             else:
-                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
+                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto': self.prototypes.data.clone()}
         if self.configer.get('proto_visualizer', 'vis_prototype'):
             sim_mat = sim_mat.reshape(b_size, h_size, -1, self.num_classes * self.num_prototype)
             return {'seg': out_seg, 'logits': sim_mat}

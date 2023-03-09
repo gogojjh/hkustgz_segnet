@@ -126,6 +126,122 @@ class HRNet_W18_Attn_Prob_Proto(nn.Module):
         del c, c_var
 
         return preds
+    
+    
+class HRNet_W48_Hybrid_Uncer_Proto(nn.Module):
+    """
+    deep high-resolution representation learning for human pose estimation, CVPR2019
+    """
+
+    def __init__(self, configer):
+        super(HRNet_W48_Attn_Uncer_Proto, self).__init__()
+        self.configer = configer
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+        self.use_prototype = self.configer.get('protoseg', 'use_prototype')
+        self.update_prototype = self.configer.get(
+            'protoseg', 'update_prototype')
+        self.pretrain_prototype = self.configer.get(
+            'protoseg', 'pretrain_prototype')
+        self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
+        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
+        self.use_ros = self.configer.get('ros', 'use_ros')
+
+        self.backbone = BackboneSelector(configer).get_backbone()
+
+        self.proj_dim = self.configer.get('protoseg', 'proj_dim')
+
+        from lib.models.modules.confidence_proto_seg_head import ConfidenceProtoSegHead
+        self.confidence_seg_head = ConfidenceProtoSegHead(configer=configer)
+
+        self.feat_norm = nn.LayerNorm(self.proj_dim)  # normalize each row
+        self.mask_norm = nn.LayerNorm(self.num_classes)
+
+        in_channels = 720
+        # if self.use_boundary:
+        #     out_channels = 720 // 2
+        # else:
+        #     out_channels = 720
+        out_channels = 720
+        self.cls_head = nn.Sequential(
+            nn.Conv2d(in_channels, self.num_classes,
+                      kernel_size=3, stride=1, padding=1),
+            ModuleHelper.BNReLU(
+                out_channels, bn_type=self.configer.get('network', 'bn_type')),
+            nn.Dropout2d(0.10)
+        )
+        self.proj_head = ProjectionHead(in_channels, in_channels)
+        self.confidence_head = ConfidenceHead(configer=configer)
+
+        if self.use_boundary:
+            from lib.models.modules.body_head import BodyHead, EdgeHead
+            bn_type = self.configer.get('network', 'bn_type')
+            self.fea_down = nn.Conv2d(self.proj_dim, self.proj_dim // 2, kernel_size=3, bias=False)
+            self.body_head = BodyHead(configer=configer)
+            self.edge_head = EdgeHead(configer=configer)
+            self.sigmoid_edge = nn.Sigmoid()
+            # DSN for seg body part
+            self.body_cls_head = nn.Sequential(
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+                ModuleHelper.BatchNorm2d(bn_type=bn_type)(out_channels),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_channels, self.num_classes, kernel_size=1, bias=False)
+            )
+
+    def forward(self, x_, gt_semantic_seg=None, gt_boundary=None, pretrain_prototype=False):
+        x = self.backbone(x_)  # [48, 96, 192, 384]
+        b, _, h, w = x[0].size()  # 128, 256
+
+        feat1 = x[0]
+        feat2 = F.interpolate(x[1], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat3 = F.interpolate(x[2], size=(
+            h, w), mode="bilinear", align_corners=True)
+        feat4 = F.interpolate(x[3], size=(
+            h, w), mode="bilinear", align_corners=True)
+
+        c = torch.cat([feat1, feat2, feat3, feat4], 1)  # sent to boundary head
+
+        del feat1, feat2, feat3, feat4
+
+        gt_size = c.size()[2:]
+
+        coarse_pred = self.cls_head(c)  # [b num_cls h w]
+        
+        if gt_semantic_seg is not None or self.configer.get(
+                'uncertainty_visualizer', 'vis_uncertainty'):
+            # get confidence using both img and predictions
+            coarse_pred_ = torch.max(coarse_pred, dim=1, keepdim=True)[0]  # [b 1 h w]
+            x_ = F.interpolate(x_, size=(
+                h, w), mode="bilinear", align_corners=True)
+            x_ = torch.cat((coarse_pred_, x_), dim=1)  # [b 3 h w] -> [b 4 h w]
+            confidence = self.confidence_head(x_)
+
+        c = self.proj_head(c)
+        c = rearrange(c, 'b c h w -> (b h w) c')
+        c = self.feat_norm(c)  # ! along channel dimension
+        c = l2_normalize(c)  # ! l2_norm along num_class dimension
+        c = rearrange(c, '(b h w) c -> b c h w',
+                      h=gt_size[0], w=gt_size[1])
+
+        c_var = None
+        boundary_pred = None
+
+        preds = self.confidence_seg_head(
+            c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
+            gt_boundary=gt_boundary)
+
+        # if gt_semantic_seg is not None and self.use_boundary:
+        #     preds['seg_edge'] = seg_edge_out
+        #     preds['seg_body'] = seg_body
+
+        if gt_semantic_seg is not None or self.configer.get(
+                'uncertainty_visualizer', 'vis_uncertainty'):
+            preds['confidence'] = confidence
+
+        del c, c_var
+
+        return preds
 
 
 class HRNet_W48_Attn_Uncer_Proto(nn.Module):

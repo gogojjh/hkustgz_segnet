@@ -17,7 +17,7 @@ BACKBONE="hrnet48"
 CONFIGS="configs/cityscapes/H_48_D_4_prob_proto.json"
 CONFIGS_TEST="configs/cityscapes/H_48_D_4_TEST.json"
 
-MODEL_NAME="hr_w48_attn_uncer_proto"
+MODEL_NAME="HRNet_W48_Attn_Uncer_Proto"
 LOSS_TYPE="pixel_uncer_prototype_ce_loss"
 CHECKPOINTS_ROOT="${SCRATCH_ROOT}/Cityscapes"
 CHECKPOINTS_NAME="${MODEL_NAME}_lr1x_"$2

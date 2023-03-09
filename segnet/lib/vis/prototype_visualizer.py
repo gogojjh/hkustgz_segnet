@@ -22,28 +22,19 @@ def get_prototoype_colors():
     Returns:
         The color map
     """
-    num_cls = 20
+    num_cls = 11
     colors = [0] * (num_cls * 3)
-    colors[0:3] = (0, 0, 0)  # 0: 'road'
-    colors[3:6] = (244, 35, 232)  # 1 'sidewalk'
-    colors[6:9] = (70, 70, 70)  # 2''building'
-    colors[9:12] = (102, 102, 156)  # 3 wall
-    colors[12:15] = (190, 153, 153)  # 4 fence
-    colors[15:18] = (153, 153, 153)  # 5 pole
-    colors[18:21] = (250, 170, 30)  # 6 'traffic light'
-    colors[21:24] = (220, 220, 0)  # 7 'traffic sign'
-    colors[24:27] = (107, 142, 35)  # 8 'vegetation'
-    colors[27:30] = (152, 251, 152)  # 9 'terrain'
-    colors[30:33] = (70, 130, 180)  # 10 sky
-    colors[33:36] = (220, 20, 60)  # 11 person
-    colors[36:39] = (255, 0, 0)  # 12 rider
-    colors[39:42] = (0, 0, 142)  # 13 car
-    colors[42:45] = (0, 0, 70)  # 14 truck
-    colors[45:48] = (0, 60, 100)  # 15 bus
-    colors[48:51] = (0, 80, 100)  # 16 train
-    colors[51:54] = (0, 0, 230)  # 17 'motorcycle'
-    colors[54:57] = (119, 11, 32)  # 18 'bicycle'
-    colors[57:60] = (105, 105, 105)
+    colors[0:3] = (255, 255, 255)  
+    colors[3:6] = (255, 0, 0)  
+    colors[6:9] = (0, 255, 0)  
+    colors[9:12] = (0, 0, 255)  
+    colors[12:15] = (255, 255, 0)
+    colors[15:18] = (0, 255, 255)
+    colors[18:21] = (255, 0, 255)
+    colors[21:24] = (0, 128, 0)
+    colors[24:27] = (184,134,11)
+    colors[27:30] = (210, 105, 30)
+    colors[30:33] = (188,143,143)
     return colors
 
 
@@ -104,7 +95,7 @@ class PrototypeVisualier(object):
         proto_pred = torch.argmax(sim_mat, dim=-1) # [h w]
         proto_pred = proto_pred % self.num_prototype + 1 # proto id inside the predicted cls
         # save an img for each class
-        for i in range(1, self.num_classes):
+        for i in range(1, self.num_classes + 1):
             if i in self.background_cls:
                 continue
             mask = sem_pred == i

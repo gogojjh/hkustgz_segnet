@@ -25,7 +25,7 @@ from lib.models.nets.ideal_ocrnet import IdealSpatialOCRNet, IdealSpatialOCRNetB
 
 # HRNet
 from lib.models.nets.hrnet import HRNet_W48, HRNet_W48_CONTRAST
-from lib.models.nets.hrnet import HRNet_W48_OCR, HRNet_W48_OCR_B, HRNet_W48_OCR_B_HA, HRNet_W48_OCR_CONTRAST, HRNet_W48_MEM, HRNet_W48_Proto, HRNet_W48_Attn_Prob_Proto, HRNet_W18_Attn_Prob_Proto, HRNet_W48_Attn_Uncer_Proto
+from lib.models.nets.hrnet import HRNet_W48_OCR, HRNet_W48_OCR_B, HRNet_W48_OCR_B_HA, HRNet_W48_OCR_CONTRAST, HRNet_W48_MEM, HRNet_W48_Proto, HRNet_W48_Attn_Prob_Proto, HRNet_W18_Attn_Prob_Proto, HRNet_W48_Attn_Uncer_Proto, HRNet_W48_Hybrid_Uncer_Proto
 
 # OCNet
 from lib.models.nets.ocnet import BaseOCNet, AspOCNet
@@ -82,7 +82,8 @@ SEG_MODEL_DICT = {
     'hrnet_w48_proto': HRNet_W48_Proto,
     'hr_w48_attn_prob_proto': HRNet_W48_Attn_Prob_Proto,
     'hr_w18_attn_prob_proto': HRNet_W18_Attn_Prob_Proto,
-    'hr_w48_attn_uncer_proto': HRNet_W48_Attn_Uncer_Proto
+    'hr_w48_attn_uncer_proto': HRNet_W48_Attn_Uncer_Proto,
+    'hr_w48_hybrid_uncer_proto': HRNet_W48_Hybrid_Uncer_Proto
 }
 
 
