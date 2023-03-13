@@ -45,10 +45,20 @@ class ConfidenceProtoSegHead(nn.Module):
 
         # [cls_num, proto_num, channel/k]
         self.prototypes = nn.Parameter(torch.zeros(
-            self.num_classes, self.num_prototype, self.proj_dim), requires_grad=False)
+            self.num_classes, self.num_prototype, self.proj_dim), requires_grad=True)
         trunc_normal_(self.prototypes, std=0.02)
 
         self.cosine_classifier = self.configer.get('protoseg', 'cosine_classifier')
+        self.max_proto_voting = self.configer.get('proto', 'proto_voting')
+        if self.max_proto_voting:
+            self.proto_voting_layer = nn.Linear(self.num_prototype * self.num_classes, self.num_classes, bias=False)
+        
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index'] 
 
     def compute_similarity(self, x, x_var=None, sim_measure='wasserstein'):
         ''' 
@@ -66,8 +76,8 @@ class ConfidenceProtoSegHead(nn.Module):
         else:
             Log.error('Similarity measure is invalid.')
         return sim_mat
-
-    def confidence_guided_prototype_learning(self, sim_mat, out_seg, gt_seg, _c, confidence):
+        
+    def prototype_learning(self, sim_mat, out_seg, gt_seg, _c, confidence):
         """
         Prototype selection and update
         _c: (normalized) feature embedding
@@ -134,7 +144,7 @@ class ConfidenceProtoSegHead(nn.Module):
             ) + (self.num_prototype * i)  # n samples -> n*m labels
 
             del c_q, c_k_tile, c_k, m_q, m_k_tile, m_k, indexs, q
-
+        #todo debug 
         self.prototypes = nn.Parameter(
             l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
 
@@ -151,7 +161,7 @@ class ConfidenceProtoSegHead(nn.Module):
         return proto_target  # [n]
 
 
-    def forward(self, x, x_var=None, gt_semantic_seg=None, boundary_pred=None, gt_boundary=None):
+    def forward(self, x, x_var=None, gt_semantic_seg=None, boundary_pred=None, gt_boundary=None, confidence=None):
         ''' 
         boundary_pred: [(b h w) 2]
         '''
@@ -167,31 +177,30 @@ class ConfidenceProtoSegHead(nn.Module):
             x_var = rearrange(x_var, 'b c h w -> (b h w) c')
 
         sim_mat = self.compute_similarity(
-            x, x_var=x_var, sim_measure=self.sim_measure)
+            x, x_var=x_var, sim_measure=self.sim_measure) # [c n m]
 
-        out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
+        if not self.max_proto_voting:
+            sim_mat = sim_mat.permute(1, 0, 2).contiguous().view(-1, self.num_classes*self.num_prototype) # [n c m] -> [n (c m)]
+            out_seg = self.proto_voting_layer(sim_mat) # [n num_cls]
+            sim_mat = sim_mat.reshape(-1, self.num_classes, self.prototypes).permute(1, 0, 2)
+        else:
+            out_seg = torch.amax(sim_mat, dim=2)  # [n, num_cls]
+            
         out_seg = self.mask_norm(out_seg)
         out_seg = rearrange(out_seg, '(b h w) c -> b c h w',
                             b=b_size, h=h_size)
-
-        if self.use_boundary and gt_boundary is not None:
-            gt_boundary = F.interpolate(
-                gt_boundary.float(), size=gt_size, mode='nearest').view(-1)
 
         if self.pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
             assert torch.unique(gt_semantic_seg).shape[0] != 1
             gt_seg = F.interpolate(
                 gt_semantic_seg.float(), size=gt_size, mode='nearest').view(-1)
-            if self.use_boundary and gt_boundary is not None:
-                contrast_target = self.prototype_learning_boundary(
-                    sim_mat, out_seg, gt_seg, x, x_var, gt_boundary)
-            else:
-                contrast_target = self.prototype_learning(
-                    sim_mat, out_seg, gt_seg, x, x_var)
+
+            contrast_target = self.prototype_learning(
+                sim_mat, out_seg, gt_seg, x, x_var)
 
             sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
 
-            return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
+            return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto': self.prototypes.data.clone()}
         
         if self.configer.get('proto_visualizer', 'vis_prototype'):
             sim_mat = sim_mat.reshape(b_size, h_size, -1, self.num_classes * self.num_prototype)

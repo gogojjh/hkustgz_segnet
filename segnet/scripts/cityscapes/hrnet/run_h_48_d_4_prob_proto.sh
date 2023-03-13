@@ -17,8 +17,8 @@ BACKBONE="hrnet48"
 CONFIGS="configs/cityscapes/H_48_D_4_prob_proto.json"
 CONFIGS_TEST="configs/cityscapes/H_48_D_4_TEST.json"
 
-MODEL_NAME="HRNet_W48_Attn_Uncer_Proto"
-LOSS_TYPE="pixel_uncer_prototype_ce_loss"
+MODEL_NAME="hrnet_w48_proto"
+LOSS_TYPE="pixel_prototype_ce_loss"
 CHECKPOINTS_ROOT="${SCRATCH_ROOT}/Cityscapes"
 CHECKPOINTS_NAME="${MODEL_NAME}_lr1x_"$2
 LOG_FILE="${SCRATCH_ROOT}/logs/Cityscapes/${CHECKPOINTS_NAME}.log"
@@ -27,11 +27,11 @@ mkdir -p `dirname $LOG_FILE`
 
 PRETRAINED_MODEL="/save_data/hrnetv2_w48_imagenet_pretrained.pth"
 MAX_ITERS=50000
-BATCH_SIZE=28
+BATCH_SIZE=12
 BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
-  python3 -u main.py --configs ${CONFIGS} \
+  python3 -u -m debugpy --listen 5678 --wait-for-client main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
                        --gathered n \
@@ -68,7 +68,7 @@ elif [ "$1"x == "resume"x ]; then
                        --checkpoints_root ${CHECKPOINTS_ROOT} \
                        --checkpoints_name ${CHECKPOINTS_NAME} \
                        --resume_continue y \
-                       --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_max_performance.pth \
+                       --resume ${CHECKPOINTS_ROOT}/checkpoints/cityscapes/${CHECKPOINTS_NAME}_latest.pth \
                        --train_batch_size ${BATCH_SIZE} \
                        --distributed \
                         2>&1 | tee -a ${LOG_FILE}

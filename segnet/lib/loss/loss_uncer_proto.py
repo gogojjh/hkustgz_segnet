@@ -16,7 +16,7 @@ from einops import rearrange, repeat
 
 class ProtoDiverseLoss(nn.Module, ABC):
     def __init__(self, configer):
-        super(PixelContrastiveLoss, self).__init__()
+        super(ProtoDiverseLoss, self).__init__()
         self.configer = configer
         
         self.ignore_label = -1
@@ -36,45 +36,44 @@ class ProtoDiverseLoss(nn.Module, ABC):
         '''
         proto = rearrange(proto, 'c m k -> (c m) k') # [(c m) k]
         proto_inv = proto.permute(1, 0) # [k (c m)]
-        proto_sim_mat = torch.einsum('nk,kn->nn', proto, proto_inv) # [(c m) (c m)]
-        
-        proto_diverse_loss = proto_sim_mat.mean()
+        proto_sim_mat = torch.einsum('nk,km->nm', proto, proto_inv) # [(c m) (c m)]
+        proto_diverse_loss = (1 + proto_sim_mat).pow(2).mean()
         
         return proto_diverse_loss
-        
+
 
 class PixelContrastiveLoss(nn.Module, ABC):
     ''' 
     Confidence-guided hard example sampling.
     '''
+
     def __init__(self, configer):
         super(PixelContrastiveLoss, self).__init__()
         self.configer = configer
-        
+
         self.ignore_label = -1
         if self.configer.exists(
                 'loss', 'params') and 'ce_ignore_index' in self.configer.get(
                 'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
-            
+
     # def _construct_region_center(self, feats, sem_gt, pred, confidence):
-        
-            
+
     def forward(self, feats, confidence, sem_gt):
         sem_gt = sem_gt.unsqueeze(1).float().clone()
         sem_gt = F.interpolate(sem_gt,
-                                (feats.shape[2], feats.shape[3]), mode='nearest')
+                               (feats.shape[2], feats.shape[3]), mode='nearest')
         sem_gt = sem_gt.squeeze(1).long()
-        
+
         batch_size = feats.shape[0]
-        
+
         labels = labels.contiguous().view(batch_size, -1)
         predict = predict.contiguous().view(batch_size, -1)
         feats = feats.permute(0, 2, 3, 1)
         feats = feats.contiguous().view(feats.shape[0], -1, feats.shape[-1])
-        
-        
+
+
 class PredUncertaintyLoss(nn.Module, ABC):
     ''' 
     Construct the multi-class classification problem into binary classification problem using the 
@@ -177,10 +176,6 @@ class PredUncertaintyLoss(nn.Module, ABC):
 
 
 class ConfidenceLoss(nn.Module, ABC):
-    ''' 
-    Video Object Segmentation with Adaptive Feature Bank and Uncertain-Region Refinement
-    '''
-
     def __init__(self, configer):
         super(ConfidenceLoss, self).__init__()
 
@@ -196,13 +191,19 @@ class ConfidenceLoss(nn.Module, ABC):
         self.num_classes = self.configer.get('data', 'num_classes')
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
 
-    def forward(self, sim_mat):
-        # sim_mat: [n (c m)]
-        score_top, _ = sim_mat.topk(k=2, dim=1)
-        confidence = score_top[:, 0] / (score_top[:, 1] + 1e-8)
-        confidence = torch.exp(1 - confidence).mean(-1)
+    def forward(self, confidence, contrast_target):
+        ''' 
+        confidence: [b h w]
+        contrast_target: [(b h w)]
+        Minimize the uncertainty of the easy samples to refine the uncertain areas.
+        '''
+        confidence = rearrange(confidence, 'b h w -> (b h w)')  # [n]
+        mask = contrast_target != self.ignore_label
+        confidence = torch.masked_select(confidence, mask)
 
-        return confidence
+        confidence_loss = torch.exp(confidence).mean()
+
+        return confidence_loss
 
 
 class ProbPPCLoss(nn.Module, ABC):
@@ -225,7 +226,8 @@ class ProbPPCLoss(nn.Module, ABC):
         self.num_classes = self.configer.get('data', 'num_classes')
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
         self.proto_norm = nn.LayerNorm(self.num_classes * self.num_prototype)
-        self.confidence_seg_loss_weight = self.configer.get('protoseg', 'confidence_seg_loss_weight')
+        self.confidence_seg_loss_weight = self.configer.get(
+            'protoseg', 'confidence_seg_loss_weight')
 
     def forward(self, contrast_logits, contrast_target, confidence=None):
         ''' 
@@ -237,9 +239,10 @@ class ProbPPCLoss(nn.Module, ABC):
             confidence = rearrange(confidence, 'b h w -> (b h w)')
             confidence = 1 + self.confidence_seg_loss_weight * torch.sigmoid(confidence)
             prob_ppc_loss = F.cross_entropy(
-                contrast_logits, contrast_target.long(), ignore_index=self.ignore_label, reduction='none') * confidence
+                contrast_logits, contrast_target.long(),
+                ignore_index=self.ignore_label, reduction='none') * confidence
             prob_ppc_loss = torch.mean(prob_ppc_loss)
-        else: 
+        else:
             prob_ppc_loss = F.cross_entropy(
                 contrast_logits, contrast_target.long(), ignore_index=self.ignore_label)
 
@@ -321,14 +324,11 @@ class PixelUncerContrastLoss(nn.Module, ABC):
         self.use_temperature = self.configer.get('protoseg', 'use_temperature')
         self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
         self.uncer_seg_loss = PredUncertaintyLoss(configer=configer)
-        #todo debug
-        self.proto_diverse_loss = ProtoDiverseLoss(configer=configer)
+
+        self.confidence_loss = ConfidenceLoss(configer=configer)
+        self.confidence_loss_weight = self.configer.get('protoseg', 'confidence_loss_weight')
         
-        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
-        if self.use_boundary:
-            from lib.loss.loss_body_edge_proto import EdgeBodyLoss
-            self.edge_body_loss = EdgeBodyLoss(configer=configer)
-            self.edge_body_loss_weight = self.configer.get('protoseg', 'edge_body_loss_weight')
+        self.proto_diverse_loss = ProtoDiverseLoss(configer=configer)
 
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
@@ -349,51 +349,50 @@ class PixelUncerContrastLoss(nn.Module, ABC):
 
             prob_ppd_loss = self.prob_ppd_criterion(
                 contrast_logits, contrast_target)
-            
+
             prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target)
 
             pred = F.interpolate(input=seg, size=(
                 h, w), mode='bilinear', align_corners=True)
-
-            if self.use_weighted_seg_loss:
-                confidence = preds['confidence']
-                # uncertainty wiehgted prob_ppc_loss
-                # prob_ppc_loss = self.prob_ppc_criterion(contrast_logits, contrast_target, confidence=confidence.squeeze(1).detach())
-                # uncer_seg_loss
-                contrast_logits = contrast_logits.reshape(-1, self.num_classes, self.num_prototype)
-                contrast_logits = torch.max(contrast_logits, dim=-1)[0]
-                b_train, h_train, w_train = seg.size(0), seg.size(2), seg.size(3)
-                contrast_logits = contrast_logits.reshape(
-                    b_train, h_train, w_train, self.num_classes)
-                #! pred is detached when caluclating supervision for uncertainty
-                uncer_seg_loss = self.uncer_seg_loss(
-                    confidence, contrast_logits.permute(0, -1, 1, 2).detach(), target)
-
-                # confidence = F.interpolate(input=confidence.unsqueeze(1), size=(
-                #     h, w), mode='bilinear', align_corners=True)  # [b 1 h w]
-                #! confidence is detached when calculating seg loss
-                #todo debug
-                # seg_loss = self.seg_criterion(
-                #     pred, target, confidence_wieght=confidence.squeeze(1).detach())
-
-            seg_loss = self.seg_criterion(pred, target)
             
             proto = preds['proto']
             proto_diverse_loss = self.proto_diverse_loss(proto)
+            
+            confidence = preds['confidence']
+            # uncer_seg_loss
+            contrast_logits = contrast_logits.reshape(-1, self.num_classes, self.num_prototype)
+            contrast_logits = torch.max(contrast_logits, dim=-1)[0]
+            b_train, h_train, w_train = seg.size(0), seg.size(2), seg.size(3)
+            contrast_logits = contrast_logits.reshape(
+                b_train, h_train, w_train, self.num_classes)
+            #! pred is detached when caluclating supervision for uncertainty
+            uncer_seg_loss = self.uncer_seg_loss(
+                confidence, contrast_logits.permute(0, -1, 1, 2).detach(), target)
 
-            # if self.use_boundary:
-            #     assert gt_boundary is not None
-            #     edge_body_loss = self.edge_body_loss(preds, gt_boundary, target)
-                
-            #     loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
-            #     prob_ppd_loss + self.uncer_seg_loss_weight * uncer_seg_loss + self.edge_body_loss_weight * edge_body_loss
-            #     assert not torch.isnan(loss)
+            if self.use_weighted_seg_loss:
+                # coarse_seg = preds['coarse_seg'] # [b num_cls h w]  
+                # uncer_seg_loss = self.uncer_seg_loss(
+                #     confidence, coarse_seg.detach(), target)
 
-            #     return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss, 'edge_body_loss': edge_body_loss}
-                
+                confidence_loss = self.confidence_loss(confidence, contrast_target)
 
-            loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * \
-                prob_ppd_loss + self.uncer_seg_loss_weight * uncer_seg_loss + proto_diverse_loss
+                confidence = F.interpolate(input=confidence.unsqueeze(1), size=(
+                    h, w), mode='bilinear', align_corners=True)  # [b 1 h w]
+                #! confidence is detached when calculating seg loss
+                seg_loss = self.seg_criterion(
+                    pred, target, confidence_wieght=confidence.squeeze(1).detach())
+
+                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.uncer_seg_loss_weight * \
+                    uncer_seg_loss + self.confidence_loss_weight * confidence_loss + 0.01 * proto_diverse_loss
+
+                assert not torch.isnan(loss)
+
+                return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss, 'confidence_loss': confidence_loss, 'proto_diverse_loss': proto_diverse_loss}
+
+            seg_loss = self.seg_criterion(pred, target)
+
+            loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + \
+                self.uncer_seg_loss_weight * uncer_seg_loss + 0.01 * proto_diverse_loss
             assert not torch.isnan(loss)
 
             return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss, 'proto_diverse_loss': proto_diverse_loss}

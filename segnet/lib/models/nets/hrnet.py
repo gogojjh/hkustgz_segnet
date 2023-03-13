@@ -206,12 +206,12 @@ class HRNet_W48_Hybrid_Uncer_Proto(nn.Module):
 
         gt_size = c.size()[2:]
 
-        coarse_pred = self.cls_head(c)  # [b num_cls h w]
+        coarse_seg = self.cls_head(c)  # [b num_cls h w]
         
         if gt_semantic_seg is not None or self.configer.get(
                 'uncertainty_visualizer', 'vis_uncertainty'):
             # get confidence using both img and predictions
-            coarse_pred_ = torch.max(coarse_pred, dim=1, keepdim=True)[0]  # [b 1 h w]
+            coarse_pred_ = torch.max(coarse_seg, dim=1, keepdim=True)[0]  # [b 1 h w]
             x_ = F.interpolate(x_, size=(
                 h, w), mode="bilinear", align_corners=True)
             x_ = torch.cat((coarse_pred_, x_), dim=1)  # [b 3 h w] -> [b 4 h w]
@@ -229,7 +229,7 @@ class HRNet_W48_Hybrid_Uncer_Proto(nn.Module):
 
         preds = self.confidence_seg_head(
             c, x_var=c_var, gt_semantic_seg=gt_semantic_seg, boundary_pred=boundary_pred,
-            gt_boundary=gt_boundary)
+            gt_boundary=gt_boundary, confidence=confidence)
 
         # if gt_semantic_seg is not None and self.use_boundary:
         #     preds['seg_edge'] = seg_edge_out
@@ -238,6 +238,7 @@ class HRNet_W48_Hybrid_Uncer_Proto(nn.Module):
         if gt_semantic_seg is not None or self.configer.get(
                 'uncertainty_visualizer', 'vis_uncertainty'):
             preds['confidence'] = confidence
+            preds['coarse_seg'] = coarse_seg
 
         del c, c_var
 
@@ -607,7 +608,6 @@ class HRNet_W48_Proto(nn.Module):
     def __init__(self, configer):
         super(HRNet_W48_Proto, self).__init__()
         self.configer = configer
-        self.gamma = self.configer.get('protoseg', 'gamma')
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
         self.use_prototype = self.configer.get('protoseg', 'use_prototype')
         self.update_prototype = self.configer.get(

@@ -116,8 +116,8 @@ class ConfidenceHead(nn.Module):
         out = self.final_layer(out)  # [b 1 h w]
         out = out.squeeze(1)  # [b h w]
 
-        out = torch.sigmoid(out)
+        out = torch.sigmoid(out) #! confidence
         #! here we assume the output of confidence head is confidence not uncertainty!
-        out = 1 - out
+        out = 1 - out #! uncertainty
 
         return out

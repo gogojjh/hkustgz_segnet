@@ -154,7 +154,7 @@
 	"protoseg": {
 		"mean_gamma": 0.999,
 		"var_gamma": 0.999,
-		"num_prototype": 10,
+		"num_prototype": 5,
 		"pretrain_prototype": false,
 		"use_rmi": false,
 		"use_prototype": true,
@@ -170,15 +170,15 @@
 		"prob_ppc_weight": 0.01,
 		"kl_loss_weight": 0.01,
 		"coarse_seg_weight": 0.05,
-		"uncer_seg_loss_weight": 0.05,
+		"uncer_seg_loss_weight": 0.1,
 		"confidence_seg_loss_weight": 0.2,
-		"edge_body_loss_weight": 0.1,
+		"confidence_loss_weight": 0.005,
 		"proj_dim": 720,
 		"key_dim": 256,
 		"context_dim": 720,
 		"ndf_dim": 32,
 		"edge_dim": 256,
-		"use_boundary": true,
+		"use_boundary": false,
 		"bin_size_h": 4,
 		"bin_size_w": 8,
 		"reparam_k": 4,
@@ -196,7 +196,9 @@
 		"bayes_uncertainty": true,
 		"cosine_classifier": true,
 		"uncertainty_aware_loss": true,
-		"top_k_num": 3
+		"top_k_num": 3,
+		"use_adaptive_momentum": false,
+		"max_proto_voting": false
 	},
 	"pmm": {
 		"use_pmm": false,
@@ -229,7 +231,7 @@
 		"factor_p": 1
 	},
 	"wandb": {
-		"mode": "online"
+		"mode": "disabled"
 	},
 	"run": {
 		"server": 0

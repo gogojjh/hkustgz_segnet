@@ -14,6 +14,35 @@ from lib.utils.tools.rampscheduler import RampdownScheduler
 from einops import rearrange, repeat
 
 
+class ConfidenceLoss(nn.Module, ABC):
+    ''' 
+    Video Object Segmentation with Adaptive Feature Bank and Uncertain-Region Refinement
+    '''
+
+    def __init__(self, configer):
+        super(ConfidenceLoss, self).__init__()
+
+        self.configer = configer
+
+        self.ignore_label = -1
+        if self.configer.exists(
+                'loss', 'params') and 'ce_ignore_index' in self.configer.get(
+                'loss', 'params'):
+            self.ignore_label = self.configer.get('loss', 'params')[
+                'ce_ignore_index']
+
+        self.num_classes = self.configer.get('data', 'num_classes')
+        self.num_prototype = self.configer.get('protoseg', 'num_prototype')
+
+    def forward(self, sim_mat):
+        # sim_mat: [n (c m)]
+        score_top, _ = sim_mat.topk(k=2, dim=1)
+        confidence = score_top[:, 0] / (score_top[:, 1] + 1e-8)
+        confidence = torch.exp(1 - confidence).mean(-1)
+
+        return confidence
+
+
 class BoundaryContrastiveLoss(nn.Module, ABC):
     ''' 
     'Contrastive Boundary Learning for Point Cloud Segmentation'

@@ -64,6 +64,7 @@ class ProbProtoSegHead(nn.Module):
         if self.attention_proto:
             self.lamda_p = self.configer.get('protoseg', 'lamda_p')
         self.cosine_classifier = self.configer.get('protoseg', 'cosine_classifier')
+        self.use_adaptive_momentum = self.configer.get('protoseg', 'use_adaptive_momentum')
 
     def reparameterize(self, mu, var, k=1, protos=False):
         sample_z = []
@@ -159,7 +160,43 @@ class ProbProtoSegHead(nn.Module):
             else:
                 Log.error('Similarity measure is invalid.')
         return sim_mat
+    
+    def get_adaptive_momentum_(self, sim_mat, contrast_target):
+        ''' 
+        Compute momentum based on similarity between feats and its predicted proto,
+        hard negative proto respectively.
+        
+        feats: [(b h w) k]
+        hard_neg_proto_ind: [(c m)]
+        contrast_target: [(b h w) (c m)]
+        sim_mat: [n (c m)]
+        '''
+        hard_neg_proto_ind = self.hard_neg_proto_ind()
+        
+        proto_pred = torch.argmax(contrast_target, dim=1) # [(b h w)]
 
+        pos_score = torch.gather(sim_mat, 1, proto_pred.unsqueeze(0).long())
+
+        # find hard neg proto of each pixel based on its proto_pred
+        neg_proto_pred = torch.ones_like(proto_pred) * self.ignore_label # [(b h w)]
+        neg_proto_pred.scatter_(0, proto_pred, hard_neg_proto_ind)
+        
+        neg_score = torch.gather(sim_mat, 1, neg_proto_pred.unsqueeze(0).long()) # [(b h w)]
+        
+        score = torch.cat((pos_score.unsqueeze(-1), neg_score.unsqueeze(-1)), -1) # [(b h w) 2]
+        score = F.softmax(score, -1) # [(b h w) 2]
+        
+        return score
+    
+    def get_hard_neg_proto_(self):
+        proto = self.prototypes.data.clone() # [c m k]
+        proto = rearrange(proto, 'c m k -> (c m) k ') # [(c m) k]
+        proto_inv = proto.permute(1, 0) # [k (c m)]
+        proto_sim = torch.einsum('nk,km->nm', proto, proto_inv) # [(c m) (c m)]
+        hard_neg_proto_ind = torch.argmax(proto_sim, dim=1) # [(c m)]
+        
+        return hard_neg_proto_ind
+    
     def prototype_learning(self, sim_mat, out_seg, gt_seg, _c, _c_var):
         """
         Prototype selection and update
@@ -173,6 +210,13 @@ class ProbProtoSegHead(nn.Module):
         gt_seg: [b*h*w]
         out_seg:  # [b*h*w, num_cls]
         """
+        if self.use_adaptive_momentum:
+            sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
+            mean_gamma = self.get_adaptive_momentum_(sim_mat, )
+            sim_mat = sim_mat.reshpae(-1, self.num_classes, self.num_prototype)
+        else: 
+            mean_gamma = self.mean_gamma
+        
         # largest score inside a class
         pred_seg = torch.max(out_seg, dim=1)[1]  # [b*h*w]
 
@@ -224,8 +268,7 @@ class ProbProtoSegHead(nn.Module):
                     f = m_q.transpose(0, 1) @ c_q
                     f = F.normalize(f, p=2, dim=-1)
                     protos[i, n != 0, :] = momentum_update(
-                        old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
-
+                        old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=mean_gamma, debug=False)
                 else:
                     m_q_sum = m_q.sum(dim=0)  # [num_proto]
                     if not self.avg_update_proto:
@@ -247,7 +290,7 @@ class ProbProtoSegHead(nn.Module):
                         f = F.normalize(f, p=2, dim=-1)
 
                         protos[i, n != 0, :] = momentum_update(
-                            old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
+                            old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=mean_gamma, debug=False)
 
                         f_v = (m_q.transpose(0, 1) @ (var_q + (c_q ** 2))) / (m_q_sum.unsqueeze(-1) +
                                                                               1e-3) - ((m_q.transpose(0, 1) @ c_q) / (m_q_sum.unsqueeze(-1) + 1e-3)) ** 2
@@ -259,18 +302,6 @@ class ProbProtoSegHead(nn.Module):
                     if not self.cosine_classifier:
                         proto_var[i, n != 0, :] = momentum_update(
                             old_value=proto_var[i, n != 0, :], new_value=f_v[n != 0, :], momentum=self.var_gamma, debug=False)
-
-                    if self.attention_proto:
-                        for m in range(self.num_prototype):
-                            proto_score = -0.5 * ((protos[i, m, :] - protos[i, ...]) ** 2 / (
-                                proto_var[i, m, :] + proto_var[i, ...]) + torch.log(proto_var[i, m, :] + proto_var[i, ...])).mean(-1)  # [m]
-                            ind_mask = torch.arange(self.num_prototype).cuda() != m
-                            proto_score = proto_score.masked_select(
-                                ind_mask)  # [self.num_Proto - 1]
-                            proto_score = proto_score / proto_score.sum()
-                            protos[i, m, :] = protos[i, m, :] + self.lamda_p * (proto_score.unsqueeze(-1) * protos[i, ...].masked_select(
-                                ind_mask.unsqueeze(-1)).reshape(-1, self.proj_dim)).sum(0)
-                    # del var_q, var_k, f, f_v
 
             # each class has a target id between [0, num_proto * c]
             #! ignore_label are still -1, and not being modified

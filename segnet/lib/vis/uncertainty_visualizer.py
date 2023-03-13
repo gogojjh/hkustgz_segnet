@@ -40,7 +40,7 @@ class UncertaintyVisualizer(object):
             wandb.log({'uncertainty image': [im]})
 
     def vis_uncertainty(self, uncertainty, gt, name='default'):
-        uncertainty[gt == self.ignore_label] = 0
+        # uncertainty[gt == self.ignore_label] = 0
 
         base_dir = os.path.join(self.configer.get('train', 'out_dir'), UNCERTAINTY_DIR)
 

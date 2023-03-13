@@ -276,6 +276,8 @@ class Trainer(object):
                     #     loss['edge_body_loss']) / get_world_size()
                     uncer_seg_loss = reduce_tensor(
                         loss['uncer_seg_loss']) / get_world_size()
+                    # confidence_loss = reduce_tensor(
+                    #     loss['confidence_loss']) / get_world_size()
                     proto_diverse_loss = reduce_tensor(
                         loss['proto_diverse_loss']) / get_world_size()
                     display_loss = reduce_tensor(
