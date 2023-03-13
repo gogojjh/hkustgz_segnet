@@ -34,16 +34,14 @@ class ImgExtractor(object):
     def __divide_raw_data(self):
         dir_name = os.path.join(self.input_dir, )
         img_list = self.__get_img_list()
-        output_list = list()
     
         for i in range(0, len(img_list), self.img_interval):
             img_name = img_list[i].split('/')[-1]
-            output_list.append(os.path.join(self.output_dir, self.phase, img_name))
             #! DO NOT CHANGE TIMESTAMP 
             shutil.copy(img_list[i], os.path.join(self.output_dir, self.phase, img_name))
             
-        return output_list
-        
+    def extract_img(self):
+        self.__divide_raw_data
         
         
 if __name__ == "__main__":
@@ -60,3 +58,6 @@ if __name__ == "__main__":
                         dest='img_interval', help='interval for annotation')
     args = parser.parse_args()
     
+    img_extractor = ImgExtractor(args)
+    
+    img_extractor.extract_img()
