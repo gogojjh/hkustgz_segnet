@@ -1,0 +1,24 @@
+sequence00
+1678348529.837507963 # (train) road
+1678350254.401264962
+sequence01
+1678350254.401264962 # (train) river, building, grass
+1678352408.651496442
+sequence02
+1678352408.651496442 # (test) repeated path
+1678354802.509041064
+sequence03
+1678354802.509041064 # (train) nearby the stadium
+1678355007.318881803
+sequence04
+1678355007.318881803 # (test) repeated road path
+1678357193.659548190
+sequence05
+1678357193.659548190 # (train) nearby the stadium, construction site/barrier
+1678357813.049281005
+sequence06
+1678357813.049281005 # (val) path back to lab, river, road, building
+1678358200.381751284
+sequence07
+1678358200.381751284 # (train??) inside the academic building
+1678358212.919689417
