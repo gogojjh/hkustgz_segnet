@@ -45,25 +45,35 @@ class ImgExtractor(object):
             #! DO NOT CHANGE TIMESTAMP 
             shutil.copy(img_list[i], os.path.join(self.output_dir, self.phase, img_name))
             
-    def __match_img_timestamp(self, target_t):
+    def __match_img_timestamp(self, target_t, timestamps):
         ''' 
-        Use timestamp in rosbag to find the corresponding img id (row num in timestamp.txt).
+        Use nearest timestamp in rosbag to find the corresponding img id (row num in timestamp.txt).
         '''
-        with open(self.timestamp_dir, 'r') as f:
-            timestamps = f.readlines()
-        f.close()
-        
+        target_t = target_t.strip()
+        near_timestamps = []
+        near_img_id = []
+        closest_t = None
         for i, t in enumerate(timestamps):
-            if str(target_t).split('.')[0] != str(t).split('.')[0]:
+            t = t.strip()
+            if target_t.split('.')[0] != t.split('.')[0]:
                 continue
             else: 
-                if str(target_t).split('.')[1][:7] != t.split('.')[1][:7]:
-                    continue
+                if target_t.split('.')[1][:7] != t.split('.')[1][:7]:
+                    near_timestamps.append(int(t.split('.')[-1]))
+                    near_img_id.append(str(i))
                 else: 
-                    if str(t) != str(target_t):
-                        continue
-                    else: 
-                        return i
+                    closest_t = str(i)
+                    break
+            
+        if closest_t is not None: 
+            return closest_t
+        else: 
+            assert len(near_timestamps) != 0        
+            find_closest_t = lambda num, collection:min(collection, key=lambda x:abs(x - num)) 
+            closest_t = find_closest_t(int(target_t.split('.')[-1]), near_timestamps)
+            
+            return near_img_id[near_timestamps.index(closest_t)]
+        
     
     def extract_img(self):
         ''' 
@@ -71,21 +81,26 @@ class ImgExtractor(object):
         2. divide images by a fixed interval in each sequence
         3. save the extracted image for each sequence.
         '''
+        with open(self.timestamp_dir, 'r') as f:
+            timestamps = f.readlines()
+        f.close()
+        
         target_inds = []
         with open(self.required_timestamps_dir, 'r') as f: 
             required_t = f.readlines()
             f.close()
         for i, target_t in enumerate(required_t):
             if str(target_t)[:8] == 'sequence':
-                target_inds.append(target_t)
+                target_inds.append(target_t.strip() + '\n')
             else:
-                target_i = self.__match_img_timestamp(target_t)
-                target_inds.append(target_i)
+                target_i = self.__match_img_timestamp(target_t, sorted(timestamps))
+                target_inds.append(target_i + '\n')
         
         img_id_file = os.path.join(self.output_dir, 'seq_img_id.txt')
         with open(img_id_file, 'w') as f:
             f.writelines(target_inds)
         f.close()
+        Log.info('Img ID txt successfully saved in {}'.format(img_id_file))
         
         
 if __name__ == "__main__":
