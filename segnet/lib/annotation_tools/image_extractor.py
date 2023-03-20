@@ -19,15 +19,15 @@ class ImgExtractor(object):
         self.args = args
         self.input_dir = args.input_dir
         self.output_dir = args.output_dir
-        self.phase = args.phase
         self.img_interval = args.img_interval
-        self.timestamp_dir = args.timestamp_dir
+        self.ori_timestamp_dir = args.ori_timestamp_dir
         self.required_timestamps_dir = args.required_timestamps_dir
-        self.output_timestamp_dir = os.path.join(self.output_dir, 'required_t.txt')
+        self.start_id = args.start_id
+        self.txt_output_dir = args.txt_output_dir
         
     def __get_img_list(self, dir_name):
         filename_list = list()
-        for item in os.listdir(dir_name):
+        for item in sorted(os.listdir(dir_name)):
             if os.path.isdir(os.path.join(dir_name, item)):
                 for filename in os.listdir(os.path.join(dir_name, item)):
                     filename_list.append('{}/{}'.format(item, filename))
@@ -36,14 +36,55 @@ class ImgExtractor(object):
                 
         return filename_list
         
-    def __divide_raw_data(self):
-        dir_name = os.path.join(self.input_dir,  )
-        img_list = self.__get_img_list()
-    
-        for i in range(0, len(img_list), self.img_interval):
-            img_name = img_list[i].split('/')[-1]
-            #! DO NOT CHANGE TIMESTAMP 
-            shutil.copy(img_list[i], os.path.join(self.output_dir, self.phase, img_name))
+    def divide_raw_data(self, img_id_file):
+        ''' 
+        Based on required timestamp to divide raw data into several sequences.
+        '''
+        img_list = self.__get_img_list(self.input_dir)
+        
+        with open(img_id_file, 'r') as f: 
+            target_inds = f.readlines()
+            f.close()
+        
+        seq_name_list = []
+        img_id_list = []
+        seq_img_list = []
+        for ind in target_inds:
+            ind = ind.strip()
+            if ind[:8] == 'sequence':
+                seq_dir = os.path.join(self.output_dir, '{}'.format(ind))
+                
+                if os.path.exists(seq_dir):
+                    shutil.rmtree(seq_dir)
+                os.makedirs(seq_dir)
+                
+                seq_name_list.append(ind)
+                continue
+            else: 
+                img_id_list.append(int(ind))
+        
+        for i, seq_name in enumerate(seq_name_list):
+            seq_img_list.append(seq_name + '\n')
+            start_id = img_id_list[i * 2]
+            end_id = img_id_list[i * 2 + 1] - 1
+            
+            # copy the annotated img to new seq folder
+            for img_id in range(start_id, end_id, self.img_interval):
+                img_name = img_list[img_id]
+                #! DO NOT CHANGE TIMESTAMP 
+                shutil.copy(os.path.join(self.input_dir, img_name), os.path.join(self.output_dir, seq_name, img_name))
+                seq_img_list.append(str(img_id) + '\n')
+            if end_id not in seq_img_list:
+                img_name = img_list[end_id]
+                shutil.copy(os.path.join(self.input_dir, img_name), os.path.join(self.output_dir, seq_name, img_name))
+                seq_img_list.append(str(end_id) + '\n')
+            # save the corresponding img_id_list to txt file
+            
+        seq_img_id_file = os.path.join(self.txt_output_dir, 'seq_img_id.txt')
+        with open(seq_img_id_file, 'w') as f:
+            f.writelines(seq_img_list)
+        f.close()    
+        Log.info('Sequence image id list successfully saved in {}'.format(seq_img_id_file))
             
     def __match_img_timestamp(self, target_t, timestamps):
         ''' 
@@ -74,14 +115,13 @@ class ImgExtractor(object):
             
             return near_img_id[near_timestamps.index(closest_t)]
         
-    
-    def extract_img(self):
+    def divide_sequence(self):
         ''' 
         1. get img id according to the required time and the corresponding timestsamp.txt -> get different sequences
         2. divide images by a fixed interval in each sequence
         3. save the extracted image for each sequence.
         '''
-        with open(self.timestamp_dir, 'r') as f:
+        with open(self.ori_timestamp_dir, 'r') as f:
             timestamps = f.readlines()
         f.close()
         
@@ -96,31 +136,35 @@ class ImgExtractor(object):
                 target_i = self.__match_img_timestamp(target_t, sorted(timestamps))
                 target_inds.append(target_i + '\n')
         
-        img_id_file = os.path.join(self.output_dir, 'seq_img_id.txt')
+        img_id_file = os.path.join(self.txt_output_dir, 'seq_img_id.txt')
         with open(img_id_file, 'w') as f:
             f.writelines(target_inds)
         f.close()
         Log.info('Img ID txt successfully saved in {}'.format(img_id_file))
         
+        return img_id_file
+        
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_dir', default='/data', type=str,
+    parser.add_argument('--input_dir', default='/data/Data/kin/ruoyu_data/HKUSTGZ/frame00', type=str,
                         dest='input_dir', help='directory of input image.')
-    parser.add_argument('--output_dir', default='/home/hkustgz_segnet/segnet/lib/annotation_tools/timestamp', type=str,
-                        dest='output_dir', help='directory of output image.')
-    parser.add_argument('--phase', default='train', type=str,
-                        dest='phase', help='sequence name')
-    parser.add_argument('--img_interval', default='20', type=int,
+    parser.add_argument('--txt_output_dir', default='/home/hkustgz_segnet/segnet/lib/annotation_tools/timestamp', type=str,
+                        dest='txt_output_dir', help='directory of timestamp txt output.')
+    parser.add_argument('--output_dir', default='/data/Data/kin/ruoyu_data/HKUSTGZ/frame00_annotation', type=str,
+                        dest='output_dir', help='directory of timestamp txt output.')
+    parser.add_argument('--img_interval', default='40', type=int,
                         dest='img_interval', help='interval for annotation')
-    parser.add_argument('--start_id', default='40', type=int,
+    parser.add_argument('--start_id', default='0', type=int,
                         dest='start_id', help='interval for annotation')
-    parser.add_argument('--timestamp_dir', default='/data/Data/jjiao/dataset/FusionPortable_dataset_develop/sensor_data/mini_hercules/20230309_hkustgz_campus_road_day/data/frame_cam00/image/timestamps.txt', type=str,
-                        dest='timestamp_dir', help='dir of timestamp.txt')
+    parser.add_argument('--ori_timestamp_dir', default='/data/Data/jjiao/dataset/FusionPortable_dataset_develop/sensor_data/mini_hercules/20230309_hkustgz_campus_road_day/data/frame_cam00/image/timestamps.txt', type=str,
+                        dest='ori_timestamp_dir', help='original dir of timestamp.txt')
     parser.add_argument('--required_timestamps_dir', default='/home/hkustgz_segnet/segnet/lib/annotation_tools/timestamp/sequence_timestamp.txt', type=str,
                         dest='required_timestamps_dir', help='dir of required timestamps for sequences')
     args = parser.parse_args()
     
     img_extractor = ImgExtractor(args)
     
-    img_extractor.extract_img()
+    img_id_file = img_extractor.divide_sequence()
+    
+    img_extractor.divide_raw_data(img_id_file)
