@@ -8,6 +8,7 @@
 *.pt
 *.pth
 *.log
+*.png
 
 wandb
 log
