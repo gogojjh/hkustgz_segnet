@@ -39,6 +39,7 @@ RUN pip3 install wandb
 RUN pip3 install einops
 RUN pip3 install timm 
 RUN pip3 install ptflops
+RUN pip3 install image-similarity-measures
 
 # copy ssh key to container
 ARG SSH_PRIVATE_KEY
