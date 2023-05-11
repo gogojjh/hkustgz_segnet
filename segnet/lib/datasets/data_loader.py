@@ -24,6 +24,7 @@ from lib.datasets.loader.ade20k_loader import ADE20KLoader
 from lib.datasets.loader.lip_loader import LipLoader
 from lib.datasets.loader.offset_loader import DTOffsetLoader
 from lib.datasets.loader.default_boundary_loader import DefaultBoundaryLoader
+from lib.datasets.loader.semantic_fusionportable_loader import SemanticFusionPortableLoader
 from lib.datasets.tools.collate import collate
 from lib.utils.tools.logger import Logger as Log
 
@@ -146,6 +147,8 @@ class DataLoader(object):
             '''
             Log.info('use the DefaultBoundaryLoader for train...')
             klass = DefaultBoundaryLoader
+        elif self.configer.get('dataset') == 'hkustgz':
+            klass = SemanticFusionPortableLoader
         else:
             """
             Default manner:
@@ -171,24 +174,10 @@ class DataLoader(object):
     def get_valloader(self, dataset=None):
         dataset = 'val' if dataset is None else dataset
 
-        if self.configer.exists(
-                'data', 'use_dt_offset') or self.configer.exists(
-                'data', 'pred_dt_offset'):
-            """
-            dt-offset manner:
-            load both the ground-truth label and offset (based on distance transform).
-            """
-            Log.info('use distance transform based offset loader for val ...')
-            klass = DTOffsetLoader
+        if self.configer.get('dataset') == 'hkustgz':
+            klass = SemanticFusionPortableLoader
 
-        elif self.configer.get('method') == 'fcn_segmentor' and self.configer.get('protoseg', 'use_boundary'):
-            ''' 
-            Load additional boundary maps compared with default loader.
-            '''
-            Log.info('use the DefaultBoundaryLoader for train...')
-            klass = DefaultBoundaryLoader
-
-        elif self.configer.get('method') == 'fcn_segmentor' and self.configer.get('protoseg', 'use_boundary') == False:
+        elif self.configer.get('method') == 'fcn_segmentor' and self.configer.get('dataset') != 'hkustgz':
             """
             default manner:
             load the ground-truth label.

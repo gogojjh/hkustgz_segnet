@@ -178,10 +178,6 @@ class FSCELoss(nn.Module):
         reduction = 'elementwise_mean'
         if self.configer.exists('loss', 'params') and 'ce_reduction' in self.configer.get('loss', 'params'):
             reduction = self.configer.get('loss', 'params')['ce_reduction']
-        self.use_weighted_seg_loss = self.configer.get('protoseg', 'use_weighted_seg_loss')
-        # if self.use_weighted_seg_loss:
-        #     reduction = 'none'    
-        #     self.confidence_seg_loss_weight = self.configer.get('protoseg', 'confidence_seg_loss_weight')
         Log.info('Recudtion for seg loss: {}'.format(reduction))
 
         ignore_index = -1
@@ -206,12 +202,6 @@ class FSCELoss(nn.Module):
 
         else:
             target = self._scale_target(targets[0], (inputs.size(2), inputs.size(3))) # [b h w]
-            # if confidence_wieght is not None and self.use_weighted_seg_loss:
-            #     confidence_wieght = 1 + self.confidence_seg_loss_weight * torch.sigmoid(confidence_wieght)
-            #     loss = self.ce_loss(inputs, target) * confidence_wieght # [b h w]
-            #     loss = torch.mean(loss)
-            # else: 
-            #     loss = self.ce_loss(inputs, target)
             loss = self.ce_loss(inputs, target)
 
         return loss

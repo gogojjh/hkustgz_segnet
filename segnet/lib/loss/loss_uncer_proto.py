@@ -10,8 +10,7 @@ import torch.nn.functional as F
 
 from lib.utils.tools.logger import Logger as Log
 from lib.loss.loss_helper import FSCELoss
-from lib.utils.tools.rampscheduler import RampdownScheduler
-from einops import rearrange, repeat
+from einops import rearrange
 
 
 class ProtoDiverseLoss(nn.Module, ABC):
@@ -307,12 +306,7 @@ class PixelUncerContrastLoss(nn.Module, ABC):
 
         self.prob_ppd_weight = self.configer.get('protoseg', 'prob_ppd_weight')
         self.prob_ppc_weight = self.configer.get('protoseg', 'prob_ppc_weight')
-        self.coarse_seg_weight = self.configer.get('protoseg', 'coarse_seg_weight')
         self.uncer_seg_loss_weight = self.configer.get('protoseg', 'uncer_seg_loss_weight')
-        self.use_weighted_seg_loss = self.configer.get('protoseg', 'use_weighted_seg_loss')
-        if self.use_weighted_seg_loss:
-            self.confidence_seg_loss_weight = self.configer.get(
-                'protoseg', 'confidence_seg_loss_weight')
 
         self.seg_criterion = FSCELoss(configer=configer)
 
@@ -321,14 +315,7 @@ class PixelUncerContrastLoss(nn.Module, ABC):
         self.prob_ppd_criterion = ProbPPDLoss(configer=configer)
 
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
-        self.use_temperature = self.configer.get('protoseg', 'use_temperature')
-        self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
         self.uncer_seg_loss = PredUncertaintyLoss(configer=configer)
-
-        self.confidence_loss = ConfidenceLoss(configer=configer)
-        self.confidence_loss_weight = self.configer.get('protoseg', 'confidence_loss_weight')
-        
-        self.proto_diverse_loss = ProtoDiverseLoss(configer=configer)
 
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
@@ -355,9 +342,6 @@ class PixelUncerContrastLoss(nn.Module, ABC):
             pred = F.interpolate(input=seg, size=(
                 h, w), mode='bilinear', align_corners=True)
             
-            proto = preds['proto']
-            proto_diverse_loss = self.proto_diverse_loss(proto)
-            
             confidence = preds['confidence']
             # uncer_seg_loss
             contrast_logits = contrast_logits.reshape(-1, self.num_classes, self.num_prototype)
@@ -369,33 +353,13 @@ class PixelUncerContrastLoss(nn.Module, ABC):
             uncer_seg_loss = self.uncer_seg_loss(
                 confidence, contrast_logits.permute(0, -1, 1, 2).detach(), target)
 
-            if self.use_weighted_seg_loss:
-                # coarse_seg = preds['coarse_seg'] # [b num_cls h w]  
-                # uncer_seg_loss = self.uncer_seg_loss(
-                #     confidence, coarse_seg.detach(), target)
-
-                confidence_loss = self.confidence_loss(confidence, contrast_target)
-
-                confidence = F.interpolate(input=confidence.unsqueeze(1), size=(
-                    h, w), mode='bilinear', align_corners=True)  # [b 1 h w]
-                #! confidence is detached when calculating seg loss
-                seg_loss = self.seg_criterion(
-                    pred, target, confidence_wieght=confidence.squeeze(1).detach())
-
-                loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + self.uncer_seg_loss_weight * \
-                    uncer_seg_loss + self.confidence_loss_weight * confidence_loss + 0.01 * proto_diverse_loss
-
-                assert not torch.isnan(loss)
-
-                return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss, 'confidence_loss': confidence_loss, 'proto_diverse_loss': proto_diverse_loss}
-
             seg_loss = self.seg_criterion(pred, target)
 
             loss = seg_loss + self.prob_ppc_weight * prob_ppc_loss + self.prob_ppd_weight * prob_ppd_loss + \
-                self.uncer_seg_loss_weight * uncer_seg_loss + 0.01 * proto_diverse_loss
+                self.uncer_seg_loss_weight * uncer_seg_loss
             assert not torch.isnan(loss)
 
-            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss, 'proto_diverse_loss': proto_diverse_loss}
+            return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss}
 
         seg = preds
         pred = F.interpolate(input=seg, size=(

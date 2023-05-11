@@ -55,16 +55,7 @@ class ProbProtoSegHead(nn.Module):
             if self.sim_measure == 'wasserstein':
                 self.lamda = 1 / self.proj_dim  # scaling factor for b_distance
 
-            self.avg_update_proto = self.configer.get('protoseg', 'avg_update_proto')
-            self.weighted_ppd_loss = self.configer.get('protoseg', 'weighted_ppd_loss')
-
-        self.use_temperature = self.configer.get('protoseg', 'use_temperature')
-
-        self.attention_proto = self.configer.get('protoseg', 'attention_proto')
-        if self.attention_proto:
-            self.lamda_p = self.configer.get('protoseg', 'lamda_p')
         self.cosine_classifier = self.configer.get('protoseg', 'cosine_classifier')
-        self.use_adaptive_momentum = self.configer.get('protoseg', 'use_adaptive_momentum')
 
     def reparameterize(self, mu, var, k=1, protos=False):
         sample_z = []
@@ -210,12 +201,7 @@ class ProbProtoSegHead(nn.Module):
         gt_seg: [b*h*w]
         out_seg:  # [b*h*w, num_cls]
         """
-        if self.use_adaptive_momentum:
-            sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
-            mean_gamma = self.get_adaptive_momentum_(sim_mat, )
-            sim_mat = sim_mat.reshpae(-1, self.num_classes, self.num_prototype)
-        else: 
-            mean_gamma = self.mean_gamma
+        mean_gamma = self.mean_gamma
         
         # largest score inside a class
         pred_seg = torch.max(out_seg, dim=1)[1]  # [b*h*w]
@@ -271,17 +257,7 @@ class ProbProtoSegHead(nn.Module):
                         old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=mean_gamma, debug=False)
                 else:
                     m_q_sum = m_q.sum(dim=0)  # [num_proto]
-                    if not self.avg_update_proto:
-                        # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        f_v = 1 / ((m_q.transpose(0, 1) @ (1 / (var_q + 1e-3))) /
-                                   (m_q_sum.unsqueeze(-1) + 1e-3) + 1e-3)
-                        # [1 num_proto embed_dim] / [[n 1 embed_dim]] =[n num_proto embed_dim]
-                        f = (f_v.unsqueeze(0) / (var_q.unsqueeze(1) + 1e-3)) * c_q.unsqueeze(1)
-                        f = torch.einsum('nm,nmk->mk', m_q, f)
-                        # todo debug
-                        f = f / (m_q_sum.unsqueeze(-1) + 1e-3)
-                        f = F.normalize(f, p=2, dim=-1)
-                    elif self.cosine_classifier:
+                    if self.cosine_classifier:
                         f = m_q.transpose(0, 1) @ c_q
                         f = F.normalize(f, p=2, dim=-1)
                     else:
@@ -503,7 +479,7 @@ class ProbProtoSegHead(nn.Module):
                 gt_boundary.float(), size=gt_size, mode='nearest').view(-1)
 
         if self.pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
-            assert torch.unique(gt_semantic_seg).shape[0] != 1
+            # assert torch.unique(gt_semantic_seg).shape[0] != 1
             gt_seg = F.interpolate(
                 gt_semantic_seg.float(), size=gt_size, mode='nearest').view(-1)
             if self.use_boundary and gt_boundary is not None:
@@ -522,15 +498,9 @@ class ProbProtoSegHead(nn.Module):
                         (not is_distributed() or get_rank() == 0) and not self.cosine_classifier:
                     Log.info(proto_var)
 
-                if self.weighted_ppd_loss:
-                    loss_weight1, loss_weight2 = self.calc_loss_weight(x_var)
-                    x = x.reshape(b_size, h_size, -1, k_size)
-                    x_var = x_var.reshape(b_size, h_size, -1, k_size)
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'w1': loss_weight1, 'w2': loss_weight2, 'x_mean': x, 'x_var': x_var}
-                else:
-                    x = x.reshape(b_size, h_size, -1, k_size)
-                    x_var = x_var.reshape(b_size, h_size, -1, k_size)
-                    return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
+                x = x.reshape(b_size, h_size, -1, k_size)
+                x_var = x_var.reshape(b_size, h_size, -1, k_size)
+                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
             else:
                 return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto': self.prototypes.data.clone()}
         if self.configer.get('proto_visualizer', 'vis_prototype'):

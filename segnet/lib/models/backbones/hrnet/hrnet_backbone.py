@@ -771,6 +771,7 @@ class HRNetBackbone(object):
     def __call__(self):
         arch = self.configer.get('network', 'backbone')
         resume = self.configer.get('network', 'resume')
+        resume_cityscapes = self.configer.get('network', 'resume_cityscapes')
         from lib.models.backbones.hrnet.hrnet_config import MODEL_CONFIGS
 
         if arch == 'hrnet18':
@@ -778,7 +779,7 @@ class HRNetBackbone(object):
                                          bn_type=self.configer.get(
                                              'network', 'bn_type'),
                                          bn_momentum=0.1)
-            if resume is None:
+            if resume is None and resume_cityscapes is None:
                 arch_net = ModuleHelper.load_model(arch_net,
                                                    pretrained=self.configer.get(
                                                        'network', 'pretrained'),
@@ -790,7 +791,7 @@ class HRNetBackbone(object):
                                          bn_type=self.configer.get(
                                              'network', 'bn_type'),
                                          bn_momentum=0.1)
-            if resume is None:
+            if resume is None and resume_cityscapes is None:
                 arch_net = ModuleHelper.load_model(arch_net,
                                                    pretrained=self.configer.get(
                                                        'network', 'pretrained'),
@@ -802,7 +803,7 @@ class HRNetBackbone(object):
                                          bn_type=self.configer.get(
                                              'network', 'bn_type'),
                                          bn_momentum=0.1)
-            if resume is None:
+            if resume is None and resume_cityscapes is None:
                 arch_net = ModuleHelper.load_model(arch_net,
                                                    pretrained=self.configer.get(
                                                        'network', 'pretrained'),
@@ -814,7 +815,7 @@ class HRNetBackbone(object):
                                          bn_type=self.configer.get(
                                              'network', 'bn_type'),
                                          bn_momentum=0.1)
-            if resume is None:
+            if resume is None and resume_cityscapes is None:
                 arch_net = ModuleHelper.load_model(arch_net,
                                                    pretrained=self.configer.get(
                                                        'network', 'pretrained'),

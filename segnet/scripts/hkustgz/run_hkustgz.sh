@@ -11,7 +11,7 @@ SCRATCH_ROOT=$4
 ASSET_ROOT=${DATA_ROOT}
 
 DATA_DIR="${DATA_ROOT}/HKUSTGZ"
-SAVE_DIR="${SCRATCH_ROOT}/HKUSTGZ/seg_results/"
+SAVE_DIR="${SCRATCH_ROOT}/hkustgz/seg_results/"
 BACKBONE="hrnet48"
 
 CONFIGS="configs/hkustgz/hkustgz.json"
@@ -19,9 +19,9 @@ CONFIGS_TEST="configs/hkustgz/H_48_D_4_TEST.json"
 
 MODEL_NAME="hr_w48_attn_uncer_proto"
 LOSS_TYPE="pixel_uncer_prototype_ce_loss"
-CHECKPOINTS_ROOT="${SCRATCH_ROOT}/HKUSTGZ"
-CHECKPOINTS_NAME="${MODEL_NAME}"$2
-LOG_FILE="${SCRATCH_ROOT}/logs/HKUSTGZ/${CHECKPOINTS_NAME}.log"
+CHECKPOINTS_ROOT="${SCRATCH_ROOT}/hkustgz"
+CHECKPOINTS_NAME="${MODEL_NAME}_hkustgz"
+LOG_FILE="${SCRATCH_ROOT}/logs/hkustgz/${CHECKPOINTS_NAME}.log"
 echo "Logging to $LOG_FILE"
 mkdir -p `dirname $LOG_FILE`
 

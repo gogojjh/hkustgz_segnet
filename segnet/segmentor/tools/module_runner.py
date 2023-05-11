@@ -81,7 +81,7 @@ class ModuleRunner(object):
         if len(self.configer.get('gpu')) == 1:
             self.configer.update(['network', 'gathered'], True)
 
-        return DataParallelModel(net, gather_=self.configer.get('network', 'gathered'))
+        return DataParallelModel(net, gather_=self.configer.get('network', 'gathered'))    
 
     def load_net(self, net):
         net = self.to_device(net)
@@ -112,12 +112,15 @@ class ModuleRunner(object):
 
             if list(checkpoint_dict.keys())[0].startswith('module.'):
                 checkpoint_dict = {k[7:]: v for k,
-                                   v in checkpoint_dict.items()}
+                                v in checkpoint_dict.items()}
 
             # load state_dict
             if hasattr(net, 'module'):
-                self.load_state_dict(net.module, checkpoint_dict, self.configer.get(
-                    'network', 'resume_strict'))
+                if self.configer.get('dataset') == 'hkustgz':
+                    self.load_state_dict_hkustgz(net.module, checkpoint_dict, False)
+                else:
+                    self.load_state_dict(net.module, checkpoint_dict, self.configer.get(
+                        'network', 'resume_strict'))
             else:
                 self.load_state_dict(net, checkpoint_dict, self.configer.get(
                     'network', 'resume_strict'))
@@ -130,11 +133,44 @@ class ModuleRunner(object):
                 
 
             Log.info(resume_dict['config_dict'])
+            
+        elif self.configer.get('network', 'resume_cityscapes') is not None:
+            Log.info('Loading checkpoint from {}...'.format(
+                self.configer.get('network', 'resume_cityscapes')))
+            resume_dict = torch.load(self.configer.get(
+                'network', 'resume_cityscapes'), map_location=lambda storage, loc: storage)
+            if 'state_dict' in resume_dict:
+                checkpoint_dict = resume_dict['state_dict']
+
+            elif 'model' in resume_dict:
+                checkpoint_dict = resume_dict['model']
+
+            elif isinstance(resume_dict, OrderedDict):
+                checkpoint_dict = resume_dict
+
+            else:
+                raise RuntimeError('No state_dict found in checkpoint file {}'.format(
+                    self.configer.get('network', 'resume_cityscapes')))
+
+            if list(checkpoint_dict.keys())[0].startswith('module.'):
+                checkpoint_dict = {k[7:]: v for k,
+                                v in checkpoint_dict.items()}
+
+            # load state_dict
+            if hasattr(net, 'module'):
+                if self.configer.get('dataset') == 'hkustgz':
+                    self.load_state_dict_hkustgz(net.module, checkpoint_dict, False)
+                else:
+                    self.load_state_dict_hkustgz(net.module, checkpoint_dict, False)
+            else:
+                self.load_state_dict(net, checkpoint_dict, self.configer.get(
+                    'network', 'resume_strict'))
 
         return net
-
+    
+    
     @staticmethod
-    def load_state_dict(module, state_dict, strict=False):
+    def load_state_dict_hkustgz(module, state_dict, strict=False):
         """Load state_dict to a module.
         This method is modified from :meth:`torch.nn.Module.load_state_dict`.
         Default value for ``strict`` is set to ``False`` and the message for
@@ -145,27 +181,32 @@ class ModuleRunner(object):
             strict (bool): whether to strictly enforce that the keys
                 in :attr:`state_dict` match the keys returned by this module's
                 :meth:`~torch.nn.Module.state_dict` function. Default: ``False``.
+        #! Only load the backbone of the pretrained model.
         """
         unexpected_keys = []
+        copied_keys = []
         own_state = module.state_dict()
         for name, param in state_dict.items():
-            if name not in own_state:
-                unexpected_keys.append(name)
-                continue
-            if isinstance(param, torch.nn.Parameter):
-                # backwards compatibility for serialized parameters
-                param = param.data
+            if name.startswith('backbone'):
+            
+                if name not in own_state:
+                    unexpected_keys.append(name)
+                    continue
+                if isinstance(param, torch.nn.Parameter):
+                    # backwards compatibility for serialized parameters
+                    param = param.data
 
-            try:
-                own_state[name].copy_(param)
-            except Exception:
-                Log.warn('While copying the parameter named {}, '
-                         'whose dimensions in the model are {} and '
-                         'whose dimensions in the checkpoint are {}.'
-                         .format(name, own_state[name].size(),
-                                 param.size()))
+                try:
+                    own_state[name].copy_(param)
+                    copied_keys.append(name)
+                except Exception:
+                    Log.warn('While copying the parameter named {}, '
+                            'whose dimensions in the model are {} and '
+                            'whose dimensions in the checkpoint are {}.'
+                            .format(name, own_state[name].size(),
+                                    param.size()))
 
-        missing_keys = set(own_state.keys()) - set(state_dict.keys())
+        missing_keys = set(own_state.keys()) - set(copied_keys)
 
         err_msg = []
         if unexpected_keys:
@@ -180,7 +221,9 @@ class ModuleRunner(object):
             if strict:
                 raise RuntimeError(err_msg)
             else:
-                Log.warn(err_msg)
+                if is_distributed():
+                    if get_rank() == 0:
+                        Log.warn(err_msg)
 
     def save_net(self, net, save_mode='iters', experiment=None):
         if is_distributed() and get_rank() != 0:

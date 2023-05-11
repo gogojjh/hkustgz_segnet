@@ -152,54 +152,6 @@ class ModuleHelper(object):
                 # pretrained_dict['conv2_full_res.weight'] = pretrained_dict['conv2.weight']
                 load_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict.keys()}
 
-            elif network == 'pvt':
-                pretrained_dict = {k: v for k, v in pretrained_dict.items() if
-                                   k in model_dict.keys()}
-                pretrained_dict['pos_embed1'] = \
-                    interpolate(pretrained_dict['pos_embed1'].unsqueeze(dim=0), size=[16384, 64])[0]
-                pretrained_dict['pos_embed2'] = \
-                    interpolate(pretrained_dict['pos_embed2'].unsqueeze(dim=0), size=[4096, 128])[0]
-                pretrained_dict['pos_embed3'] = \
-                    interpolate(pretrained_dict['pos_embed3'].unsqueeze(dim=0), size=[1024, 320])[0]
-                pretrained_dict['pos_embed4'] = \
-                    interpolate(pretrained_dict['pos_embed4'].unsqueeze(dim=0), size=[256, 512])[0]
-                pretrained_dict['pos_embed7'] = \
-                    interpolate(pretrained_dict['pos_embed1'].unsqueeze(dim=0), size=[16384, 64])[0]
-                pretrained_dict['pos_embed6'] = \
-                    interpolate(pretrained_dict['pos_embed2'].unsqueeze(dim=0), size=[4096, 128])[0]
-                pretrained_dict['pos_embed5'] = \
-                    interpolate(pretrained_dict['pos_embed3'].unsqueeze(dim=0), size=[1024, 320])[0]
-                load_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict.keys()}
-
-            elif network == 'pcpvt' or network == 'svt':
-                load_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict.keys()}
-                Log.info('Missing keys: {}'.format(list(set(model_dict) - set(load_dict))))
-
-            elif network == 'transunet_swin':
-                pretrained_dict = {k: v for k, v in pretrained_dict.items() if
-                                   k in model_dict.keys()}
-                for item in list(pretrained_dict.keys()):
-                    if item.startswith('layers.0') and not item.startswith('layers.0.downsample'):
-                        pretrained_dict['dec_layers.2' + item[15:]] = pretrained_dict[item]
-                    if item.startswith('layers.1') and not item.startswith('layers.1.downsample'):
-                        pretrained_dict['dec_layers.1' + item[15:]] = pretrained_dict[item]
-                    if item.startswith('layers.2') and not item.startswith('layers.2.downsample'):
-                        pretrained_dict['dec_layers.0' + item[15:]] = pretrained_dict[item]
-
-                for item in list(pretrained_dict.keys()):
-                    if 'relative_position_index' in item:
-                        pretrained_dict[item] = \
-                            interpolate(pretrained_dict[item].unsqueeze(dim=0).unsqueeze(dim=0).float(),
-                                        size=[256, 256])[0][0]
-                    if 'relative_position_bias_table' in item:
-                        pretrained_dict[item] = \
-                            interpolate(pretrained_dict[item].unsqueeze(dim=0).unsqueeze(dim=0).float(),
-                                        size=[961, pretrained_dict[item].size(1)])[0][0]
-                    if 'attn_mask' in item:
-                        pretrained_dict[item] = \
-                            interpolate(pretrained_dict[item].unsqueeze(dim=0).unsqueeze(dim=0).float(),
-                                        size=[pretrained_dict[item].size(0), 256, 256])[0][0]
-
             elif network == "hrnet" or network == "xception" or network == 'resnest':
                 load_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict.keys()}
                 Log.info('Missing keys: {}'.format(list(set(model_dict) - set(load_dict))))
