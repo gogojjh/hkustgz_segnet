@@ -316,6 +316,7 @@ class PixelUncerContrastLoss(nn.Module, ABC):
 
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
         self.uncer_seg_loss = PredUncertaintyLoss(configer=configer)
+        self.use_prototype = self.configer.get('protoseg', 'use_prototype')
 
     def get_uncer_loss_weight(self):
         uncer_loss_weight = self.rampdown_scheduler.value
@@ -325,7 +326,7 @@ class PixelUncerContrastLoss(nn.Module, ABC):
     def forward(self, preds, target, gt_boundary=None):
         b, h, w = target.size(0), target.size(1), target.size(2)
 
-        if isinstance(preds, dict):
+        if isinstance(preds, dict) and self.use_prototype:
             assert 'seg' in preds
             assert 'logits' in preds
             assert 'target' in preds
@@ -361,7 +362,11 @@ class PixelUncerContrastLoss(nn.Module, ABC):
 
             return {'loss': loss, 'seg_loss': seg_loss, 'prob_ppc_loss': prob_ppc_loss, 'prob_ppd_loss': prob_ppd_loss, 'uncer_seg_loss': uncer_seg_loss}
 
-        seg = preds
+        if isinstance(preds, dict):
+            seg = preds['seg']  # [b c h w]
+        else:
+            seg = preds
+            
         pred = F.interpolate(input=seg, size=(
             h, w), mode='bilinear', align_corners=True)
 

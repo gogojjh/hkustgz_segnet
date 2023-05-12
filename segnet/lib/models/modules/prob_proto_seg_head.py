@@ -29,7 +29,6 @@ class ProbProtoSegHead(nn.Module):
         self.num_prototype = self.configer.get('protoseg', 'num_prototype')
         self.sim_measure = self.configer.get('protoseg', 'similarity_measure')
         self.use_uncertainty = self.configer.get('protoseg', 'use_uncertainty')
-        self.use_boundary = self.configer.get('protoseg', 'use_boundary')
         self.proj_dim = self.configer.get('protoseg', 'proj_dim')
         self.pretrain_prototype = self.configer.get(
             'protoseg', 'pretrain_prototype')
@@ -131,13 +130,6 @@ class ProbProtoSegHead(nn.Module):
 
                 sim_mat = torch.mean(sim_mat, dim=0)  # [n m c]cc
                 sim_mat = sim_mat.permute(0, 2, 1)  # [n c m]
-
-            elif sim_measure == 'cosine':
-                # batch product (toward d dimension) -> cosine simialrity between fea and prototypes
-                # n: h*w, k: num_class, m: num_prototype
-                sim_mat = torch.einsum('nd,kmd->nmk', x, proto_mean)  # [c m n]
-
-                sim_mat = sim_mat.permute(0, 2, 1)  # [c n m]
             else:
                 Log.error('Similarity measure is invalid.')
             del x_var, x, proto_mean, proto_var
@@ -151,42 +143,6 @@ class ProbProtoSegHead(nn.Module):
             else:
                 Log.error('Similarity measure is invalid.')
         return sim_mat
-    
-    def get_adaptive_momentum_(self, sim_mat, contrast_target):
-        ''' 
-        Compute momentum based on similarity between feats and its predicted proto,
-        hard negative proto respectively.
-        
-        feats: [(b h w) k]
-        hard_neg_proto_ind: [(c m)]
-        contrast_target: [(b h w) (c m)]
-        sim_mat: [n (c m)]
-        '''
-        hard_neg_proto_ind = self.hard_neg_proto_ind()
-        
-        proto_pred = torch.argmax(contrast_target, dim=1) # [(b h w)]
-
-        pos_score = torch.gather(sim_mat, 1, proto_pred.unsqueeze(0).long())
-
-        # find hard neg proto of each pixel based on its proto_pred
-        neg_proto_pred = torch.ones_like(proto_pred) * self.ignore_label # [(b h w)]
-        neg_proto_pred.scatter_(0, proto_pred, hard_neg_proto_ind)
-        
-        neg_score = torch.gather(sim_mat, 1, neg_proto_pred.unsqueeze(0).long()) # [(b h w)]
-        
-        score = torch.cat((pos_score.unsqueeze(-1), neg_score.unsqueeze(-1)), -1) # [(b h w) 2]
-        score = F.softmax(score, -1) # [(b h w) 2]
-        
-        return score
-    
-    def get_hard_neg_proto_(self):
-        proto = self.prototypes.data.clone() # [c m k]
-        proto = rearrange(proto, 'c m k -> (c m) k ') # [(c m) k]
-        proto_inv = proto.permute(1, 0) # [k (c m)]
-        proto_sim = torch.einsum('nk,km->nm', proto, proto_inv) # [(c m) (c m)]
-        hard_neg_proto_ind = torch.argmax(proto_sim, dim=1) # [(c m)]
-        
-        return hard_neg_proto_ind
     
     def prototype_learning(self, sim_mat, out_seg, gt_seg, _c, _c_var):
         """
@@ -249,35 +205,11 @@ class ProbProtoSegHead(nn.Module):
             n = torch.sum(m_q, dim=0)  # [num_proto]
 
             if self.update_prototype is True and torch.sum(n) > 0:
-                if not self.use_uncertainty:
-                    # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                    f = m_q.transpose(0, 1) @ c_q
-                    f = F.normalize(f, p=2, dim=-1)
-                    protos[i, n != 0, :] = momentum_update(
-                        old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=mean_gamma, debug=False)
-                else:
-                    m_q_sum = m_q.sum(dim=0)  # [num_proto]
-                    if self.cosine_classifier:
-                        f = m_q.transpose(0, 1) @ c_q
-                        f = F.normalize(f, p=2, dim=-1)
-                    else:
-                        # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
-                        f = m_q.transpose(0, 1) @ c_q
-                        f = F.normalize(f, p=2, dim=-1)
-
-                        protos[i, n != 0, :] = momentum_update(
-                            old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=mean_gamma, debug=False)
-
-                        f_v = (m_q.transpose(0, 1) @ (var_q + (c_q ** 2))) / (m_q_sum.unsqueeze(-1) +
-                                                                              1e-3) - ((m_q.transpose(0, 1) @ c_q) / (m_q_sum.unsqueeze(-1) + 1e-3)) ** 2
-                        assert torch.count_nonzero(torch.isinf(f_v)) == 0
-                        #! normalize for f_v
-                        # f_v = torch.exp(torch.sigmoid(torch.log(f_v)))
-                    protos[i, n != 0, :] = momentum_update(
-                        old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=self.mean_gamma, debug=False)
-                    if not self.cosine_classifier:
-                        proto_var[i, n != 0, :] = momentum_update(
-                            old_value=proto_var[i, n != 0, :], new_value=f_v[n != 0, :], momentum=self.var_gamma, debug=False)
+                # [num_proto, n] @ [n embed_dim] = [num_proto embed_dim]
+                f = m_q.transpose(0, 1) @ c_q
+                f = F.normalize(f, p=2, dim=-1)
+                protos[i, n != 0, :] = momentum_update(
+                    old_value=protos[i, n != 0, :], new_value=f[n != 0, :], momentum=mean_gamma, debug=False)
 
             # each class has a target id between [0, num_proto * c]
             #! ignore_label are still -1, and not being modified
@@ -288,8 +220,6 @@ class ProbProtoSegHead(nn.Module):
 
         self.prototypes = nn.Parameter(
             l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
-        if self.use_uncertainty and not self.cosine_classifier:
-            self.proto_var = nn.Parameter(proto_var, requires_grad=False)
 
         if dist.is_available() and dist.is_initialized():  # distributed learning
             """
@@ -300,154 +230,8 @@ class ProbProtoSegHead(nn.Module):
             protos = self.prototypes.data.clone()
             dist.all_reduce(protos.div_(dist.get_world_size()))
             self.prototypes = nn.Parameter(protos, requires_grad=False)
-            if self.use_uncertainty and not self.cosine_classifier:
-                proto_var = self.proto_var.data.clone()
-                dist.all_reduce(proto_var.div_(dist.get_world_size()))
-                self.proto_var = nn.Parameter(proto_var, requires_grad=False)
 
         return proto_target  # [n]
-
-    def prototype_learning_boundary(
-            self, sim_mat, out_seg, gt_seg, _c, _c_var=None, gt_boundary=None):
-        """
-        Now only support for cosine classifier.
-        If use_boundary is True: (m - 1) prototypes for class-wise non-edge pixel embeddings,
-        and 1 prototype for class-wise edge pixel embeddings._c_var    
-        gt_boundary: 0: non-edge, 1: edge 
-        """
-        #! pixel-to-prototype online clustering
-        protos = self.prototypes.data.clone()
-        non_edge_protos = protos[:, :-1, :]
-        edge_protos = protos[:, -1, :]  # [c k]
-
-        sim_mat = sim_mat.permute(0, 2, 1)  # [n m c]
-
-        non_edge_proto_num = self.num_prototype - 1
-
-        #! filter out the edge pixels in sim_mat for subsequent intra-class unsupervised clustering, let the last prototype in each class be the boundary prototype
-        gt_seg_ori = gt_seg.clone()
-        _c_ori = _c.clone()
-        # 0: non-edge, 255: edge
-        non_boundary_mask = gt_boundary == 0
-        sim_mat = sim_mat[non_boundary_mask, :-1, ...]  # [non_edge_num, (m-1), c]
-        _c = _c[non_boundary_mask, ...]
-        gt_seg = gt_seg[non_boundary_mask]
-
-        # largest score inside a class
-        pred_seg = torch.max(out_seg, dim=1)[1]  # [b*h*w]
-        mask = (gt_seg == pred_seg.view(-1)[non_boundary_mask])  # [b*h*w] bool
-
-        proto_target = gt_seg_ori.clone().float()
-
-        for i in range(self.num_classes):
-            # the ones are boundary & gt is class i & correctly predicted
-            boundary_cls_mask = torch.logical_and(
-                gt_boundary == 1, gt_seg_ori == i)  # [b*h*w]
-            boundary_cls_mask = torch.logical_and(boundary_cls_mask, pred_seg.view(-1) == i)
-            # the ones are predicted correctly to class i
-            if torch.count_nonzero(boundary_cls_mask) > 0 and self.update_prototype:
-                if self.cosine_classifier:
-                    boundary_c_cls = _c_ori[boundary_cls_mask]  # [n k]
-                    # todo is it sum or mean?
-                    boundary_c_cls = torch.sum(boundary_c_cls, dim=0)  # [k]
-                    boundary_c_cls = F.normalize(boundary_c_cls, p=2, dim=-1)
-                    edge_protos[i, ...] = momentum_update(old_value=edge_protos[i, ...],
-                                                          new_value=boundary_c_cls,
-                                                          momentum=self.mean_gamma)
-                else:
-                    Log.error('Invalid similarity measure for boundary prototype classifier.')
-
-            #!=====non-boundary prototype learning and update ======#
-            init_q = sim_mat[..., i]  # [b*h*w, num_proto]
-
-            # select the right preidctions inside i-th class
-            init_q = init_q[gt_seg == i, ...]  # [n, num_proto]
-            if init_q.shape[0] == 0:
-                continue
-
-            q, indexs = distributed_sinkhorn(init_q, sinkhorn_iterations=self.configer.get('protoseg', 'sinkhorn_iterations'), epsilon=self.configer.get(
-                'protoseg', 'sinkhorn_epsilon'))  # q: mapping mat [n, num_proto] indexs: ind of largest proto in this cls[n]
-
-            m_k = mask[gt_seg == i]
-
-            m_k_tile = repeat(m_k, 'n -> n tile',
-                              tile=non_edge_proto_num)  # [n, num_proto], bool
-
-            # ! select the prototypes of the correctly predicted pixels in i-th class
-            m_q = q * m_k_tile  # [n, num_proto]
-
-            c_k = _c[gt_seg == i, ...]  # [n, embed_dim]
-
-            c_k_tile = repeat(m_k, 'n -> n tile', tile=c_k.shape[-1])
-
-            # correctly predicted pixel embed  [n embed_dim]
-            c_q = c_k * c_k_tile
-
-            # the prototypes that are being selected calcualted by sum
-            n = torch.sum(m_q, dim=0)  # [num_proto]
-
-            if self.update_prototype is True and torch.sum(n) > 0:
-                if self.cosine_classifier:
-                    f = m_q.transpose(0, 1) @ c_q
-                    f = F.normalize(f, p=2, dim=-1)
-                    non_edge_protos[i, n != 0, :] = momentum_update(
-                        old_value=non_edge_protos[i, n != 0, :],
-                        new_value=f[n != 0, :],
-                        momentum=self.mean_gamma, debug=False)
-                else:
-                    Log.error('Invalid similarity measure for boundary prototype classifier.')
-
-            # each class has a target id between [0, num_proto * c]
-            #! ignore_label are still -1, and not being modified
-            # non-edge pixels
-            proto_target[torch.logical_and(gt_seg_ori == i, non_boundary_mask)] = indexs.float(
-            ) + (self.num_prototype * i)  # n samples -> n*m labels
-            # edge pixels
-            proto_target[torch.logical_and(gt_seg_ori == i, torch.logical_not(non_boundary_mask))] = float(
-                self.num_prototype - 1) + (self.num_prototype * i)  # n samples -> n*m labels
-
-            del c_q, c_k_tile, c_k, m_q, m_k_tile, m_k, indexs, q
-
-        edge_protos = edge_protos.unsqueeze(1)  # [c 1 k]
-        protos = torch.cat((non_edge_protos, edge_protos), dim=1)  # [c m k]
-
-        self.prototypes = nn.Parameter(
-            l2_normalize(protos), requires_grad=False)  # make norm of proto equal to 1
-
-        del gt_seg, gt_seg_ori, _c, gt_boundary, sim_mat, non_boundary_mask, pred_seg, mask
-
-        if dist.is_available() and dist.is_initialized():  # distributed learning
-            protos = self.prototypes.data.clone()
-            """
-            To get average result across all gpus: 
-            first average the sum
-            then sum the tensors on all gpus, and copy the sum to all gpus
-            """
-            dist.all_reduce(protos.div_(dist.get_world_size()))
-            self.prototypes = nn.Parameter(protos, requires_grad=False)
-
-        return proto_target  # [n]
-
-    def calc_loss_weight(self, x_var):
-        proto_var = self.proto_var.data.clone()
-
-        # normalize variance
-        x_var_norm = torch.exp(torch.sigmoid(torch.log(x_var)))
-        proto_var_norm = torch.exp(torch.sigmoid(torch.log(proto_var)))
-
-        loss_weight1 = torch.einsum('nk,cmk->cmn', x_var_norm,
-                                    proto_var_norm)  # [c m n]
-        loss_weight1 = (loss_weight1 - loss_weight1.min()
-                        ) / (loss_weight1.max() - loss_weight1.min())
-        loss_weight1 = loss_weight1.mean()
-        # [n] + [c m 1] = [c m n]
-        loss_weight2 = torch.log(
-            x_var_norm).sum(-1) + torch.log(proto_var_norm).sum(-1, keepdim=True)
-        loss_weight2 = (loss_weight2 - loss_weight2.min()
-                        ) / (loss_weight2.max() - loss_weight2.min())
-        loss_weight2 = loss_weight2.mean()
-
-        return loss_weight1, loss_weight2
 
     def forward(self, x, x_var=None, gt_semantic_seg=None, boundary_pred=None, gt_boundary=None):
         ''' 
@@ -455,16 +239,12 @@ class ProbProtoSegHead(nn.Module):
         '''
         b_size = x.shape[0]
         h_size = x.shape[2]
-        k_size = x.shape[1]
         gt_size = x.size()[2:]
 
         self.prototypes.data.copy_(l2_normalize(self.prototypes))
-        # self.proto_var.data.copy_(torch.exp(torch.sigmoid(torch.log(self.proto_var))))
 
         # sim_mat: # [n c m]
         x = rearrange(x, 'b c h w -> (b h w) c')
-        if self.use_uncertainty and x_var is not None:
-            x_var = rearrange(x_var, 'b c h w -> (b h w) c')
 
         sim_mat = self.compute_similarity(
             x, x_var=x_var, sim_measure=self.sim_measure)
@@ -474,36 +254,19 @@ class ProbProtoSegHead(nn.Module):
         out_seg = rearrange(out_seg, '(b h w) c -> b c h w',
                             b=b_size, h=h_size)
 
-        if self.use_boundary and gt_boundary is not None:
-            gt_boundary = F.interpolate(
-                gt_boundary.float(), size=gt_size, mode='nearest').view(-1)
-
         if self.pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
             # assert torch.unique(gt_semantic_seg).shape[0] != 1
             gt_seg = F.interpolate(
                 gt_semantic_seg.float(), size=gt_size, mode='nearest').view(-1)
-            if self.use_boundary and gt_boundary is not None:
-                contrast_target = self.prototype_learning_boundary(
-                    sim_mat, out_seg, gt_seg, x, x_var, gt_boundary)
-            else:
-                contrast_target = self.prototype_learning(
-                    sim_mat, out_seg, gt_seg, x, x_var)
+
+            contrast_target = self.prototype_learning(
+                sim_mat, out_seg, gt_seg, x, x_var)
 
             sim_mat = rearrange(sim_mat, 'n c m -> n (c m)')
 
-            if self.use_uncertainty and x_var is not None:
-                proto_var = self.proto_var.data.clone()
-
-                if self.configer.get('iters') % 2000 == 0 and \
-                        (not is_distributed() or get_rank() == 0) and not self.cosine_classifier:
-                    Log.info(proto_var)
-
-                x = x.reshape(b_size, h_size, -1, k_size)
-                x_var = x_var.reshape(b_size, h_size, -1, k_size)
-                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'x_mean': x, 'x_var': x_var}
-            else:
-                return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target, 'proto': self.prototypes.data.clone()}
-        if self.configer.get('proto_visualizer', 'vis_prototype'):
+            return {'seg': out_seg, 'logits': sim_mat, 'target': contrast_target}
+        
+        elif self.configer.get('proto_visualizer', 'vis_prototype'):
             sim_mat = sim_mat.reshape(b_size, h_size, -1, self.num_classes * self.num_prototype)
             return {'seg': out_seg, 'logits': sim_mat}
         else:

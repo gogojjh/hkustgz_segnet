@@ -27,11 +27,11 @@ mkdir -p `dirname $LOG_FILE`
 
 PRETRAINED_MODEL="/save_data/hr_w48_attn_prob_proto_lr1x_fast_mls_no_attention_max_performance.pth"
 MAX_ITERS=50000
-BATCH_SIZE=2
+BATCH_SIZE=16
 BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
-  python3 -u -m debugpy --listen 5678 --wait-for-client main.py --configs ${CONFIGS} \
+  python3 -u main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --phase train \
                        --gathered n \

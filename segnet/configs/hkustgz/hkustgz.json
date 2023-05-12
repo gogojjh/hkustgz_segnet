@@ -5,11 +5,41 @@
 		"image_tool": "cv2",
 		"input_mode": "BGR",
 		"num_classes": 25,
+		"use_color_label": false,
 		"label_list": [
-			114, 201, 241, 108, 138, 155, 146, 159, 160, 148, 128, 76, 64, 53, 136, 94, 45, 210,
-			180, 239, 156, 64, 84, 197, 196
+			10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110,
+			115, 120, 125, 130
 		],
-		"ignore_label_id": 152,
+		"color_label_list": [
+			[0, 162, 170],
+			[162, 248, 63],
+			[241, 241, 241],
+			[147, 109, 6],
+			[122, 172, 9],
+			[12, 217, 219],
+			[7, 223, 115],
+			[161, 161, 149],
+			[231, 130, 130],
+			[252, 117, 35],
+			[92, 130, 216],
+			[0, 108, 114],
+			[0, 68, 213],
+			[91, 0, 231],
+			[227, 68, 255],
+			[168, 38, 191],
+			[106, 0, 124],
+			[255, 215, 73],
+			[209, 183, 91],
+			[244, 255, 152],
+			[138, 164, 165],
+			[175, 0, 106],
+			[228, 0, 140],
+			[234, 178, 200],
+			[255, 172, 172]
+		],
+		"ignore_label_id": 135,
+		"unlabelled_label_id": 0,
+		"ignore_color_label_id": [177, 165, 25],
 		"data_dir": "/data/hkustgz",
 		"workers": 8
 	},
@@ -163,7 +193,7 @@
 		"update_prototype": true,
 		"warmup_iters": 0,
 		"similarity_measure": "cosine",
-		"use_uncertainty": true,
+		"use_uncertainty": false,
 		"sinkhorn_epsilon": 0.05,
 		"sinkhorn_iterations": 3,
 		"prob_ppd_weight": 0.1,
@@ -179,7 +209,7 @@
 		"max_proto_voting": false
 	},
 	"uncertainty_visualizer": {
-		"vis_uncertainty": true,
+		"vis_uncertainty": false,
 		"vis_interval_img": 1,
 		"vis_inter_iter": 40,
 		"dataset": "val"
@@ -191,7 +221,7 @@
 		"dataset": "val"
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 0

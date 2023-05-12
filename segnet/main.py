@@ -224,21 +224,21 @@ if __name__ == "__main__":
         Log.error('Method: {} is not valid.'.format(configer.get('task')))
         exit(1)
 
-    wb_proj_name = configer.get('checkpoints', 'checkpoints_name')
+    wb_proj_name = 'hkustgz' + configer.get('checkpoints', 'checkpoints_name')
     today = date.today()
     wb_name = today.strftime("%d/%m/%Y") + '_server' + str(configer.get('run', 'server'))
 
     if configer.get('phase') == 'train':
         if is_distributed():
             if get_rank() == 0:
-                wandb.init(project=wb_proj_name, entity='uncer_segnet', config=configer.args_dict,
+                wandb.init(project=wb_proj_name, entity='terrain_seg_net', config=configer.args_dict,
                            name=wb_name, mode=configer.get('wandb', 'mode'),
                            settings=wandb.Settings(start_method='fork'))
                 wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
                 wandb.save(args_parser.configs)
 
         else:
-            wandb.init(project=wb_proj_name, entity='hkustgz_segnet', config=configer.args_dict,
+            wandb.init(project=wb_proj_name, entity='terrain_seg_net', config=configer.args_dict,
                        name=wb_name, mode=configer.get('wandb', 'mode'),
                        settings=wandb.Settings(start_method='fork'))
             wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')

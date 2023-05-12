@@ -156,29 +156,8 @@ class Tester(object):
 
             with torch.no_grad():
                 # Forward pass.
-                if self.configer.exists(
-                        'data', 'use_offset') and self.configer.get(
-                        'data', 'use_offset') == 'offline':
-                    offset_h_maps = data_dict['offsetmap_h']
-                    offset_w_maps = data_dict['offsetmap_w']
-                    outputs = self.offset_test(inputs, offset_h_maps, offset_w_maps)
-                elif self.configer.get('test', 'mode') == 'ss_test':
+                if self.configer.get('test', 'mode') == 'ss_test':
                     outputs = self.ss_test(inputs)
-                elif self.configer.get('test', 'mode') == 'ms_test':
-                    outputs = self.ms_test(inputs)
-                elif self.configer.get('test', 'mode') == 'ms_test_depth':
-                    outputs = self.ms_test_depth(inputs, names)
-                elif self.configer.get('test', 'mode') == 'sscrop_test':
-                    crop_size = self.configer.get('test', 'crop_size')
-                    outputs = self.sscrop_test(inputs, crop_size)
-                elif self.configer.get('test', 'mode') == 'mscrop_test':
-                    crop_size = self.configer.get('test', 'crop_size')
-                    outputs = self.mscrop_test(inputs, crop_size)
-                elif self.configer.get('test', 'mode') == 'crf_ss_test':
-                    import pydensecrf.densecrf as dcrf
-                    import pydensecrf.utils as dcrf_utils
-                    outputs = self.ss_test(inputs)
-                    outputs = self.dense_crf_process(inputs, outputs)
 
                 if isinstance(outputs, torch.Tensor):
                     outputs = outputs.permute(0, 2, 3, 1).cpu().numpy()
@@ -360,25 +339,6 @@ class Tester(object):
         if self.configer.get('ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
             return sem_img_ros, uncer_img_ros
 
-    def offset_test(self, inputs, offset_h_maps, offset_w_maps, scale=1):
-        if isinstance(inputs, torch.Tensor):
-            n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-            start = timeit.default_timer()
-            outputs = self.seg_net.forward(inputs, offset_h_maps, offset_w_maps)
-            torch.cuda.synchronize()
-            end = timeit.default_timer()
-
-            if (self.configer.get('loss', 'loss_type') == "fs_auxce_loss") or (
-                    self.configer.get('loss', 'loss_type') == "triple_auxce_loss"):
-                outputs = outputs[-1]
-            elif self.configer.get('loss', 'loss_type') == "pyramid_auxce_loss":
-                outputs = outputs[1] + outputs[2] + outputs[3] + outputs[4]
-
-            outputs = F.interpolate(outputs, size=(h, w), mode='bilinear', align_corners=True)
-            return outputs
-        else:
-            raise RuntimeError("Unsupport data type: {}".format(type(inputs)))
-
     def ss_test(self, inputs, scale=1):
         if isinstance(inputs, torch.Tensor):
             n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
@@ -388,6 +348,7 @@ class Tester(object):
                 mode="bilinear", align_corners=True)
             start = timeit.default_timer()
             outputs = self.seg_net.forward(scaled_inputs)
+            #! wait for all the processes on different cores to be finished
             torch.cuda.synchronize()
             end = timeit.default_timer()
 
@@ -430,252 +391,12 @@ class Tester(object):
                                     dtype=torch.long, device=x.device)
         return x[tuple(indices)]
 
-    def sscrop_test(self, inputs, crop_size, scale=1):
-        '''
-        Currently, sscrop_test does not support diverse_size testing
-        '''
-        n, c, ori_h, ori_w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-        scaled_inputs = F.interpolate(
-            inputs, size=(int(ori_h * scale),
-                          int(ori_w * scale)),
-            mode="bilinear", align_corners=True)
-        n, c, h, w = scaled_inputs.size(0), scaled_inputs.size(
-            1), scaled_inputs.size(2), scaled_inputs.size(3)
-        full_probs = torch.cuda.FloatTensor(
-            n, self.configer.get('data', 'num_classes'),
-            h, w).fill_(0)
-        count_predictions = torch.cuda.FloatTensor(
-            n, self.configer.get('data', 'num_classes'), h, w).fill_(0)
-
-        crop_counter = 0
-
-        height_starts = self._decide_intersection(h, crop_size[0])
-        width_starts = self._decide_intersection(w, crop_size[1])
-
-        for height in height_starts:
-            for width in width_starts:
-                crop_inputs = scaled_inputs[:, :, height: height + crop_size[0],
-                                            width: width + crop_size[1]]
-                prediction = self.ss_test(crop_inputs)
-                count_predictions[:, :, height: height + crop_size[0],
-                                  width: width + crop_size[1]] += 1
-                full_probs[:, :, height:height + crop_size[0],
-                           width:width + crop_size[1]] += prediction
-                crop_counter += 1
-                Log.info('predicting {:d}-th crop'.format(crop_counter))
-
-        full_probs /= count_predictions
-        full_probs = F.interpolate(
-            full_probs, size=(ori_h, ori_w),
-            mode='bilinear', align_corners=True)
-        return full_probs
-
-    def ms_test(self, inputs):
-        if isinstance(inputs, torch.Tensor):
-            n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-            full_probs = torch.cuda.FloatTensor(
-                n, self.configer.get('data', 'num_classes'),
-                h, w).fill_(0)
-            if self.configer.exists('test', 'scale_weights'):
-                for scale, weight in zip(self.configer.get('test', 'scale_search'),
-                                         self.configer.get('test', 'scale_weights')):
-                    probs = self.ss_test(inputs, scale)
-                    flip_probs = self.ss_test(self.flip(inputs, 3), scale)
-                    probs = probs + self.flip(flip_probs, 3)
-                    full_probs += weight * probs
-                return full_probs
-            else:
-                for scale in self.configer.get('test', 'scale_search'):
-                    probs = self.ss_test(inputs, scale)
-                    flip_probs = self.ss_test(self.flip(inputs, 3), scale)
-                    probs = probs + self.flip(flip_probs, 3)
-                    full_probs += probs
-                return full_probs
-
-        elif isinstance(inputs, collections.Sequence):
-            device_ids = self.configer.get('gpu')
-            full_probs = [torch.zeros(1, self.configer.get('data', 'num_classes'),
-                                      i.size(1), i.size(2)).cuda(device_ids[index], non_blocking=True)
-                          for index, i in enumerate(inputs)]
-            flip_inputs = [self.flip(i, 2) for i in inputs]
-
-            if self.configer.exists('test', 'scale_weights'):
-                for scale, weight in zip(self.configer.get('test', 'scale_search'),
-                                         self.configer.get('test', 'scale_weights')):
-                    probs = self.ss_test(inputs, scale)
-                    flip_probs = self.ss_test(flip_inputs, scale)
-                    for i in range(len(inputs)):
-                        full_probs[i] += weight * (probs[i] + self.flip(flip_probs[i], 3))
-                return full_probs
-            else:
-                for scale in self.configer.get('test', 'scale_search'):
-                    probs = self.ss_test(inputs, scale)
-                    flip_probs = self.ss_test(flip_inputs, scale)
-                    for i in range(len(inputs)):
-                        full_probs[i] += (probs[i] + self.flip(flip_probs[i], 3))
-                return full_probs
-
-        else:
-            raise RuntimeError("Unsupport data type: {}".format(type(inputs)))
-
-    def ms_test_depth(self, inputs, names):
-        prob_list = []
-        scale_list = []
-
-        if isinstance(inputs, torch.Tensor):
-            n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-            full_probs = torch.cuda.FloatTensor(
-                n, self.configer.get('data', 'num_classes'),
-                h, w).fill_(0)
-
-            for scale in self.configer.get('test', 'scale_search'):
-                probs = self.ss_test(inputs, scale)
-                flip_probs = self.ss_test(self.flip(inputs, 3), scale)
-                probs = probs + self.flip(flip_probs, 3)
-                prob_list.append(probs)
-                scale_list.append(scale)
-
-            full_probs = self.fuse_with_depth(prob_list, scale_list, names)
-            return full_probs
-
-        else:
-            raise RuntimeError("Unsupport data type: {}".format(type(inputs)))
-
-    def fuse_with_depth(self, probs, scales, names):
-        MAX_DEPTH = 63
-        POWER_BASE = 0.8
-        if 'test' in self.save_dir:
-            stereo_path = "/msravcshare/dataset/cityscapes/stereo/test/"
-        else:
-            stereo_path = "/msravcshare/dataset/cityscapes/stereo/val/"
-
-        n, c, h, w = probs[0].size(0), probs[0].size(1), probs[0].size(2), probs[0].size(3)
-        full_probs = torch.cuda.FloatTensor(
-            n, self.configer.get('data', 'num_classes'),
-            h, w).fill_(0)
-
-        for index, name in enumerate(names):
-            stereo_map = cv2.imread(stereo_path + name + '.png', -1)
-            depth_map = stereo_map / 256.0
-            depth_map = 0.5 / depth_map
-            depth_map = 500 * depth_map
-
-            depth_map = np.clip(depth_map, 0, MAX_DEPTH)
-            depth_map = depth_map // (MAX_DEPTH // len(scales))
-
-            for prob, scale in zip(probs, scales):
-                scale_index = self._locate_scale_index(scale, scales)
-                weight_map = np.abs(depth_map - scale_index)
-                weight_map = np.power(POWER_BASE, weight_map)
-                weight_map = cv2.resize(weight_map, (w, h))
-                full_probs[index, :, :, :] += torch.from_numpy(np.expand_dims(
-                    weight_map, axis=0)).type(torch.cuda.FloatTensor) * prob[index, :, :, :]
-
-        return full_probs
-
     @staticmethod
     def _locate_scale_index(scale, scales):
         for idx, s in enumerate(scales):
             if scale == s:
                 return idx
         return 0
-
-    def ms_test_wo_flip(self, inputs):
-        if isinstance(inputs, torch.Tensor):
-            n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-            full_probs = torch.cuda.FloatTensor(
-                n, self.configer.get('data', 'num_classes'),
-                h, w).fill_(0)
-            for scale in self.configer.get('test', 'scale_search'):
-                probs = self.ss_test(inputs, scale)
-                full_probs += probs
-            return full_probs
-        elif isinstance(inputs, collections.Sequence):
-            device_ids = self.configer.get('gpu')
-            full_probs = [torch.zeros(1, self.configer.get('data', 'num_classes'),
-                                      i.size(1), i.size(2)).cuda(device_ids[index], non_blocking=True)
-                          for index, i, in enumerate(inputs)]
-            for scale in self.configer.get('test', 'scale_search'):
-                probs = self.ss_test(inputs, scale)
-                for i in range(len(inputs)):
-                    full_probs[i] += probs[i]
-            return full_probs
-        else:
-            raise RuntimeError("Unsupport data type: {}".format(type(inputs)))
-
-    def mscrop_test(self, inputs, crop_size):
-        '''
-        Currently, mscrop_test does not support diverse_size testing
-        '''
-        n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-        full_probs = torch.cuda.FloatTensor(
-            n, self.configer.get('data', 'num_classes'),
-            h, w).fill_(0)
-        for scale in self.configer.get('test', 'scale_search'):
-            Log.info('Scale {0:.2f} prediction'.format(scale))
-            if scale < 1:
-                probs = self.ss_test(inputs, scale)
-                flip_probs = self.ss_test(self.flip(inputs, 3), scale)
-                probs = probs + self.flip(flip_probs, 3)
-                full_probs += probs
-            else:
-                probs = self.sscrop_test(inputs, crop_size, scale)
-                flip_probs = self.sscrop_test(self.flip(inputs, 3), crop_size, scale)
-                probs = probs + self.flip(flip_probs, 3)
-                full_probs += probs
-        return full_probs
-
-    def _decide_intersection(self, total_length, crop_length):
-        stride = crop_length
-        times = (total_length - crop_length) // stride + 1
-        cropped_starting = []
-        for i in range(times):
-            cropped_starting.append(stride * i)
-        if total_length - cropped_starting[-1] > crop_length:
-            cropped_starting.append(total_length - crop_length)  # must cover the total image
-        return cropped_starting
-
-    def dense_crf_process(self, images, outputs):
-        '''
-        Reference: https://github.com/kazuto1011/deeplab-pytorch/blob/master/libs/utils/crf.py
-        '''
-        # hyperparameters of the dense crf
-        # baseline = 79.5
-        # bi_xy_std = 67, 79.1
-        # bi_xy_std = 20, 79.6
-        # bi_xy_std = 10, 79.7
-        # bi_xy_std = 10, iter_max = 20, v4 79.7
-        # bi_xy_std = 10, iter_max = 5, v5 79.7
-        # bi_xy_std = 5, v3 79.7
-        iter_max = 10
-        pos_w = 3
-        pos_xy_std = 1
-        bi_w = 4
-        bi_xy_std = 10
-        bi_rgb_std = 3
-
-        b = images.size(0)
-        mean_vector = np.expand_dims(np.expand_dims(np.transpose(
-            np.array([102.9801, 115.9465, 122.7717])), axis=1), axis=2)
-        outputs = F.softmax(outputs, dim=1)
-        for i in range(b):
-            unary = outputs[i].data.cpu().numpy()
-            C, H, W = unary.shape
-            unary = dcrf_utils.unary_from_softmax(unary)
-            unary = np.ascontiguousarray(unary)
-
-            image = np.ascontiguousarray(images[i]) + mean_vector
-            image = image.astype(np.ubyte)
-            image = np.ascontiguousarray(image.transpose(1, 2, 0))
-
-            d = dcrf.DenseCRF2D(W, H, C)
-            d.setUnaryEnergy(unary)
-            d.addPairwiseGaussian(sxy=pos_xy_std, compat=pos_w)
-            d.addPairwiseBilateral(sxy=bi_xy_std, srgb=bi_rgb_std, rgbim=image, compat=bi_w)
-            out_crf = np.array(d.inference(iter_max))
-            outputs[i] = torch.from_numpy(out_crf).cuda().view(C, H, W)
-
-        return outputs
 
 
 if __name__ == "__main__":

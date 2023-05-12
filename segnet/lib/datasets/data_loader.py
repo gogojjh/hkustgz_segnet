@@ -39,7 +39,7 @@ class DataLoader(object):
         from lib.datasets.tools import cv2_aug_transforms
         self.aug_train_transform = cv2_aug_transforms.CV2AugCompose(self.configer, split='train')
         self.aug_val_transform = cv2_aug_transforms.CV2AugCompose(self.configer, split='val')
-
+        #! same transformation for train/val/test
         self.img_transform = trans.Compose([
             trans.ToTensor(),
             trans.Normalize(div_value=self.configer.get('normalize', 'div_value'),
@@ -202,23 +202,8 @@ class DataLoader(object):
 
     def get_testloader(self, dataset=None):
         dataset = 'test' if dataset is None else dataset
-        if self.configer.exists(
-                'data', 'use_sw_offset') or self.configer.exists(
-                'data', 'pred_sw_offset'):
-            Log.info('use sliding window based offset loader for test ...')
-            test_loader = data.DataLoader(
-                SWOffsetTestLoader(root_dir=self.configer.get('data', 'data_dir'), dataset=dataset,
-                                   img_transform=self.img_transform,
-                                   configer=self.configer),
-                batch_size=self.configer.get('test', 'batch_size'), pin_memory=True,
-                num_workers=self.configer.get('data', 'workers'), shuffle=False,
-                collate_fn=lambda *args: collate(
-                    *args, trans_dict=self.configer.get('test', 'data_transformer')
-                )
-            )
-            return test_loader
 
-        elif self.configer.get('method') == 'fcn_segmentor':
+        if self.configer.get('method') == 'fcn_segmentor':
             Log.info('use CSDataTestLoader for test ...')
 
             root_dir = self.configer.get('data', 'data_dir')
