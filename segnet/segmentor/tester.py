@@ -41,6 +41,59 @@ from scipy import ndimage
 from PIL import Image
 from math import ceil
 
+# Define colors (in RGB) for different labels
+HKUSTGZ_COLOR_MAP = np.array([
+    [177, 165, 25], # 0: 'void/unlabelled'
+    [0, 162, 170],  # 1: 'drivable road'
+    [162, 248, 63],  # 2 'sidewalk'
+    [241, 241, 241],  # 3:'parking'
+    [147, 109, 6],  # 4 'curb'
+    [122, 172, 9],  # 5 'bike Path'
+    [12, 217, 219],  # 6 'road marking'
+    [7, 223, 115],  # 7 'low-speed road'
+    [161, 161, 149],  # 8 'lane'  
+    [231, 130, 130],  # 9 'person'
+    [252, 117, 35],  # 10 'rider'
+    [92, 130, 216], # 11 'car'
+    [0, 108, 114],  # 12 'bicycle'
+    [0, 68, 213], # 13 'motorcycle'
+    [91, 0, 231],  # 14 'truck'
+    [227, 68, 255],  # 15 'building'
+    [168, 38, 191],  # 16 fence
+    [106, 0, 124],  # 17 'wall'
+    [255, 215, 73],  # 18 'vegetation'
+    [209, 183, 91],  # 19 'terrain'
+    [244, 255, 152], # 'river'
+    [138, 164, 165], # 'pole'
+    [175, 0, 106], # 'traffic sign'
+    [228, 0, 140], # 'traffic light'
+    [234, 178, 200], # 'road block'
+    [255, 172, 172] # 'sky'
+])
+
+CS_COLOR_MAP = np.array([
+    [105, 105, 105], # 0: 'void/unlabelled'
+    [128, 64, 128],  # 1: 'road'
+    [244, 35, 232],  # 2 'sidewalk'
+    [70, 70, 70],  # 3:'building'
+    [102, 102, 156],  # 4 wall
+    [190, 153, 153],  # 5 fence
+    [153, 153, 153],  # 6 pole
+    [250, 170, 30],  # 7 'traffic light'
+    [220, 220, 0],  # 8 'traffic sign'
+    [107, 142, 35],  # 9 'vegetation'
+    [152, 251, 152],  # 10 'terrain'
+    [70, 130, 180], # 11 sky
+    [220, 20, 60],  # 12 person
+    [255, 0, 0], # 13 rider
+    [0, 0, 142],  # 14 car
+    [0, 0, 70],  # 15 truck
+    [0, 60, 100],  # 16 bus
+    [0, 80, 100],  # 17 train
+    [0, 0, 230],  # 18 'motorcycle'
+    [119, 11, 32],  # 19 'bicycle'
+])
+
 
 class Tester(object):
     """
@@ -65,22 +118,25 @@ class Tester(object):
         self.infer_cnt = 0
         self._init_model()
 
-        self.vis_prototype = self.configer.get('proto_visualizer', 'vis_prototype')
+        self.vis_prototype = self.configer.get('test', 'vis_prototype')
         self.vis_pred = self.configer.get('test', 'vis_pred')
+
         if self.vis_prototype:
             from lib.vis.prototype_visualizer import PrototypeVisualier
-            self.proto_visualizer = PrototypeVisualier()
+            self.proto_visualizer = PrototypeVisualier(configer=configer)
 
     def _init_model(self):
         self.seg_net = self.model_manager.semantic_segmentor()
         self.seg_net = self.module_runner.load_net(self.seg_net)
 
-        if 'test' in self.save_dir:
+        '''if 'test' in self.save_dir:
             self.test_loader = self.seg_data_loader.get_testloader()
             self.test_size = len(self.test_loader) * self.configer.get('test', 'batch_size')
         else:
             self.test_loader = None
-            self.test_size = 1
+            self.test_size = 1'''
+        self.test_loader = None
+        self.test_size = 1
 
         self.seg_net.eval()
 
@@ -99,6 +155,15 @@ class Tester(object):
         label_dst = np.array(label_dst, dtype=np.uint8)
 
         return label_dst
+    
+    def __remap_pred(self, pred_img):
+        ''' 
+        Map the void/unlabelled class to 0, and class ids of other classes are increased by 1.
+        ignore_label is -1
+        '''
+        
+        return pred_img + 1
+        
 
     def test(self, ros_processor=None, data_loader=None):
         """
@@ -110,25 +175,6 @@ class Tester(object):
 
         Log.info('save dir {}'.format(self.save_dir))
         FileHelper.make_dirs(self.save_dir, is_file=False)
-
-        if self.configer.get('dataset') in ['cityscapes', 'gta5', 'woodscape']:
-            colors = get_cityscapes_colors()
-        elif self.configer.get('dataset') == 'ade20k':
-            colors = get_ade_colors()
-        elif self.configer.get('dataset') == 'lip':
-            colors = get_lip_colors()
-        elif self.configer.get('dataset') == 'pascal_context':
-            colors = get_pascal_context_colors()
-        elif self.configer.get('dataset') == 'pascal_voc':
-            colors = get_pascal_voc_colors()
-        elif self.configer.get('dataset') == 'coco_stuff':
-            colors = get_cocostuff_colors()
-        elif self.configer.get('dataset') == 'camvid':
-            colors = get_camvid_colors()
-        elif self.configer.get('dataset') == 'autonue21':
-            colors = get_autonue21_colors()
-        else:
-            raise RuntimeError("Unsupport colors")
 
         save_prob = False
         if self.configer.get('test', 'save_prob') or self.configer.get('ros', 'use_ros'):
@@ -179,7 +225,7 @@ class Tester(object):
                         prob_path = os.path.join(self.save_dir, "prob/", '{}.npy'.format(names[k]))
                         FileHelper.make_dirs(prob_path, is_file=True)
                         np.save(prob_path, softmax(logits, axis=-1))
-
+                    #! semantic prediction
                     label_img = np.asarray(np.argmax(logits, axis=-1), dtype=np.uint8)
 
                     #! use gpu for faster speed
@@ -231,23 +277,20 @@ class Tester(object):
                     ImageHelper.save(label_img_, label_path)
 
                     # colorize the label-map
-                    if os.environ.get('save_gt_label'):
-                        if self.configer.exists(
-                                'data', 'reduce_zero_label') and self.configer.get(
-                                'data', 'reduce_zero_label'):
-                            label_img = labels[k]
-                            label_img = np.asarray(label_img, dtype=np.uint8)
-                        color_img_ = Image.fromarray(label_img)
-                        color_img_.putpalette(colors)
-                        vis_path = os.path.join(self.save_dir, "gt_vis/", '{}.png'.format(names[k]))
-                        FileHelper.make_dirs(vis_path, is_file=True)
-                        ImageHelper.save(color_img_, save_path=vis_path)
-                    else:
-                        color_img_ = Image.fromarray(label_img)
-                        color_img_.putpalette(colors)
-                        vis_path = os.path.join(self.save_dir, "vis/", '{}.png'.format(names[k]))
-                        FileHelper.make_dirs(vis_path, is_file=True)
-                        ImageHelper.save(color_img_, save_path=vis_path)
+                    # color_img_ = Image.fromarray(label_img)
+                    # color_img_.putpalette(colors)
+                    
+                    color_img_ = self.__remap_pred(label_img)
+                    if self.configer.get('dataset') == 'hkustgz':
+                        color_img_ = HKUSTGZ_COLOR_MAP[color_img_].astype(np.uint8)
+                    elif self.configer.get('dataset') == 'cityscapes':
+                        color_img_ = CS_COLOR_MAP[color_img_].astype(np.uint8)
+                    else: 
+                        raise RuntimeError('Invalid dataset type.')
+
+                    vis_path = os.path.join(self.save_dir, "vis/", '{}.png'.format(names[k]))
+                    FileHelper.make_dirs(vis_path, is_file=True)
+                    ImageHelper.save(color_img_, save_path=vis_path)
 
                     if self.configer.get(
                             'ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
@@ -257,9 +300,8 @@ class Tester(object):
                         - with top 3 largest uncertainties
                         - each channel: 1000 *(training class id(int) + prediciton confidence(0-1))  
                         '''
-                        # label_img: numpy array with trianing id
-                        sem_img = np.stack([label_img, label_img, label_img], axis=-1)
-                        sem_img = cv2.cvtColor(sem_img, cv2.COLOR_RGB2GRAY)
+                        label_img = self.__remap_pred(label_img)
+                        sem_img = COLOR_MAP[label_img].astype(np.uint8)
                         sem_img_ros.append(sem_img)
 
                     if self.vis_pred:
@@ -325,8 +367,8 @@ class Tester(object):
                                 cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
                                                  1, cv2.LINE_AA)
 
-                            vis_path = os.path.join(self.save_dir, "sem_pred_overlay/",
-                                                    '{}_sem_pred_overlay.png'.format(names[k]))
+                            vis_path = os.path.join(self.save_dir, "vis_overlay/",
+                                                    '{}.png'.format(names[k]))
                             FileHelper.make_dirs(vis_path, is_file=True)
                             ImageHelper.save(sys_img_part, save_path=vis_path)
 
@@ -348,7 +390,6 @@ class Tester(object):
                 mode="bilinear", align_corners=True)
             start = timeit.default_timer()
             outputs = self.seg_net.forward(scaled_inputs)
-            #! wait for all the processes on different cores to be finished
             torch.cuda.synchronize()
             end = timeit.default_timer()
 
@@ -390,13 +431,6 @@ class Tester(object):
         indices[dim] = torch.arange(x.size(dim) - 1, -1, -1,
                                     dtype=torch.long, device=x.device)
         return x[tuple(indices)]
-
-    @staticmethod
-    def _locate_scale_index(scale, scales):
-        for idx, s in enumerate(scales):
-            if scale == s:
-                return idx
-        return 0
 
 
 if __name__ == "__main__":

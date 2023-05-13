@@ -77,9 +77,12 @@ Please refer to [openseg](https://github.com/openseg-group/openseg.pytorch) for 
 ```
 roscore
 cd /home/hkustgz_segnet/catkin_ws
+catkin build segnet_ros
+
 source devel/setup.zsh
 cd /home/hkustgz_segnet/catkin_ws/src/hkustgz_segnet/launch
-roslaunch hkustgz_segnet hkustgz_segnet.launch
+
+roslaunch segnet_ros segnet_ros.launch
 ```
 
 ### Config for ROS

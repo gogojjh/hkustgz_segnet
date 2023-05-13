@@ -68,14 +68,14 @@
 	"test": {
 		"batch_size": 4,
 		"mode": "ss_test",
-		"out_dir": "/save_data/hkustgz",
+		"out_dir": "/data/hkustgz_result",
 		"data_transformer": {
 			"size_mode": "fix_size",
-			"input_size": [1024, 768],
+			"input_size": [2048, 1536],
 			"align_method": "only_pad"
 		},
 		"vis_prototype": false,
-		"vis_pred": false
+		"vis_pred": true
 	},
 	"train_trans": {
 		"trans_seq": ["random_resize", "random_crop", "random_hflip", "random_brightness"],
@@ -116,6 +116,7 @@
 	},
 	"network": {
 		"backbone": "hrnet48",
+		"resume": "/data/checkpoints/hr_w48_attn_uncer_proto_hkustgz_max_performance.pth",
 		"resume_cityscapes": null,
 		"resume_continue": false,
 		"multi_grid": [1, 1, 1],
@@ -215,7 +216,7 @@
 		"dataset": "val"
 	},
 	"proto_visualizer": {
-		"vis_prototype": true,
+		"vis_prototype": false,
 		"vis_interval_img": 1,
 		"vis_inter_iter": 60,
 		"dataset": "val"
@@ -228,9 +229,9 @@
 	},
 	"ros": {
 		"use_ros": true,
-		"image_topic": "/camera1/image_color/compressed",
+		"image_topic": "/stereo/frame_left/image_raw/compressed",
 		"sem_image_topic": "/semantic_image",
-		"uncer_image_topic1": "/uncertainty_image",
+		"uncer_image_topic": "/uncertainty_image",
 		"msg_type": "sensor_msgs/CompressedImage"
 	}
 }

@@ -1,27 +1,24 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-import sys
-sys.path.append('/home/hkustgz_segnet/src/segnet')
-
-from lib.utils.tools.logger import Logger as Log
-from lib.utils.tools.configer import Configer
-from segmentor.tester import Tester
-import rospy
-import warnings
-import torch.backends.cudnn as cudnn
-import torch
-from datetime import date
-import time
-import random
-import os
 import argparse
+import os
+import random
+import time
+from datetime import date
+import torch
+import torch.backends.cudnn as cudnn
 import warnings
+import rospy
+import sys
+sys.path.append('/home/catkin_ws/src/segnet')
+
+from segmentor.tester import Tester
+from lib.utils.tools.configer import Configer
+from lib.utils.tools.logger import Logger as Log
+from lib.utils.distributed import handle_distributed
+
 
 warnings.filterwarnings('ignore')
 
-CONFIG_PATH = '/home/hkustgz_segnet/src/segnet/configs/cityscapes/H_48_D_4_prob_proto.json'
+CONFIG_PATH = '/home/hkustgz_segnet/src/segnet/configs/segnet_cobra/segnet_cobra.json'
 
 
 def str2bool(v):
@@ -178,7 +175,6 @@ if __name__ == "__main__":
 
     args_parser = parser.parse_args()
 
-    from lib.utils.distributed import handle_distributed
     handle_distributed(args_parser, os.path.expanduser(
         os.path.abspath(__file__)))
 
@@ -214,32 +210,13 @@ if __name__ == "__main__":
              rewrite=configer.get('logging', 'rewrite'))
 
     model = None
-    if configer.get('method') == 'fcn_segmentor':
-        if configer.get('phase') == 'train':
-            from segmentor.trainer import Trainer
-            model = Trainer(configer)
-        elif configer.get('phase') == 'test':
-            from segmentor.tester import Tester
-            model = Tester(configer)
-        elif configer.get('phase') == 'test_offset':
-            from segmentor.tester_offset import Tester
-            model = Tester(configer)
-        elif configer.get('phase') == 'test_ros':
-            from ros_processor import ROSProcessor
-            tester = Tester(configer)
-            model = ROSProcessor(configer, tester)
-    else:
-        Log.error('Method: {} is not valid.'.format(configer.get('task')))
-        exit(1)
+    
+    from ros_processor import ROSProcessor
+    tester = Tester(configer)
+    model = ROSProcessor(configer, tester)
+    rospy.init_node('hkustgz_segnet_node')
+    Log.info('enter test_ros phase')
+    # call callback and pub semantic image topic
+    model.init_ros()
 
-    if configer.get('phase') == 'test_ros':
-        rospy.init_node('hkustgz_segnet_node')
-        # call callback and pub semantic image topic
-        model.init_ros()
-        
-        rospy.spin()
-
-        # wandb.finish()
-    else:
-        Log.error('Phase: {} is not valid.'.format(configer.get('phase')))
-        exit(1)
+    rospy.spin()
