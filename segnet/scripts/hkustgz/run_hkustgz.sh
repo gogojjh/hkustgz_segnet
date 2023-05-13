@@ -25,7 +25,7 @@ LOG_FILE="${SCRATCH_ROOT}/logs/hkustgz/${CHECKPOINTS_NAME}.log"
 echo "Logging to $LOG_FILE"
 mkdir -p `dirname $LOG_FILE`
 
-PRETRAINED_MODEL="/save_data/hr_w48_attn_prob_proto_lr1x_fast_mls_no_attention_max_performance.pth"
+PRETRAINED_MODEL="/save_data/hrnetv2_w48_imagenet_pretrained.pth"
 MAX_ITERS=50000
 BATCH_SIZE=16
 BASE_LR=0.01
@@ -39,7 +39,7 @@ if [ "$1"x == "train"x ]; then
                        --log_to_file n \
                        --backbone ${BACKBONE} \
                        --model_name ${MODEL_NAME} \
-                       --gpu 0 1\
+                       --gpu 2 3 4 5\
                        --data_dir ${DATA_DIR} \
                        --loss_type ${LOSS_TYPE} \
                        --max_iters ${MAX_ITERS} \

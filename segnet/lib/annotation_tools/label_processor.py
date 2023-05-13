@@ -73,12 +73,12 @@ if __name__ == "__main__":
     # label_processor.rename_img(os.path.join('/data/HKUSTGZ', 'train'), 'label_color')
     # label_processor.rename_img(os.path.join('/data/HKUSTGZ', 'val'), 'label_color')
                 
-    label_processor.select_val_seq('/data/HKUSTGZ')
+    label_processor.select_val_seq('/data/kin/ruoyu_data/HKUSTGZ')
     
     for seq_type in ['train', 'val']:
-        for seq_name in os.listdir(os.path.join('/data/HKUSTGZ', seq_type, 'image')):
-                for frame_name in os.listdir(os.path.join('/data/HKUSTGZ', seq_type, 'image', seq_name)):
-                    assert len(os.listdir(os.path.join('/data/HKUSTGZ', seq_type, 'image', seq_name, frame_name))) == len(os.listdir(os.path.join('/data/HKUSTGZ', seq_type, 'label_id', seq_name, frame_name)))
-                    assert len(os.listdir(os.path.join('/data/HKUSTGZ', seq_type, 'image', seq_name, frame_name))) == len(os.listdir(os.path.join('/data/HKUSTGZ', seq_type, 'label_color', seq_name, frame_name)))
+        for seq_name in os.listdir(os.path.join('/data/kin/ruoyu_data/HKUSTGZ', seq_type, 'image')):
+                for frame_name in os.listdir(os.path.join('/data/kin/ruoyu_data/HKUSTGZ', seq_type, 'image', seq_name)):
+                    assert len(os.listdir(os.path.join('/data/kin/ruoyu_data/HKUSTGZ', seq_type, 'image', seq_name, frame_name))) == len(os.listdir(os.path.join('/data/kin/ruoyu_data/HKUSTGZ', seq_type, 'label_id', seq_name, frame_name)))
+                    assert len(os.listdir(os.path.join('/data/kin/ruoyu_data/HKUSTGZ', seq_type, 'image', seq_name, frame_name))) == len(os.listdir(os.path.join('/data/kin/ruoyu_data/HKUSTGZ', seq_type, 'label_color', seq_name, frame_name)))
                     
                     

@@ -50,9 +50,9 @@ RUN touch /root/.ssh/known_hosts
 RUN ssh-keyscan github.com >> /root/.ssh/known_hosts
 
 # pytorch
-RUN mkdir -p /home/hkustgz_segnet
-WORKDIR /home/hkustgz_segnet_ws
-RUN cd /home/hkustgz_segnet_ws
+RUN mkdir -p /home/catkin_ws/src
+WORKDIR /home/catkin_ws
+RUN cd /home/catkin_ws/src
 RUN git init .
 RUN git remote add origin git@github.com:Daisy-GENG/HKUSTGZ_SegNet.git
 RUN git fetch --all
