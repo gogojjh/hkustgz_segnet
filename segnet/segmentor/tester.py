@@ -301,7 +301,10 @@ class Tester(object):
                         - each channel: 1000 *(training class id(int) + prediciton confidence(0-1))  
                         '''
                         label_img = self.__remap_pred(label_img)
-                        sem_img = COLOR_MAP[label_img].astype(np.uint8)
+                        if self.configer.get('dataset') == 'hkustgz':
+                            sem_img = HKUSTGZ_COLOR_MAP[label_img].astype(np.uint8)
+                        elif self.configer.get('dataset') == 'cityscapes':
+                            sem_img = CS_COLOR_MAP[label_img].astype(np.uint8)
                         sem_img_ros.append(sem_img)
 
                     if self.vis_pred:
@@ -315,62 +318,38 @@ class Tester(object):
                         org_img = cv2.cvtColor(org_img, cv2.COLOR_BGR2RGB)
 
                         # # colorize the label-map
-                        if os.environ.get('save_gt_label'):
-                            if self.configer.exists(
-                                    'data', 'reduce_zero_label') and self.configer.get(
-                                    'data', 'reduce_zero_label'):
-                                label_img = labels[k] + 1
-                                label_img = np.asarray(label_img, dtype=np.uint8)
+                        label_img = cv2.resize(
+                            label_img, (org_img.shape[1],
+                                        org_img.shape[0]),
+                            interpolation=cv2.INTER_NEAREST)
+                        color_img_ = Image.fromarray(label_img)
+                        
+                        if self.configer.get('dataset') == 'hkustgz':
+                            color_img_ = HKUSTGZ_COLOR_MAP[color_img_].astype(np.uint8)
+                        elif self.configer.get('dataset') == 'cityscapes':
+                            color_img_ = CS_COLOR_MAP[color_img_].astype(np.uint8)
+                        else: 
+                            raise RuntimeError('Invalid dataset type.')            
+                        # color_img_.putpalette(colors)
+                        color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
 
-                            label_img = cv2.resize(label_img, (org_img.shape[1], org_img.shape[0]),
-                                                   interpolation=cv2.INTER_NEAREST)
-                            color_img_ = Image.fromarray(label_img)
-                            color_img_.putpalette(colors)
-                            color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
+                        sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
 
-                            sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
-                            sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
+                        sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
 
-                            for i in range(0, 200):
-                                mask = np.zeros_like(label_img)
-                                mask[label_img == i] = 1
+                        for i in range(0, 200):
+                            mask = np.zeros_like(label_img)
+                            mask[label_img == i] = 1
 
-                                contours = cv2.findContours(
-                                    mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
-                                cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
-                                                 1, cv2.LINE_AA)
+                            contours = cv2.findContours(
+                                mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
+                            cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
+                                                1, cv2.LINE_AA)
 
-                            vis_path = os.path.join(
-                                self.save_dir, "gt_vis_overlay/", '{}.png'.format(names[k]))
-                            FileHelper.make_dirs(vis_path, is_file=True)
-                            ImageHelper.save(sys_img_part, save_path=vis_path)
-
-                        else:
-                            label_img = cv2.resize(
-                                label_img, (org_img.shape[1],
-                                            org_img.shape[0]),
-                                interpolation=cv2.INTER_NEAREST)
-                            color_img_ = Image.fromarray(label_img)
-                            color_img_.putpalette(colors)
-                            color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
-
-                            sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
-
-                            sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
-
-                            for i in range(0, 200):
-                                mask = np.zeros_like(label_img)
-                                mask[label_img == i] = 1
-
-                                contours = cv2.findContours(
-                                    mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
-                                cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
-                                                 1, cv2.LINE_AA)
-
-                            vis_path = os.path.join(self.save_dir, "vis_overlay/",
-                                                    '{}.png'.format(names[k]))
-                            FileHelper.make_dirs(vis_path, is_file=True)
-                            ImageHelper.save(sys_img_part, save_path=vis_path)
+                        vis_path = os.path.join(self.save_dir, "vis_overlay/",
+                                                '{}.png'.format(names[k]))
+                        FileHelper.make_dirs(vis_path, is_file=True)
+                        ImageHelper.save(sys_img_part, save_path=vis_path)
 
             self.batch_time.update(time.time() - start_time)
             start_time = time.time()

@@ -1,0 +1,67 @@
+# NOTE: KITTI360's semantic label definition is consistent with Cityscapes, 19 classes for evaluation
+# 
+# https://github.com/mcordts/cityscapesScripts/blob/master/cityscapesscripts/helpers/labels.py#L60
+#--------------------------------------------------------------------------------
+# A list of all labels
+#--------------------------------------------------------------------------------
+
+# Please adapt the train IDs as appropriate for your approach.
+# Note that you might want to ignore labels with ID 255 during training.
+# Further note that the current train IDs are only a suggestion. You can use whatever you like.
+# Make sure to provide your results using the original IDs and not the training IDs.
+# Note that many IDs are ignored in evaluation and thus you never need to predict these!
+
+labels = [
+    #       name                     id    trainId   resultId,  csTrainId, category            catId     hasInstances    ignoreInEval   color   
+    Label(  'void'            ,       135 ,      255 , 0,       255,        'void'            , 0       , False        , True         , (  177, 165, 25) ),
+
+    Label(  'drivable road'         , 10 ,      0 ,   1,        0,           'flat'            , 0       , False        , True         , (  0, 162, 170) ),
+
+    Label(  'sidewalk' ,              15 ,      1 ,   2,        1,           'flat'            , 0       , False        , True         , (  162, 248, 63) ),
+
+    Label(  'parking'           ,     20,       2 ,   3,        0,            'flat'            , 0       , False        , True         , (  241, 241, 241) ),
+
+    Label(  'curb'               ,    25,       3 ,   4,        19,           'flat'            , 0       , False        , True         , (  147, 109, 6) ),
+
+    Label(  'bike Path'           ,    30 ,     4 ,   5,        1,            'flat'            , 0       , False        , True         , (122, 172, 9) ),
+
+    Label(  'road marking'     ,       35 ,     5 ,   6,        20,           'flat'            , 0       , False        , True         , ( 12, 217, 219) ),
+
+    Label(  'low-speed road'       ,   40 ,     6 ,   7,        0,            'flat'            , 1       , False        , False        , (7, 223, 115) ),
+
+    Label(  'lane'             ,       45 ,     7 ,   8,        20,           'flat'            , 1       , False        , False        , (161, 161, 149) ),
+
+    Label(  'person'              ,    50 ,     8 ,   9,        11,           'human'            , 1       , False        , True         , (231, 130, 130) ),
+
+    Label(  'rider'           ,        55 ,     9 ,   10,       12,           'human'            , 1       , False        , True         , (252, 117, 35) ),
+
+    Label(  'car'             ,        60 ,     10 ,  11,       13,           'vehicle'    , 2       , False        , False        , ( 92, 130, 216) ),
+
+    Label(  'bicycle'             ,     65 ,     11 ,  12,      18,           'vehicle'    , 2       , False        , False        , (0, 108, 114) ),
+
+    Label(  'motorcycle'           ,    70 ,     12 ,  13,      17,           'vehicle'    , 2       , False        , False        , (0, 68, 213) ),
+
+    Label(  'truck'           ,         75 ,     13 ,  14,      14,           'vehicle'    , 2       , False        , True         , (91, 0, 231) ),
+
+    Label(  'building'           ,      80 ,    14 ,  15,       2,            'construction'    , 2       , False        , True         , (227, 68, 255) ),
+
+    Label(  'fence'               ,     85 ,     15 ,  16,      4,            'construction'    , 2       , False        , True         , (168, 38, 191) ),
+
+    Label(  'wall'                 ,    90 ,     16 ,  17,      3,            'construction'     , 3       , False        , False        , (106, 0, 124) ),
+
+    Label(  'vegetation'            ,   95 ,    17 ,  18,       8,             'nature'          , 3       , False        , True         , (255, 215, 73) ),
+
+    Label(  'terrain'        ,          100,     18 ,  19,      9,             'nature'          , 3       , False        , False        , (209, 183, 91) ),
+
+    Label(  'river'         ,           105 ,    19 ,  20,      21,            'nature'          , 3       , False        , False        , (244, 255, 152 ),
+
+    Label(  'pole'           ,          110 ,    20 ,  21,      5,             'object'          , 4       , False        , False        , (138, 164, 165) ),
+
+    Label(  'traffic sign'          ,   115 ,     21 ,  22,     7,             'object'          , 4       , False        , False        , (175, 0, 106) ),
+
+    Label(  'traffic light'         ,   120 ,     22 ,  23,     6,             'object'        , 5       , False        , False        , ( 228, 0, 140) ),
+
+    Label(  'road block'            ,   125 ,    23 ,  24,      22,            'object'           , 6       , True         , False        , (234, 178, 200) ),
+
+    Label(  'sky'                ,      130 ,    24 ,  25,      10,            'sky'           , 6       , True         , False        , (255, 172, 172) ),
+]
