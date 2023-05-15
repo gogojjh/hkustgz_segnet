@@ -37,15 +37,17 @@ class CityscapesFusionPortableLoader(data.Dataset):
         self.aug_transform = aug_transform
         self.img_transform = img_transform
         self.label_transform = label_transform
-        for dataset_name in self.configer.get('dataset'):
+        for dataset_name in self.configer.get('dataset_train'):
             if dataset_name == 'hkustgz':
-                self.duplicate_num = self.configer.get('train_trans', 'train_trans_fs')[self.duplicate_num]
+                self.duplicate_num = self.configer.get('train_trans', 'duplicate_num')
                 self.img_list_fs, self.label_list_fs, self.name_list_fs = self.__list_dirs_fs(
                     root_dir[0], dataset, self.duplicate_num)
                 Log.info_once('Duplicate FusionPortable {} times to enlarge the dataset size.'.format(self.duplicate_num))
             elif dataset_name == 'cityscapes':
                 self.img_list_cs, self.label_list_cs, self.name_list_cs = self.__list_dirs_cs(
                     root_dir[1], dataset)
+            else: 
+                raise RuntimeError('Invalid training dataset.')
         self.img_list = np.append(self.img_list_fs, self.img_list_cs)
         self.label_list = np.append(self.label_list_fs, self.label_list_cs)
         self.name_list = np.append(self.name_list_fs, self.name_list_cs)
@@ -54,14 +56,10 @@ class CityscapesFusionPortableLoader(data.Dataset):
         self.is_stack = size_mode != 'diverse_size'
         Log.info('{} {}'.format(dataset, len(self.img_list)))
 
-        assert self.configer.exists('data', 'label_list')['label_list_fs']
         self.label_list_fs = self.configer.get('data', 'label_list')['label_list_fs']
-        assert self.configer.exists('data', 'label_list')['label_list_cs']
         self.label_list_cs = self.configer.get('data', 'label_list')['label_list_cs']
-        assert self.configer.exists('data', 'ignore_label')['ignore_label_id_fs']
-        self.ignore_label_id_fs = self.configer.get('data', 'ignore_label')['ignore_label_id_fs']
-        assert self.configer.exists('data', 'ignore_label')['ignore_label_id_cs']
-        self.ignore_label_id_cs = self.configer.get('data', 'ignore_label')['ignore_label_id_cs']
+        self.ignore_label_id_fs = self.configer.get('data', 'ignore_label_id')['ignore_label_id_fs']
+        self.ignore_label_id_cs = self.configer.get('data', 'ignore_label_id')['ignore_label_id_cs']
         self.full_label_list_fs = np.append(self.label_list_fs, self.ignore_label_id_fs)
         self.full_label_list_cs = np.append(self.label_list_cs, self.ignore_label_id_cs)
         #! count current loaded size of fusionportable
@@ -79,6 +77,8 @@ class CityscapesFusionPortableLoader(data.Dataset):
         img_name = self.name_list[index]
         if img_name.split('_')[-1] == 'leftImg8bit':
             bool_fs = False
+        else: 
+            bool_fs = True
         
         # Log.info('{}'.format(self.img_list[index])) 
         img_size = ImageHelper.get_size(img)
@@ -97,7 +97,7 @@ class CityscapesFusionPortableLoader(data.Dataset):
             if bool_fs: 
                 #! use one of the self.aug_transofrm for fusionportable to enlarge dataset size
                 duplicate_id =  self.fs_count % self.duplicate_num 
-                img, labelmap = self.aug_transform[duplicate_id](duplicate_id=duplicate_id, img=img, labelmap=labelmap)
+                img, labelmap = self.aug_transform(duplicate_id=duplicate_id, img=img, labelmap=labelmap)
                 self.fs_count += 1
             else:
                 #! use self.aug_transform[0]/the first combination of augmentations for cityscapes
@@ -148,7 +148,7 @@ class CityscapesFusionPortableLoader(data.Dataset):
         else: 
             label_list = self.label_list_cs
         for i in range(len(label_list)):
-            if not isinstance(label_list[i]):
+            if not isinstance(label_list[i], list):
                 if label_list[i] == -1: 
                     # class exist in cityscapes, but not exists in fusionportable
                     continue

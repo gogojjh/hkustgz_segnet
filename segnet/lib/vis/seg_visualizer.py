@@ -12,6 +12,8 @@ import wandb
 from lib.datasets.tools.transforms import DeNormalize
 from lib.utils.tools.logger import Logger as Log
 from lib.utils.distributed import get_rank, is_distributed
+from lib.utils.helpers.file_helper import FileHelper
+from lib.utils.helpers.image_helper import ImageHelper
 import matplotlib.pyplot as plt
 from PIL import Image
 import matplotlib
@@ -19,6 +21,34 @@ matplotlib.use('Agg')
 
 SEG_DIR = 'vis/results/seg'
 ERROR_MAP_DIR = 'vis/results/error_map'
+
+
+FS_CS_COLOR_MAP = np.array([
+    [105, 105, 105], # 0: 'void/unlabelled'
+    [128, 64, 128],  # 1: 'road'
+    [244, 35, 232],  # 2 'sidewalk'
+    [70, 70, 70],  # 3:'building'
+    [102, 102, 156],  # 4 wall
+    [190, 153, 153],  # 5 fence
+    [153, 153, 153],  # 6 pole
+    [250, 170, 30],  # 7 'traffic light'
+    [220, 220, 0],  # 8 'traffic sign'
+    [107, 142, 35],  # 9 'vegetation'
+    [152, 251, 152],  # 10 'terrain'
+    [70, 130, 180], # 11 sky
+    [220, 20, 60],  # 12 person
+    [255, 0, 0], # 13 rider
+    [0, 0, 142],  # 14 car
+    [0, 0, 70],  # 15 truck
+    [0, 60, 100],  # 16 bus
+    [0, 80, 100],  # 17 train
+    [0, 0, 230],  # 18 'motorcycle'
+    [147, 109, 6], # 19: 'curb
+    [119, 11, 32],  # 20 'bicycle'
+    [12, 217, 219], # 21 'road marking'
+    [244, 255, 152], # 22: 'river'
+    [234, 178, 200] # 23: 'road block'
+])
 
 
 class SegVisualizer(object):
@@ -33,193 +63,37 @@ class SegVisualizer(object):
                 'loss', 'params'):
             self.ignore_label = self.configer.get('loss', 'params')[
                 'ce_ignore_index']
+            
+    def __remap_pred(self, pred_img):
+        ''' 
+        Map the void/unlabelled class to 0, and class ids of other classes are increased by 1.
+        ignore_label is -1
+        '''
+        
+        return pred_img + 1
 
-    # vis false negatives
-    def vis_fn(self, preds, targets, ori_img_in=None, name='default', sub_dir='fn'):
-        base_dir = os.path.join(self.configer.get('project_dir'), SEG_DIR, sub_dir)
-        if not os.path.exists(base_dir):
-            Log.error('Dir:{} not exists!'.format(base_dir))
-            os.makedirs(base_dir)
-
-        if not isinstance(preds, np.ndarray):
-            if len(preds.size()) > 3:
-                Log.error('Preds size is not valid.')
-                exit(1)
-
-            if len(preds.size()) == 3:
-                preds = preds.clone().data.cpu().numpy()
-
-            if len(preds.size()) == 2:
-                preds = preds.unsqueeze(0).data.cpu().numpy()
-
-        else:
-            if len(preds.shape) > 3:
-                Log.error('Preds size is not valid.')
-                exit(1)
-
-            if len(preds.shape) == 2:
-                preds = preds.unsqueeze(0)
-
-        if not isinstance(targets, np.ndarray):
-
-            if len(targets.size()) == 3:
-                targets = targets.clone().data.cpu().numpy()
-
-            if len(targets.size()) == 2:
-                targets = targets.unsqueeze(0).data.cpu().numpy()
-
-        else:
-            if len(targets.shape) == 2:
-                targets = targets.unsqueeze(0)
-
-        if ori_img_in is not None:
-            if not isinstance(ori_img_in, np.ndarray):
-                if len(ori_img_in.size()) < 3:
-                    Log.error('Image size is not valid.')
-                    exit(1)
-
-                if len(ori_img_in.size()) == 4:
-                    ori_img_in = ori_img_in.data.cpu()
-
-                if len(ori_img_in.size()) == 3:
-                    ori_img_in = ori_img_in.unsqueeze(0).data.cpu()
-
-                ori_img = ori_img_in.clone()
-                for i in range(ori_img_in.size(0)):
-                    ori_img[i] = DeNormalize(
-                        div_value=self.configer.get('normalize', 'div_value'),
-                        mean=self.configer.get('normalize', 'mean'),
-                        std=self.configer.get('normalize', 'std'))(
-                        ori_img_in.clone())
-
-                ori_img = ori_img.numpy().transpose(2, 3, 1).astype(np.uint8)
-
-            else:
-                if len(ori_img_in.shape) == 3:
-                    ori_img_in = ori_img_in.unsqueeze(0)
-
-                ori_img = ori_img_in.copy()
-
-        for img_id in range(preds.shape[0]):
-            label = targets[img_id]
-            pred = preds[img_id]
-            result = np.zeros(shape=(pred.shape[0], pred.shape[1], 3), dtype=np.uint8)
-
-            for i in range(self.configer.get('data', 'num_classes')):
-                mask0 = np.zeros_like(label, dtype=np.uint8)
-                mask1 = np.zeros_like(label, dtype=np.uint8)
-                mask0[label[:] == i] += 1
-                mask0[pred[:] == i] += 1
-                mask1[pred[:] == i] += 1
-                result[mask0[:] == 1] = self.configer.get('details', 'color_list')[i]
-                result[mask1[:] == 1] = (0, 0, 0)
-
-            image_result = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
-            if ori_img_in is not None:
-                image_result = cv2.addWeighted(ori_img[i], 0.6, image_result, 0.4, 0)
-
-            cv2.imwrite(os.path.join(base_dir, '{}_{}.jpg'.format(name, img_id)), image_result)
-
-    # vis false positives
-    def vis_fp(self, preds, targets, ori_img_in=None, name='default', sub_dir='fp'):
-        base_dir = os.path.join(self.configer.get('project_dir'), SEG_DIR, sub_dir)
-        if not os.path.exists(base_dir):
-            Log.error('Dir:{} not exists!'.format(base_dir))
-            os.makedirs(base_dir)
-
-        if not isinstance(preds, np.ndarray):
-            if len(preds.size()) > 3:
-                Log.error('Preds size is not valid.')
-                exit(1)
-
-            if len(preds.size()) == 3:
-                preds = preds.clone().data.cpu().numpy()
-
-            if len(preds.size()) == 2:
-                preds = preds.unsqueeze(0).data.cpu().numpy()
-
-        else:
-            if len(preds.shape) > 3:
-                Log.error('Preds size is not valid.')
-                exit(1)
-
-            if len(preds.shape) == 2:
-                preds = preds.unsqueeze(0)
-
-        if not isinstance(targets, np.ndarray):
-
-            if len(targets.size()) == 3:
-                targets = targets.clone().data.cpu().numpy()
-
-            if len(targets.size()) == 2:
-                targets = targets.unsqueeze(0).data.cpu().numpy()
-
-        else:
-            if len(targets.shape) == 2:
-                targets = targets.unsqueeze(0)
-
-        if ori_img_in is not None:
-            if not isinstance(ori_img_in, np.ndarray):
-                if len(ori_img_in.size()) < 3:
-                    Log.error('Image size is not valid.')
-                    exit(1)
-
-                if len(ori_img_in.size()) == 4:
-                    ori_img_in = ori_img_in.data.cpu()
-
-                if len(ori_img_in.size()) == 3:
-                    ori_img_in = ori_img_in.unsqueeze(0).data.cpu()
-
-                ori_img = ori_img_in.clone()
-                for i in range(ori_img_in.size(0)):
-                    ori_img[i] = DeNormalize(
-                        div_value=self.configer.get('normalize', 'div_value'),
-                        mean=self.configer.get('normalize', 'mean'),
-                        std=self.configer.get('normalize', 'std'))(
-                        ori_img_in.clone())
-
-                ori_img = ori_img.numpy().transpose(2, 3, 1).astype(np.uint8)
-
-            else:
-                if len(ori_img_in.shape) == 3:
-                    ori_img_in = ori_img_in.unsqueeze(0)
-
-                ori_img = ori_img_in.copy()
-
-        for img_id in range(preds.shape[0]):
-            label = targets[img_id]
-            pred = preds[img_id]
-            result = np.zeros(shape=(pred.shape[0], pred.shape[1], 3), dtype=np.uint8)
-
-            for i in range(self.configer.get('data', 'num_classes')):
-                mask0 = np.zeros_like(label, dtype=np.uint8)
-                mask1 = np.zeros_like(label, dtype=np.uint8)
-                mask0[label[:] == i] += 1
-                mask0[pred[:] == i] += 1
-                mask1[label[:] == i] += 1
-                result[mask0[:] == 1] = self.configer.get('details', 'color_list')[i]
-                result[mask1[:] == 1] = (0, 0, 0)
-
-            image_result = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
-            if ori_img_in is not None:
-                image_result = cv2.addWeighted(ori_img[i], 0.6, image_result, 0.4, 0)
-
-            cv2.imwrite(os.path.join(base_dir, '{}_{}.jpg'.format(name, img_id)), image_result)
-
-    def wandb_log(self, img_path, file_name):
+    def wandb_log_error_img(self, img_path, file_name):
         error_img = Image.open(img_path)
 
         im = wandb.Image(error_img, caption=file_name)
 
         if get_rank() == 0:
             wandb.log({'error image': [im]})
+            
+    def wandb_log_pred_img(self, img_path, file_name):
+        pred_img = Image.open(img_path)
 
-    def vis_error(self, im, pred, gt, name='default'):
+        im = wandb.Image(pred_img, caption=file_name)
+
+        if get_rank() == 0:
+            wandb.log({'pred image': [im]})
+
+    def vis_error(self, ori_img, pred, gt, name='default'):
         base_dir = os.path.join(self.configer.get('train', 'out_dir'), ERROR_MAP_DIR)
 
         if not is_distributed() or get_rank() == 0:
             if not os.path.exists(base_dir):
-                Log.error('Dir:{} not exists!'.format(base_dir))
+                Log.info('Dir:{} not exists!'.format(base_dir))
                 os.makedirs(base_dir)
 
         if not isinstance(pred, np.ndarray):
@@ -241,30 +115,43 @@ class SegVisualizer(object):
                 pred, dsize=(gt.shape[1],
                              gt.shape[0]),
                 interpolation=cv2.INTER_NEAREST)
-
-        if not isinstance(im, np.ndarray):
-            if len(im.size()) < 3:
-                Log.error('Original image size is not valid.')
-                exit(1)
-            if len(im.size()) == 3:
-                im = im.data.cpu().numpy().transpose(1, 2, 0)  # [h w]
-
-            if len(im.size()) == 4:
-                im = im.squeeze(0).data.cpu().numpy().transpose(1, 2, 0)   # [h w]
-
+        
+        # vis error map
         error_map = np.abs(gt - pred)
         error_map[gt == self.ignore_label] = 0  # ignore class
         error_map[error_map > 0] = 1
 
         fig = plt.figure()
         plt.axis('off')
-        erromap = plt.imshow(error_map, cmap='viridis')
+        errormap = plt.imshow(error_map, cmap='viridis')
         # fig.colorbar(errormap)
         img_path = os.path.join(base_dir, '{}_error.png'.format(name))
         fig.savefig(img_path,
                     bbox_inches='tight', transparent=True, pad_inches=0.0)
         plt.close('all')
         Log.info('Saving {}_error.png'.format(name))
+        
+        # ori image
+        mean = self.configer.get('normalize', 'mean')
+        std = self.configer.get('normalize', 'std')
+        div_value = self.configer.get('normalize', 'div_value')
+        ori_img = DeNormalize(div_value, mean, std)(ori_img)
+        ori_img = ori_img.permute(1, 2, 0).cpu().numpy().astype(np.uint8)  # [1024 2048 3]
+        ori_img = cv2.cvtColor(ori_img, cv2.COLOR_BGR2RGB)
+        
+        # vis semantic image
+        pred = self.__remap_pred(pred)
+        pred = FS_CS_COLOR_MAP[pred].astype(np.uint8)
+        
+        weighted_img = cv2.addWeighted(ori_img, 0.5, pred, 0.5, 0.0)
+
+        weighted_img = cv2.cvtColor(weighted_img, cv2.COLOR_RGB2BGR)
+        
+        pred_path = os.path.join(base_dir, '{}_pred.png'.format(name))
+        FileHelper.make_dirs(pred_path, is_file=True)
+        ImageHelper.save(weighted_img, save_path=pred_path)
+        Log.info('Saving {}_pred.png'.format(name))
 
         if self.wandb_mode == 'online':
-            self.wandb_log(img_path, '{}_error.jpg'.format(name))
+            self.wandb_log_error_img(img_path, '{}_error.jpg'.format(name))
+            self.wandb_log_pred_img(pred_path, '{}_pred.jpg'.format(name))

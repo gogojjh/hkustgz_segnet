@@ -1,10 +1,11 @@
 {
-	"dataset": ["hkustgz", "cityscapes"],
+	"dataset": "hkustgz",
+	"dataset_train": ["hkustgz", "cityscapes"],
 	"method": "fcn_segmentor",
 	"data": {
 		"image_tool": "cv2",
 		"input_mode": "BGR",
-		"num_classes": 25,
+		"num_classes": 23,
 		"label_list": {
 			"label_list_fs": [
 				[10, 20, 40],
@@ -35,10 +36,10 @@
 				7, 8, 11, 12, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33
 			]
 		},
-        "ignore_label": {
-            "ignore_label_id_fs": 135,
-            "ignore_label_id_cs": 0
-        },
+		"ignore_label_id": {
+			"ignore_label_id_fs": 135,
+			"ignore_label_id_cs": 0
+		},
 		"data_dir": "/data/HKUSTGZ",
 		"data_dir_train": ["/data/HKUSTGZ", "/data/Cityscapes"],
 		"workers": 8
@@ -63,7 +64,7 @@
 		},
 		"vis_prototype": true,
 		"vis_proto_inter": 60,
-		"vis_pred": false
+		"vis_pred": true
 	},
 	"test": {
 		"batch_size": 4,
@@ -91,12 +92,27 @@
 		"random_resize": {
 			"ratio": 1.0,
 			"method": "random",
-			"scale_range": [[0.5, 2.0], [0.75, 1.25], [0.25, 1.5], [0.8, 1.4]],
-			"aspect_range": [[0.9, 1.1], [0.8, 1.2], [0.7, 0.9], [1.1, 0.9]]
+			"scale_range": [
+				[0.5, 2.0],
+				[0.75, 1.25],
+				[0.25, 1.5],
+				[0.8, 1.4]
+			],
+			"aspect_range": [
+				[0.9, 1.1],
+				[0.8, 1.2],
+				[0.7, 0.9],
+				[1.1, 0.9]
+			]
 		},
 		"random_crop": {
 			"ratio": 1.0,
-			"crop_size": [1024, 768],
+			"crop_size": [
+				[1024, 768],
+				[1024, 768],
+				[1024, 768],
+				[1024, 768]
+			],
 			"method": "random",
 			"allow_outside_center": false
 		}
@@ -117,7 +133,7 @@
 	},
 	"network": {
 		"backbone": "hrnet48",
-		"resume": "/data/checkpoints/hr_w48_attn_uncer_proto_hkustgz_max_performance.pth",
+		"resume": null,
 		"resume_cityscapes": null,
 		"resume_continue": false,
 		"multi_grid": [1, 1, 1],
@@ -211,9 +227,9 @@
 		"max_proto_voting": false
 	},
 	"uncertainty_visualizer": {
-		"vis_uncertainty": false,
+		"vis_uncertainty": true,
 		"vis_interval_img": 1,
-		"vis_inter_iter": 40,
+		"vis_inter_iter": 1,
 		"dataset": "val"
 	},
 	"proto_visualizer": {
@@ -223,7 +239,7 @@
 		"dataset": "val"
 	},
 	"wandb": {
-		"mode": "disabled"
+		"mode": "online"
 	},
 	"run": {
 		"server": 0

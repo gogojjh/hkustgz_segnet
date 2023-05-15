@@ -34,7 +34,7 @@ class DataLoader(object):
     def __init__(self, configer):
         self.configer = configer
         from lib.datasets.tools import cv2_aug_transforms
-        if isinstance(self.configer.get('dataset'), list):
+        if isinstance(self.configer.get('dataset_train'), list):
             from lib.datasets.tools import cv2_aug_transforms_multi
             '''
             self.aug_train_transform_fs[:duplicate_num]:
@@ -64,7 +64,7 @@ class DataLoader(object):
             trans.ReLabel(255, 1), ]) # 0->0: non-edge, 255->1: edge
 
     def get_dataloader_sampler(self, klass, split, dataset):
-        if isinstance(self.configer.get('dataset'), list):
+        if isinstance(self.configer.get('dataset_train'), list) and dataset == 'train':
             root_dir = self.configer.get('data', 'data_dir_train')
         else:
             root_dir = self.configer.get('data', 'data_dir')
@@ -113,7 +113,7 @@ class DataLoader(object):
             '''
             Log.info('use the DefaultBoundaryLoader for train...')
             klass = DefaultBoundaryLoader
-        if isinstance(self.configer.get('dataset'), list):
+        if isinstance(self.configer.get('dataset_train'), list):
             klass = CityscapesFusionPortableLoader
         else: 
             if self.configer.get('dataset') == 'hkustgz':

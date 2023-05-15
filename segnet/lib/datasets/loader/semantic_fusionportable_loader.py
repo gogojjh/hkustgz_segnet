@@ -31,20 +31,17 @@ class SemanticFusionPortableLoader(data.Dataset):
         self.aug_transform = aug_transform
         self.img_transform = img_transform
         self.label_transform = label_transform
-        self.use_color_label = self.configer.get('data', 'use_color_label')
         self.img_list, self.label_list, self.name_list = self.__list_dirs(
             root_dir, dataset)
         size_mode = self.configer.get(dataset, 'data_transformer')['size_mode']
         self.is_stack = size_mode != 'diverse_size'
         Log.info('{} {}'.format(dataset, len(self.img_list)))
-        self.ignore_label_id = self.configer.get('data', 'ignore_label_id')
-        self.label_id_list = self.configer.get('data', 'label_list')
-        self.full_label_list = np.append(self.label_id_list, self.ignore_label_id)
-        
-        if self.use_color_label:
-            self.color_label_id_list = self.configer.get('data', 'color_label_list')
-            self.ignore_color_label_id = self.configer.get('data', 'ignore_color_label_id')
-            self.color_full_label_list = np.append(self.color_label_id_list, self.ignore_color_label_id)
+        if self.configer.exists('dataset_train') and len(self.configer.get('dataset_train')) > 1:
+            self.ignore_label_id = self.configer.get('data', 'ignore_label_id')['ignore_label_id_fs']
+            self.label_id_list = self.configer.get('data', 'label_list')['label_list_fs']
+        else:
+            self.ignore_label_id = self.configer.get('data', 'ignore_label_id')
+            self.label_id_list = self.configer.get('data', 'label_list')
         
     def __len__(self):
         return len(self.img_list)
@@ -56,23 +53,11 @@ class SemanticFusionPortableLoader(data.Dataset):
                                      mode=self.configer.get('data', 'input_mode'))
         # Log.info('{}'.format(self.img_list[index])) 
         img_size = ImageHelper.get_size(img)
-        if not self.use_color_label:
-            labelmap = cv2.imread(self.label_list[index], cv2.IMREAD_GRAYSCALE)
 
-            #todo debug
-            # if len(np.unique(np.isin(np.array(labelmap), self.full_label_list))) != 1 or not np.all(np.unique(np.isin(np.array(labelmap), self.full_label_list)) == True):
-            #     Log.error('{}'.format(self.label_list[index])) 
-            
-            assert len(np.unique(np.isin(np.array(labelmap), self.full_label_list))) == 1 and np.all(np.unique(np.isin(np.array(labelmap), self.full_label_list)) == True)
-            
-            if self.configer.exists('data', 'label_list'):
-                labelmap = self._encode_label(labelmap)
-        else: 
-            labelmap = ImageHelper.read_image(self.label_list[index],
-                                            tool=self.configer.get('data', 'image_tool'), mode='RGB')
-
-            if self.configer.exists('data', 'color_label_list'):
-                labelmap = self._encode_color_label(labelmap)
+        labelmap = cv2.imread(self.label_list[index], cv2.IMREAD_GRAYSCALE)
+        
+        if self.configer.exists('data', 'label_list'):
+            labelmap = self._encode_label(labelmap)
             
         if self.configer.exists('data', 'reduce_zero_label'):
             labelmap = self._reduce_zero_label(labelmap)
@@ -127,30 +112,16 @@ class SemanticFusionPortableLoader(data.Dataset):
         encoded_labelmap = np.ones(
             shape=(shape[0], shape[1]), dtype=np.float32) * 255
         for i in range(len(self.label_id_list)):
-            class_id = self.label_id_list[i]
-            encoded_labelmap[labelmap == class_id] = i
+            if not isinstance(self.label_id_list[i], list):
+                if self.label_id_list[i] == -1: 
+                    # class exist in cityscapes, but not exists in fusionportable
+                    continue
+                else: 
+                    class_id = self.label_id_list[i]
+                    encoded_labelmap[labelmap == class_id] = i
             
         encoded_labelmap[labelmap == self.ignore_label_id] = 255
         #! convert 'unlabelled' to 'void'
-        
-        if self.configer.get('data', 'image_tool') == 'pil':
-            encoded_labelmap = ImageHelper.np2img(
-                encoded_labelmap.astype(np.uint8))
-
-        return encoded_labelmap
-    
-    def _encode_color_label(self, labelmap):
-        labelmap = np.array(labelmap) # [1536, 2048, 3]
-        
-        shape = labelmap.shape
-        encoded_labelmap = np.ones(
-            shape=(shape[0], shape[1]), dtype=np.float32) * 255
-        
-        for i in range(len(self.color_label_id_list)):
-            class_id = self.color_label_id_list[i]
-            encoded_labelmap[np.all(labelmap == class_id, axis=-1)] = i
-        
-        encoded_labelmap[np.all(labelmap == self.ignore_color_label_id, axis=-1)] = 255
         
         if self.configer.get('data', 'image_tool') == 'pil':
             encoded_labelmap = ImageHelper.np2img(
@@ -163,10 +134,7 @@ class SemanticFusionPortableLoader(data.Dataset):
         label_list = list()
         name_list = list()
         image_dir = os.path.join(root_dir, dataset, 'image')
-        if not self.use_color_label:
-            label_dir = os.path.join(root_dir, dataset, 'label_id')
-        else: 
-            label_dir = os.path.join(root_dir, dataset, 'label_color')
+        label_dir = os.path.join(root_dir, dataset, 'label_id')
 
         # support the argument to pass the file list used for training/testing
         file_list_txt = os.environ.get('use_file_list')
@@ -180,10 +148,7 @@ class SemanticFusionPortableLoader(data.Dataset):
                     for f in os.listdir(os.path.join(image_dir, seq_dir, frame_dir)):
                         img_path = os.path.join(image_dir, seq_dir, frame_dir, f)
                         image_name = '.'.join(f.split('.')[:-1])
-                        if not self.use_color_label:
-                            label_path = os.path.join(label_dir, seq_dir, frame_dir, image_name + '_gt_id.png')
-                        else: 
-                            label_path = os.path.join(label_dir, seq_dir, frame_dir, image_name + '_gt_color.png')
+                        label_path = os.path.join(label_dir, seq_dir, frame_dir, image_name + '_gt_id.png')
                         
                         if not os.path.exists(label_path) or not os.path.exists(img_path):
                             Log.error('Label Path: {} {} not exists.'.format(

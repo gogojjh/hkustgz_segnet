@@ -94,6 +94,32 @@ CS_COLOR_MAP = np.array([
     [119, 11, 32],  # 19 'bicycle'
 ])
 
+FS_CS_COLOR_MAP = np.array([
+    [105, 105, 105], # 0: 'void/unlabelled'
+    [128, 64, 128],  # 1: 'road'
+    [244, 35, 232],  # 2 'sidewalk'
+    [70, 70, 70],  # 3:'building'
+    [102, 102, 156],  # 4 wall
+    [190, 153, 153],  # 5 fence
+    [153, 153, 153],  # 6 pole
+    [250, 170, 30],  # 7 'traffic light'
+    [220, 220, 0],  # 8 'traffic sign'
+    [107, 142, 35],  # 9 'vegetation'
+    [152, 251, 152],  # 10 'terrain'
+    [70, 130, 180], # 11 sky
+    [220, 20, 60],  # 12 person
+    [255, 0, 0], # 13 rider
+    [0, 0, 142],  # 14 car
+    [0, 0, 70],  # 15 truck
+    [0, 60, 100],  # 16 bus
+    [0, 80, 100],  # 17 train
+    [0, 0, 230],  # 18 'motorcycle'
+    [147, 109, 6], # 19: 'curb
+    [119, 11, 32],  # 20 'bicycle'
+    [12, 217, 219], # 21 'road marking'
+    [244, 255, 152], # 22: 'river'
+    [234, 178, 200] # 23: 'road block'
+])
 
 class Tester(object):
     """
@@ -254,40 +280,18 @@ class Tester(object):
                         uncer_img = uncer_img.astype(np.uint8)
                         # uncer_img = cv2.cvtColor(uncer_img, cv2.CV_16UC1)
                         uncer_img_ros.append(uncer_img)
-
-                    if self.configer.exists(
-                            'data', 'reduce_zero_label') and self.configer.get(
-                            'data', 'reduce_zero_label'):
-                        label_img = label_img + 1
-                        label_img = label_img.astype(np.uint8)
-                    if self.configer.exists('data', 'label_list'):
-                        label_img_ = self.__relabel(label_img)  # convert trianing id to ori id
-                    else:
-                        label_img_ = label_img
-                    label_img_ = Image.fromarray(label_img_, 'P')
-                    Log.info('{:4d}/{:4d} label map generated'.format(image_id, self.test_size))
-                    if 'subfolder' not in data_dict or len(subfolder[k]) == 0:
-                        label_path = os.path.join(self.save_dir, "label/",
-                                                  '{}.png'.format(names[k]))
-                    else:
-                        label_path = os.path.join(self.save_dir, "label/",
-                                                  '{}/{}.png'.format(subfolder[k], names[k]))
-
-                    FileHelper.make_dirs(label_path, is_file=True)
-                    ImageHelper.save(label_img_, label_path)
-
-                    # colorize the label-map
-                    # color_img_ = Image.fromarray(label_img)
-                    # color_img_.putpalette(colors)
-                    
-                    color_img_ = self.__remap_pred(label_img)
-                    if self.configer.get('dataset') == 'hkustgz':
-                        color_img_ = HKUSTGZ_COLOR_MAP[color_img_].astype(np.uint8)
-                    elif self.configer.get('dataset') == 'cityscapes':
-                        color_img_ = CS_COLOR_MAP[color_img_].astype(np.uint8)
+                        
+                    label_img = self.__remap_pred(label_img)
+                    if self.configer.exists('dataset_train') and len(self.configer.get('dataset_train')) > 1: 
+                        color_img_ = FS_CS_COLOR_MAP[label_img].astype(np.uint8)
                     else: 
-                        raise RuntimeError('Invalid dataset type.')
-
+                        if self.configer.get('dataset') == 'hkustgz':
+                            color_img_ = HKUSTGZ_COLOR_MAP[color_img_].astype(np.uint8)
+                        elif self.configer.get('dataset') == 'cityscapes':
+                            color_img_ = CS_COLOR_MAP[color_img_].astype(np.uint8)
+                        else: 
+                            raise RuntimeError('Invalid dataset type.')
+                    # save semantic image
                     vis_path = os.path.join(self.save_dir, "vis/", '{}.png'.format(names[k]))
                     FileHelper.make_dirs(vis_path, is_file=True)
                     ImageHelper.save(color_img_, save_path=vis_path)
@@ -300,12 +304,7 @@ class Tester(object):
                         - with top 3 largest uncertainties
                         - each channel: 1000 *(training class id(int) + prediciton confidence(0-1))  
                         '''
-                        label_img = self.__remap_pred(label_img)
-                        if self.configer.get('dataset') == 'hkustgz':
-                            sem_img = HKUSTGZ_COLOR_MAP[label_img].astype(np.uint8)
-                        elif self.configer.get('dataset') == 'cityscapes':
-                            sem_img = CS_COLOR_MAP[label_img].astype(np.uint8)
-                        sem_img_ros.append(sem_img)
+                        sem_img_ros.append(label_img)
 
                     if self.vis_pred:
                         # =============== visualie ===============　#
@@ -317,39 +316,29 @@ class Tester(object):
                         org_img = org_img.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
                         org_img = cv2.cvtColor(org_img, cv2.COLOR_BGR2RGB)
 
-                        # # colorize the label-map
-                        label_img = cv2.resize(
-                            label_img, (org_img.shape[1],
+                        color_img_ = cv2.resize(
+                            color_img_, (org_img.shape[1],
                                         org_img.shape[0]),
                             interpolation=cv2.INTER_NEAREST)
-                        color_img_ = Image.fromarray(label_img)
-                        
-                        if self.configer.get('dataset') == 'hkustgz':
-                            color_img_ = HKUSTGZ_COLOR_MAP[color_img_].astype(np.uint8)
-                        elif self.configer.get('dataset') == 'cityscapes':
-                            color_img_ = CS_COLOR_MAP[color_img_].astype(np.uint8)
-                        else: 
-                            raise RuntimeError('Invalid dataset type.')            
-                        # color_img_.putpalette(colors)
-                        color_img_ = np.asarray(color_img_.convert('RGB'), np.uint8)
 
+                        # save semantic overlay image
                         sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
 
                         sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
 
                         for i in range(0, 200):
-                            mask = np.zeros_like(label_img)
-                            mask[label_img == i] = 1
+                            mask = np.zeros_like(color_img_)
+                            mask[color_img_ == i] = 1
 
                             contours = cv2.findContours(
                                 mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
                             cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
                                                 1, cv2.LINE_AA)
 
-                        vis_path = os.path.join(self.save_dir, "vis_overlay/",
+                        vis_overlay_path = os.path.join(self.save_dir, "vis_overlay/",
                                                 '{}.png'.format(names[k]))
-                        FileHelper.make_dirs(vis_path, is_file=True)
-                        ImageHelper.save(sys_img_part, save_path=vis_path)
+                        FileHelper.make_dirs(vis_overlay_path, is_file=True)
+                        ImageHelper.save(sys_img_part, save_path=vis_overlay_path)
 
             self.batch_time.update(time.time() - start_time)
             start_time = time.time()

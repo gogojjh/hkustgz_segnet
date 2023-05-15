@@ -736,7 +736,7 @@ class CV2AugCompose(object):
                     elif isinstance(arg_path, list):
                         arg_value = self.configer.get(*arg_path)
                     #todo debug
-                    if isinstance(arg_value, list):
+                    if isinstance(arg_value, list) and len(arg_value) != 0:
                         kwargs[arg_name] = arg_value[n]
                     else: 
                         kwargs[arg_name] = arg_value

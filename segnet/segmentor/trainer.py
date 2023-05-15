@@ -345,26 +345,6 @@ class Trainer(object):
                         data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss,
                         prob_ppc_loss=prob_ppc_loss, prob_ppd_loss=prob_ppd_loss,
                         uncer_seg_loss=uncer_seg_loss))
-                
-                # Log.info(
-                #     'Train Epoch: {0}\tTrain Iteration: {1}\t'
-                #     'Time {batch_time.sum:.3f}s / {2}iters, ({batch_time.avg:.3f})\t'
-                #     'Forward Time {foward_time.sum:.3f}s / {2}iters, ({foward_time.avg:.3f})\t'
-                #     'Backward Time {backward_time.sum:.3f}s / {2}iters, ({backward_time.avg:.3f})\t'
-                #     'Loss Time {loss_time.sum:.3f}s / {2}iters, ({loss_time.avg:.3f})\t'
-                #     'Data load {data_time.sum:.3f}s / {2}iters, ({data_time.avg:3f})\n'
-                #     'Learning rate = {3}\tUncertainty Head Learning Rate = {4}\n'
-                #     'Loss = {loss.val:.8f} (ave = {loss.avg:.8f})\n'
-                #     'seg_loss={seg_loss:.5f}'.
-                #     format(
-                #         self.configer.get('epoch'),
-                #         self.configer.get('iters'),
-                #         self.configer.get('solver', 'display_iter'),
-                #         self.module_runner.get_lr(self.optimizer),
-                #         self.module_runner.get_lr(self.var_optimizer),
-                #         batch_time=self.batch_time, foward_time=self.foward_time,
-                #         backward_time=self.backward_time, loss_time=self.loss_time,
-                #         data_time=self.data_time, loss=self.train_losses, seg_loss=seg_loss))
 
                 self.batch_time.reset()
                 self.foward_time.reset()
@@ -425,121 +405,68 @@ class Trainer(object):
                 (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
 
             with torch.no_grad():
-                if self.configer.get('dataset') == 'lip':
-                    inputs = torch.cat([inputs[0], inputs_rev[0]], dim=0)
-                    outputs = self.seg_net(inputs)
-                    if not is_distributed():
-                        outputs_ = self.module_runner.gather(outputs)
-                    else:
-                        outputs_ = outputs
-                    if isinstance(outputs_, (list, tuple)):
-                        outputs_ = outputs_[-1]
-                    outputs = outputs_[
-                        0:int(outputs_.size(0) / 2), :, :, :].clone()
-                    outputs_rev = outputs_[
-                        int(outputs_.size(0) / 2):int(outputs_.size(0)), :, :, :].clone()
-                    if outputs_rev.shape[1] == 20:
-                        outputs_rev[:, 14, :, :] = outputs_[
-                            int(outputs_.size(0) / 2):int(outputs_.size(0)), 15, :, :]
-                        outputs_rev[:, 15, :, :] = outputs_[
-                            int(outputs_.size(0) / 2):int(outputs_.size(0)), 14, :, :]
-                        outputs_rev[:, 16, :, :] = outputs_[
-                            int(outputs_.size(0) / 2):int(outputs_.size(0)), 17, :, :]
-                        outputs_rev[:, 17, :, :] = outputs_[
-                            int(outputs_.size(0) / 2):int(outputs_.size(0)), 16, :, :]
-                        outputs_rev[:, 18, :, :] = outputs_[
-                            int(outputs_.size(0) / 2):int(outputs_.size(0)), 19, :, :]
-                        outputs_rev[:, 19, :, :] = outputs_[
-                            int(outputs_.size(0) / 2):int(outputs_.size(0)), 18, :, :]
-                    outputs_rev = torch.flip(outputs_rev, [3])
-                    outputs = (outputs + outputs_rev) / 2.
-                    self.evaluator.update_score(outputs, data_dict['meta'])
-
-                    del outputs_rev
-
-                elif self.data_helper.conditions.diverse_size:
-                    if is_distributed():
-                        outputs = [self.seg_net(inputs[i])
-                                   for i in range(len(inputs))]
-                    else:
-                        outputs = nn.parallel.parallel_apply(
-                            replicas[:len(inputs)], inputs)
-
-                    for i in range(len(outputs)):
-                        loss = self.pixel_loss(
-                            outputs[i], targets[i].unsqueeze(0))
-                        # self.val_losses.update(loss.item(), 1)
-                        outputs_i = outputs[i]
-                        if isinstance(outputs_i, torch.Tensor):
-                            outputs_i = [outputs_i]
-                        self.evaluator.update_score(
-                            outputs_i, data_dict['meta'][i:i + 1])
-
-                        del outputs
-
+                if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
+                    pretrain_prototype = True if self.configer.get(
+                        'iters') < self. configer.get('protoseg', 'warmup_iters') else False
+                    outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...],
+                                            pretrain_prototype=pretrain_prototype)
                 else:
+                    outputs = self.seg_net(*inputs)
+
+                if not is_distributed():
+                    outputs = self.module_runner.gather(outputs)
+                if isinstance(outputs, dict):
+                    # ============== visualize==============#
                     if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
-                        pretrain_prototype = True if self.configer.get(
-                            'iters') < self. configer.get('protoseg', 'warmup_iters') else False
-                        outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...],
-                                               pretrain_prototype=pretrain_prototype)
-                    else:
-                        outputs = self.seg_net(*inputs)
+                        # [b h w] [1, 256, 512]
+                        # uncertainty = outputs['uncertainty']
+                        h, w = targets.size(1), targets.size(2)
+                        uncertainty = outputs['confidence']  # [b h w k]
+                        # uncertainty = uncertainty.mean(-1)  # [b h w]
+                        uncertainty = F.interpolate(
+                            input=uncertainty.unsqueeze(1), size=(h, w),
+                            mode='bilinear', align_corners=True)  # [b, 1, h, w]
+                        uncertainty = uncertainty.squeeze(1)
+                        if (j % (self.configer.get(
+                                'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
+                            vis_interval_img = self.configer.get(
+                                'uncertainty_visualizer', 'vis_interval_img')
+                            batch_size = uncertainty.shape[0]
+                            if vis_interval_img <= batch_size:
+                                for i in range(0, vis_interval_img, batch_size):
+                                    self.uncer_visualizer.vis_uncertainty(
+                                        uncertainty[i], targets[i], name='{}'.format(names[i]))
+                                    inputs = data_dict['img']
+                                    pred = outputs['seg']  # [b c h w]
+                                    pred = torch.argmax(
+                                        pred, dim=1)  # [b h w]
 
-                    if not is_distributed():
-                        outputs = self.module_runner.gather(outputs)
-                    if isinstance(outputs, dict):
-                        # ============== visualize==============#
-                        if self.configer.get('uncertainty_visualizer', 'vis_uncertainty'):
-                            # [b h w] [1, 256, 512]
-                            # uncertainty = outputs['uncertainty']
-                            h, w = targets.size(1), targets.size(2)
-                            uncertainty = outputs['confidence']  # [b h w k]
-                            # uncertainty = uncertainty.mean(-1)  # [b h w]
-                            uncertainty = F.interpolate(
-                                input=uncertainty.unsqueeze(1), size=(h, w),
-                                mode='bilinear', align_corners=True)  # [b, 1, h, w]
-                            uncertainty = uncertainty.squeeze(1)
-                            if (j % (self.configer.get(
-                                    'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
-                                vis_interval_img = self.configer.get(
-                                    'uncertainty_visualizer', 'vis_interval_img')
-                                batch_size = uncertainty.shape[0]
-                                if vis_interval_img <= batch_size:
-                                    for i in range(0, vis_interval_img, batch_size):
-                                        self.uncer_visualizer.vis_uncertainty(
-                                            uncertainty[i], targets[i], name='{}'.format(names[i]))
+                                    self.seg_visualizer.vis_error(
+                                        inputs[i], pred[i], targets[i], names[i])
+                    if self.vis_prototype and self.configer.get('iters') % (self.configer.get('solver', 'test_interval') * 4) == 0:
+                        if (j % (self.configer.get(
+                                'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
+                            inputs = data_dict['img']
+                            # metas = data_dict['meta']
+                            names = data_dict['name']
+                            sim_mat = outputs['logits']  # [(b h w) (c m)]
+                            pred = outputs['seg']  # [b c h w]
+                            num_classes = self.configer.get('data', 'num_classes')
+                            num_prototype = self.configer.get('protoseg', 'num_prototype')
+                            b, _, h, w, = pred.size()
+                            sim_mat = sim_mat.reshape(b, h, w, num_classes, num_prototype)  # [b h w c m]
+                            n = pred.shape[0]  # b
+                            for k in range(n):
+                                # ori_img_size = metas[k]['ori_img_size']  # [2048, 1024]
+                                # border_size = metas[k]['border_size']  # [2048, 1024]
+                                # inputs[k]: [3, 1024, 2048]
+                                self.proto_visualizer.vis_prototype(
+                                    sim_mat[k], inputs[k], names[k])
 
-                                        pred = outputs['seg']  # [b c h w]
-                                        pred = torch.argmax(
-                                            pred, dim=1)  # [b h w]
+                    outputs = outputs['seg']
+                self.evaluator.update_score(outputs, data_dict['meta'])
 
-                                        self.seg_visualizer.vis_error(
-                                            imgs[i], pred[i], targets[i], names[i])
-                        if self.vis_prototype and self.configer.get('iters') % (self.configer.get('solver', 'test_interval') * 4) == 0:
-                            if (j % (self.configer.get(
-                                    'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
-                                inputs = data_dict['img']
-                                # metas = data_dict['meta']
-                                names = data_dict['name']
-                                sim_mat = outputs['logits']  # [(b h w) (c m)]
-                                pred = outputs['seg']  # [b c h w]
-                                num_classes = self.configer.get('data', 'num_classes')
-                                num_prototype = self.configer.get('protoseg', 'num_prototype')
-                                b, _, h, w, = pred.size()
-                                sim_mat = sim_mat.reshape(b, h, w, num_classes, num_prototype)  # [b h w c m]
-                                n = pred.shape[0]  # b
-                                for k in range(n):
-                                    # ori_img_size = metas[k]['ori_img_size']  # [2048, 1024]
-                                    # border_size = metas[k]['border_size']  # [2048, 1024]
-                                    # inputs[k]: [3, 1024, 2048]
-                                    self.proto_visualizer.vis_prototype(
-                                        sim_mat[k], inputs[k], names[k])
-
-                        outputs = outputs['seg']
-                    self.evaluator.update_score(outputs, data_dict['meta'])
-
-                    del outputs
+                del outputs
 
             self.batch_time.update(time.time() - start_time)
             start_time = time.time()
