@@ -12,32 +12,41 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import pdb
 import torch
 from torch.utils import data
 
 import lib.datasets.tools.transforms as trans
-import lib.datasets.tools.cv2_aug_transforms as cv2_aug_trans
-import lib.datasets.tools.pil_aug_transforms as pil_aug_trans
 from lib.datasets.loader.default_loader import DefaultLoader, CSDataTestLoader
 from lib.datasets.loader.ade20k_loader import ADE20KLoader
 from lib.datasets.loader.lip_loader import LipLoader
 from lib.datasets.loader.offset_loader import DTOffsetLoader
 from lib.datasets.loader.default_boundary_loader import DefaultBoundaryLoader
 from lib.datasets.loader.semantic_fusionportable_loader import SemanticFusionPortableLoader
+from lib.datasets.loader.cs_fs_multi_loader import CityscapesFusionPortableLoader
 from lib.datasets.tools.collate import collate
 from lib.utils.tools.logger import Logger as Log
 
-from lib.utils.distributed import get_world_size, get_rank, is_distributed
+from lib.utils.distributed import get_world_size, is_distributed
 
 
 class DataLoader(object):
 
     def __init__(self, configer):
         self.configer = configer
-
         from lib.datasets.tools import cv2_aug_transforms
-        self.aug_train_transform = cv2_aug_transforms.CV2AugCompose(self.configer, split='train')
+        if isinstance(self.configer.get('dataset'), list):
+            from lib.datasets.tools import cv2_aug_transforms_multi
+            '''
+            self.aug_train_transform_fs[:duplicate_num]:
+                lists (duplicate_num) of augmentations for fusionportable
+            self.aug_train_transform_fs[-1]:   
+                a list of augmentations for cityscapes
+            
+            '''
+            self.aug_train_transform = cv2_aug_transforms_multi.CV2AugCompose(self.configer, split='train')
+        else: 
+            self.aug_train_transform = cv2_aug_transforms.CV2AugCompose(self.configer, split='train')
+            
         self.aug_val_transform = cv2_aug_transforms.CV2AugCompose(self.configer, split='val')
         #! same transformation for train/val/test
         self.img_transform = trans.Compose([
@@ -55,12 +64,12 @@ class DataLoader(object):
             trans.ReLabel(255, 1), ]) # 0->0: non-edge, 255->1: edge
 
     def get_dataloader_sampler(self, klass, split, dataset):
-
-        from lib.datasets.loader.multi_dataset_loader import MultiDatasetLoader, MultiDatasetTrainingSampler
-
-        root_dir = self.configer.get('data', 'data_dir')
-        if isinstance(root_dir, list) and len(root_dir) == 1:
-            root_dir = root_dir[0]
+        if isinstance(self.configer.get('dataset'), list):
+            root_dir = self.configer.get('data', 'data_dir_train')
+        else:
+            root_dir = self.configer.get('data', 'data_dir')
+            if isinstance(root_dir, list) and len(root_dir) == 1:
+                root_dir = root_dir[0]
             
         if self.configer.get('protoseg', 'use_boundary'):
             kwargs = dict(
@@ -79,25 +88,12 @@ class DataLoader(object):
                 label_transform=self.label_transform,
                 configer=self.configer
             )
-
-        if isinstance(root_dir, str):
-            loader = klass(root_dir, **kwargs)
-            multi_dataset = False
-        elif isinstance(root_dir, list):
-            loader = MultiDatasetLoader(root_dir, klass, **kwargs)
-            multi_dataset = True
-            Log.info('use multi-dataset for {}...'.format(dataset))
-        else:
-            raise RuntimeError('Unknown root dir {}'.format(root_dir))
+            
+        loader = klass(root_dir, **kwargs)
 
         if split == 'train':
-            if is_distributed() and multi_dataset:
-                raise RuntimeError('Currently multi dataset doesn\'t support distributed.')
-
             if is_distributed():
                 sampler = torch.utils.data.distributed.DistributedSampler(loader)
-            elif multi_dataset:
-                sampler = MultiDatasetTrainingSampler(loader)
             else:
                 sampler = None
 
@@ -111,52 +107,26 @@ class DataLoader(object):
         return loader, sampler
 
     def get_trainloader(self):
-        if self.configer.exists(
-                'data', 'use_edge') and self.configer.get(
-                'data', 'use_edge') == 'ce2p':
-            """
-            ce2p manner:
-            load both the ground-truth label and edge.
-            """
-            Log.info('use edge (follow ce2p) for train...')
-            klass = LipLoader
-
-        elif self.configer.exists('data', 'use_dt_offset') or self.configer.exists('data', 'pred_dt_offset'):
-            """
-            dt-offset manner:
-            load both the ground-truth label and offset (based on distance transform).
-            """
-            Log.info('use distance transform offset loader for train...')
-            klass = DTOffsetLoader
-
-        elif self.configer.exists('train', 'loader') and \
-                (self.configer.get('train', 'loader') == 'ade20k'
-                 or self.configer.get('train', 'loader') == 'pascal_context'
-                 or self.configer.get('train', 'loader') == 'pascal_voc'
-                 or self.configer.get('train', 'loader') == 'coco_stuff'
-                 or self.configer.get('train', 'loader') == 'camvid'):
-            """
-            ADE20KLoader manner:
-            support input images of different shapes.
-            """
-            Log.info('use ADE20KLoader (diverse input shape) for train...')
-            klass = ADE20KLoader
-        elif self.configer.get('protoseg', 'use_boundary'):
+        if self.configer.get('protoseg', 'use_boundary'):
             ''' 
             Load additional boundary maps compared with default loader.
             '''
             Log.info('use the DefaultBoundaryLoader for train...')
             klass = DefaultBoundaryLoader
-        elif self.configer.get('dataset') == 'hkustgz':
-            klass = SemanticFusionPortableLoader
-        else:
-            """
-            Default manner:
-            + support input images of the same shapes.
-            + support distributed training (the performance is more un-stable than non-distributed manner)
-            """
-            Log.info('use the DefaultLoader for train...')
-            klass = DefaultLoader
+        if isinstance(self.configer.get('dataset'), list):
+            klass = CityscapesFusionPortableLoader
+        else: 
+            if self.configer.get('dataset') == 'hkustgz':
+                klass = SemanticFusionPortableLoader
+            else:
+                """
+                Default manner:
+                + support input images of the same shapes.
+                + support distributed training (the performance is more un-stable than non-distributed manner)
+                """
+                Log.info('use the DefaultLoader for train...')
+                klass = DefaultLoader
+                
         loader, sampler = self.get_dataloader_sampler(klass, 'train', 'train')
         trainloader = data.DataLoader(
             loader,

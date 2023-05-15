@@ -38,10 +38,8 @@ class SemanticFusionPortableLoader(data.Dataset):
         self.is_stack = size_mode != 'diverse_size'
         Log.info('{} {}'.format(dataset, len(self.img_list)))
         self.ignore_label_id = self.configer.get('data', 'ignore_label_id')
-        self.unlabelled_label_id = self.configer.get('data', 'unlabelled_label_id')
         self.label_id_list = self.configer.get('data', 'label_list')
         self.full_label_list = np.append(self.label_id_list, self.ignore_label_id)
-        self.full_label_list = np.append(self.full_label_list, self.unlabelled_label_id)
         
         if self.use_color_label:
             self.color_label_id_list = self.configer.get('data', 'color_label_list')

@@ -25,34 +25,47 @@ from lib.utils.tools.logger import Logger as Log
 
 
 class CityscapesFusionPortableLoader(data.Dataset):
+    ''' 
+    - Support loading both FusionPortable and Cityscapes dataset simultaneously.
+    - Support generate multiple augmented images for FusionPortable from one single original
+      image, so as to enlarge the training size of FusionPortable compared with Cityscapes.
+    '''
     def __init__(self, root_dir, aug_transform=None, dataset=None,
                  img_transform=None, label_transform=None, configer=None):
+        assert isinstance(root_dir, list)
         self.configer = configer
         self.aug_transform = aug_transform
         self.img_transform = img_transform
         self.label_transform = label_transform
-        self.use_color_label = self.configer.get('data', 'use_color_label')
         for dataset_name in self.configer.get('dataset'):
             if dataset_name == 'hkustgz':
+                self.duplicate_num = self.configer.get('train_trans', 'train_trans_fs')[self.duplicate_num]
                 self.img_list_fs, self.label_list_fs, self.name_list_fs = self.__list_dirs_fs(
-                    root_dir, dataset)
+                    root_dir[0], dataset, self.duplicate_num)
+                Log.info_once('Duplicate FusionPortable {} times to enlarge the dataset size.'.format(self.duplicate_num))
             elif dataset_name == 'cityscapes':
                 self.img_list_cs, self.label_list_cs, self.name_list_cs = self.__list_dirs_cs(
-                    root_dir, dataset)
+                    root_dir[1], dataset)
+        self.img_list = np.append(self.img_list_fs, self.img_list_cs)
+        self.label_list = np.append(self.label_list_fs, self.label_list_cs)
+        self.name_list = np.append(self.name_list_fs, self.name_list_cs)
             
         size_mode = self.configer.get(dataset, 'data_transformer')['size_mode']
         self.is_stack = size_mode != 'diverse_size'
         Log.info('{} {}'.format(dataset, len(self.img_list)))
-        self.ignore_label_id = self.configer.get('data', 'ignore_label_id')
-        self.unlabelled_label_id = self.configer.get('data', 'unlabelled_label_id')
-        self.label_id_list = self.configer.get('data', 'label_list')
-        self.full_label_list = np.append(self.label_id_list, self.ignore_label_id)
-        self.full_label_list = np.append(self.full_label_list, self.unlabelled_label_id)
-        
-        if self.use_color_label:
-            self.color_label_id_list = self.configer.get('data', 'color_label_list')
-            self.ignore_color_label_id = self.configer.get('data', 'ignore_color_label_id')
-            self.color_full_label_list = np.append(self.color_label_id_list, self.ignore_color_label_id)
+
+        assert self.configer.exists('data', 'label_list')['label_list_fs']
+        self.label_list_fs = self.configer.get('data', 'label_list')['label_list_fs']
+        assert self.configer.exists('data', 'label_list')['label_list_cs']
+        self.label_list_cs = self.configer.get('data', 'label_list')['label_list_cs']
+        assert self.configer.exists('data', 'ignore_label')['ignore_label_id_fs']
+        self.ignore_label_id_fs = self.configer.get('data', 'ignore_label')['ignore_label_id_fs']
+        assert self.configer.exists('data', 'ignore_label')['ignore_label_id_cs']
+        self.ignore_label_id_cs = self.configer.get('data', 'ignore_label')['ignore_label_id_cs']
+        self.full_label_list_fs = np.append(self.label_list_fs, self.ignore_label_id_fs)
+        self.full_label_list_cs = np.append(self.label_list_cs, self.ignore_label_id_cs)
+        #! count current loaded size of fusionportable
+        self.fs_count = 0
         
     def __len__(self):
         return len(self.img_list)
@@ -62,25 +75,17 @@ class CityscapesFusionPortableLoader(data.Dataset):
                                      tool=self.configer.get(
                                          'data', 'image_tool'),
                                      mode=self.configer.get('data', 'input_mode'))
+        # see if it belongs to HKUSTGZ/Cityscapes according to image name
+        img_name = self.name_list[index]
+        if img_name.split('_')[-1] == 'leftImg8bit':
+            bool_fs = False
+        
         # Log.info('{}'.format(self.img_list[index])) 
         img_size = ImageHelper.get_size(img)
-        if not self.use_color_label:
-            labelmap = cv2.imread(self.label_list[index], cv2.IMREAD_GRAYSCALE)
 
-            #todo debug
-            # if len(np.unique(np.isin(np.array(labelmap), self.full_label_list))) != 1 or not np.all(np.unique(np.isin(np.array(labelmap), self.full_label_list)) == True):
-            #     Log.error('{}'.format(self.label_list[index])) 
-            
-            assert len(np.unique(np.isin(np.array(labelmap), self.full_label_list))) == 1 and np.all(np.unique(np.isin(np.array(labelmap), self.full_label_list)) == True)
-            
-            if self.configer.exists('data', 'label_list'):
-                labelmap = self._encode_label(labelmap)
-        else: 
-            labelmap = ImageHelper.read_image(self.label_list[index],
-                                            tool=self.configer.get('data', 'image_tool'), mode='RGB')
+        labelmap = cv2.imread(self.label_list[index], cv2.IMREAD_GRAYSCALE)
 
-            if self.configer.exists('data', 'color_label_list'):
-                labelmap = self._encode_color_label(labelmap)
+        labelmap = self._encode_label(labelmap, bool_fs)
             
         if self.configer.exists('data', 'reduce_zero_label'):
             labelmap = self._reduce_zero_label(labelmap)
@@ -89,7 +94,14 @@ class CityscapesFusionPortableLoader(data.Dataset):
         ori_target[ori_target == 255] = -1
 
         if self.aug_transform is not None:
-            img, labelmap = self.aug_transform(img, labelmap=labelmap)
+            if bool_fs: 
+                #! use one of the self.aug_transofrm for fusionportable to enlarge dataset size
+                duplicate_id =  self.fs_count % self.duplicate_num 
+                img, labelmap = self.aug_transform[duplicate_id](duplicate_id=duplicate_id, img=img, labelmap=labelmap)
+                self.fs_count += 1
+            else:
+                #! use self.aug_transform[0]/the first combination of augmentations for cityscapes
+                img, labelmap = self.aug_transform(duplicate_id=0, img=img, labelmap=labelmap)
 
         border_size = ImageHelper.get_size(img)
 
@@ -104,9 +116,6 @@ class CityscapesFusionPortableLoader(data.Dataset):
             border_size=border_size,
             ori_target=ori_target
         )
-        
-        # if np.unique(labelmap).size == 1:
-        #     Log.info(self.label_list[index])
         
         return dict(
             img=DataContainer(img, stack=self.is_stack),
@@ -128,18 +137,35 @@ class CityscapesFusionPortableLoader(data.Dataset):
 
         return encoded_labelmap
 
-    def _encode_label(self, labelmap):
+    def _encode_label(self, labelmap, bool_fs):
         labelmap = np.array(labelmap)
 
         shape = labelmap.shape
         encoded_labelmap = np.ones(
             shape=(shape[0], shape[1]), dtype=np.float32) * 255
-        for i in range(len(self.label_id_list)):
-            class_id = self.label_id_list[i]
-            encoded_labelmap[labelmap == class_id] = i
-            
-        encoded_labelmap[labelmap == self.ignore_label_id] = 255
-        #! convert 'unlabelled' to 'void'
+        if bool_fs: 
+            label_list = self.label_list_fs
+        else: 
+            label_list = self.label_list_cs
+        for i in range(len(label_list)):
+            if not isinstance(label_list[i]):
+                if label_list[i] == -1: 
+                    # class exist in cityscapes, but not exists in fusionportable
+                    continue
+                else: 
+                    class_id = label_list[i]
+                    encoded_labelmap[labelmap == class_id] = i
+            else: 
+                for j in range(len(label_list[i])):
+                    class_id = label_list[i][j]
+                    encoded_labelmap[labelmap == class_id] = i 
+        if bool_fs:
+            encoded_labelmap[labelmap == self.ignore_label_id_fs] = 255
+            #! convert 'unlabelled'(0) to 'void'
+            encoded_labelmap[labelmap == 0] = 255
+        else: 
+            encoded_labelmap[labelmap == self.ignore_label_id_cs] = 255
+        
         
         if self.configer.get('data', 'image_tool') == 'pil':
             encoded_labelmap = ImageHelper.np2img(
@@ -166,15 +192,17 @@ class CityscapesFusionPortableLoader(data.Dataset):
 
         return encoded_labelmap
 
-    def __list_dirs_fs(self, root_dir, dataset):
+    def __list_dirs_fs(self, root_dir, dataset, duplicate_num):
+        ''' 
+        Duplicate n times for FusionPortable dataset (n = number of augmentation configs defined
+        for each image in FusionPortable.)
+        '''
         img_list = list()
         label_list = list()
         name_list = list()
         image_dir = os.path.join(root_dir, dataset, 'image')
-        if not self.use_color_label:
-            label_dir = os.path.join(root_dir, dataset, 'label_id')
-        else: 
-            label_dir = os.path.join(root_dir, dataset, 'label_color')
+
+        label_dir = os.path.join(root_dir, dataset, 'label_id')
 
         # support the argument to pass the file list used for training/testing
         file_list_txt = os.environ.get('use_file_list')
@@ -188,20 +216,18 @@ class CityscapesFusionPortableLoader(data.Dataset):
                     for f in os.listdir(os.path.join(image_dir, seq_dir, frame_dir)):
                         img_path = os.path.join(image_dir, seq_dir, frame_dir, f)
                         image_name = '.'.join(f.split('.')[:-1])
-                        if not self.use_color_label:
-                            label_path = os.path.join(label_dir, seq_dir, frame_dir, image_name + '_gt_id.png')
-                        else: 
-                            label_path = os.path.join(label_dir, seq_dir, frame_dir, image_name + '_gt_color.png')
+                        label_path = os.path.join(label_dir, seq_dir, frame_dir, image_name + '_gt_id.png')
                         
                         if not os.path.exists(label_path) or not os.path.exists(img_path):
                             Log.error('Label Path: {} {} not exists.'.format(
                             label_path, img_path))
                             
                             continue
-                    
-                        img_list.append(img_path)
-                        label_list.append(label_path)
-                        name_list.append(image_name)
+                        #! reservered for different image augmentation to enlarge the dataset size
+                        for n in range(duplicate_num):
+                            img_list.append(img_path)
+                            label_list.append(label_path)
+                            name_list.append(image_name)
                     
             files = sorted(files)
 

@@ -672,10 +672,10 @@ class Resize(RandomResize):
 
 
 class CV2AugCompose(object):
-    """Composes several transforms together.
+    """Composes different combinations of several transforms together.
 
     Args:
-        transforms (list of ``Transform`` objects): list of transforms to compose.
+        transforms (lists of ``Transform`` objects): lists of transforms to compose.
 
     Example:
         >>> CV2AugCompose([
@@ -706,36 +706,48 @@ class CV2AugCompose(object):
             trans_seq = self.configer.get('val_trans', 'trans_seq')
             trans_key = 'val_trans'
 
-        self.transforms = dict()
+        #! store duplicate_num dicts of augmentations for duplicate_num images
+        self.transforms_all = list() 
+        #! store augmentations for 1 image
+        self.transforms = dict() 
         self.trans_config = self.configer.get(trans_key)
-        for trans_name in trans_seq:
-            specs = TRANSFORM_SPEC[trans_name]
-            config = self.configer.get(trans_key, trans_name)
-            for spec in specs:
-                if 'when' not in spec:
-                    break
-                choose_this = True
-                for cond_key, cond_value in spec['when'].items():
-                    choose_this = choose_this and (
-                            config[cond_key] == cond_value)
-                if choose_this:
-                    break
-            else:
-                raise RuntimeError("Not support!")
+        self.duplicate_num = self.configer.get('train_trans', 'duplicate_num')
+        for n in range(self.duplicate_num):
+            for trans_name in trans_seq:
+                specs = TRANSFORM_SPEC[trans_name]
+                config = self.configer.get(trans_key, trans_name)
+                for spec in specs:
+                    if 'when' not in spec:
+                        break
+                    choose_this = True
+                    for cond_key, cond_value in spec['when'].items():
+                        choose_this = choose_this and (
+                                config[cond_key] == cond_value)
+                    if choose_this:
+                        break
+                else:
+                    raise RuntimeError("Not support!")
 
-            kwargs = {}
-            for arg_name, arg_path in spec["args"].items():
-                if isinstance(arg_path, str):
-                    arg_value = config.get(arg_path, None) 
-                elif isinstance(arg_path, list):
-                    arg_value = self.configer.get(*arg_path)
-                    
-                kwargs[arg_name] = arg_value
+                kwargs = {}
+                for arg_name, arg_path in spec["args"].items():
+                    if isinstance(arg_path, str):
+                        #! it is a list if use multiple data augmentations
+                        arg_value = config.get(arg_path, None) 
+                    elif isinstance(arg_path, list):
+                        arg_value = self.configer.get(*arg_path)
+                    #todo debug
+                    if isinstance(arg_value, list):
+                        kwargs[arg_name] = arg_value[n]
+                    else: 
+                        kwargs[arg_name] = arg_value
+                        
+                    # kwargs[arg_name] = arg_value
 
-            klass = TRANSFORM_MAPPING[trans_name]
-            self.transforms[trans_name] = klass(**kwargs)
+                klass = TRANSFORM_MAPPING[trans_name]
+                self.transforms[trans_name] = klass(**kwargs)
+            self.transforms_all.append(self.transforms)
 
-    def __call__(self, img, **data_dict):
+    def __call__(self, duplicate_id, img, **data_dict):
 
         orig_key_list = list(data_dict)
 
@@ -754,9 +766,11 @@ class CV2AugCompose(object):
             trans_seq = shuffle_trans_seq + self.configer.get('train_trans', 'trans_seq')
         else:
             trans_seq = self.configer.get('val_trans', 'trans_seq')
-
+            
+        #! choose the corresponding augmentations for this image
+        transforms = self.transforms_all[duplicate_id]
         for trans_key in trans_seq:
-            img, data_dict = self.transforms[trans_key](img, **data_dict)
+            img, data_dict = transforms[trans_key](img, **data_dict)
 
         if self.configer.get('data', 'input_mode') == 'RGB':
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
