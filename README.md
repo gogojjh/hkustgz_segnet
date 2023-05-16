@@ -77,25 +77,32 @@ Please refer to [openseg](https://github.com/openseg-group/openseg.pytorch) for 
 ```
 roscore
 cd /home/hkustgz_segnet/catkin_ws
-catkin build segnet_ros
-
 source devel/setup.zsh
 cd /home/hkustgz_segnet/catkin_ws/src/hkustgz_segnet/launch
-
-roslaunch segnet_ros segnet_ros.launch
+roslaunch hkustgz_segnet hkustgz_segnet.launch
 ```
 
 ### Config for ROS
 
-In [H_48_D_4_prob_proto.json](./configs/cityscapes/H_48_D_4_prob_proto.json)
+In [hkustgz_cityscapes.json](segnet/configs/hkustgz/hkustgz_cityscapes.json):
 
 ```
+# change model path
+"network": {
+		"resume": "/data/checkpoints/hr_w48_attn_uncer_proto_hkustgz_max_performance.pth",
+	},
+# change ros topics
 "ros": {
 		"use_ros": true,
 		"image_topic": "/camera1/image_color/compressed",
 		"sem_image_topic": "/semantic_image",
 		"uncer_image_topic": "/uncertainty_image",
 		"msg_type": "sensor_msgs/CompressedImage"
+	}
+# save result path
+"test": {
+		"out_dir": "/data/hkustgz_result",
+		"vis_pred": true
 	}
 ```
 
