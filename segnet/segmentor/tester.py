@@ -15,9 +15,7 @@ from __future__ import print_function
 
 import os
 import time
-import timeit
 import cv2
-import collections
 
 import torch
 import numpy as np
@@ -31,15 +29,12 @@ from lib.datasets.data_loader import DataLoader
 from lib.loss.loss_manager import LossManager
 from lib.models.model_manager import ModelManager
 from lib.utils.tools.logger import Logger as Log
-from lib.metrics.running_score import RunningScore
 from lib.vis.seg_visualizer import SegVisualizer
-from lib.vis.palette import get_cityscapes_colors, get_ade_colors, get_lip_colors, get_camvid_colors
-from lib.vis.palette import get_pascal_context_colors, get_cocostuff_colors, get_pascal_voc_colors, get_autonue21_colors
 from segmentor.tools.module_runner import ModuleRunner
 from segmentor.tools.optim_scheduler import OptimScheduler
-from scipy import ndimage
-from PIL import Image
-from math import ceil
+from lib.vis.uncertainty_visualizer import UncertaintyVisualizer
+from lib.vis.seg_visualizer import SegVisualizer
+
 
 # Define colors (in RGB) for different labels
 HKUSTGZ_COLOR_MAP = np.array([
@@ -136,7 +131,7 @@ class Tester(object):
         self.model_manager = ModelManager(configer)
         self.optim_scheduler = OptimScheduler(configer)
         self.seg_data_loader = DataLoader(configer)
-        self.save_dir = self.configer.get('test', 'out_dir')
+        self.save_dir = self.configer.get('train', 'out_dir')
         self.seg_net = None
         self.test_loader = None
         self.test_size = None
@@ -146,6 +141,8 @@ class Tester(object):
 
         self.vis_prototype = self.configer.get('test', 'vis_prototype')
         self.vis_pred = self.configer.get('test', 'vis_pred')
+        self.uncer_visualizer = UncertaintyVisualizer(configer=self.configer)
+        self.seg_visualizer = SegVisualizer(configer)
 
         if self.vis_prototype:
             from lib.vis.prototype_visualizer import PrototypeVisualier
@@ -197,22 +194,9 @@ class Tester(object):
         """
         self.seg_net.eval()
         start_time = time.time()
-        image_id = 0
 
         Log.info('save dir {}'.format(self.save_dir))
         FileHelper.make_dirs(self.save_dir, is_file=False)
-
-        save_prob = False
-        if self.configer.get('test', 'save_prob') or self.configer.get('ros', 'use_ros'):
-            save_prob = self.configer.get('test', 'save_prob')
-
-            def softmax(X, axis=0):
-                max_prob = np.max(X, axis=axis, keepdims=True)
-                X -= max_prob
-                X = np.exp(X)
-                sum_prob = np.sum(X, axis=axis, keepdims=True)
-                X /= sum_prob
-                return X
 
         sem_img_ros = []
         uncer_img_ros = []
@@ -220,82 +204,27 @@ class Tester(object):
             inputs = data_dict['img']
             names = data_dict['name']
             metas = data_dict['meta']
-            if 'subfolder' in data_dict:
-                subfolder = data_dict['subfolder']
-
-            if '/val/' in self.save_dir:  # and os.environ.get('save_gt_label'):
-                labels = data_dict['labelmap']
 
             with torch.no_grad():
-                # Forward pass.
-                if self.configer.get('test', 'mode') == 'ss_test':
-                    outputs = self.ss_test(inputs)
-
-                if isinstance(outputs, torch.Tensor):
-                    outputs = outputs.permute(0, 2, 3, 1).cpu().numpy()
-                    n = outputs.shape[0]
-                else:
-                    outputs = [output.permute(0, 2, 3, 1).cpu().numpy().squeeze()
-                               for output in outputs]
-                    n = len(outputs)
-
-                for k in range(n):
-                    image_id += 1
-                    ori_img_size = metas[k]['ori_img_size']
-                    border_size = metas[k]['border_size']
-                    logits = cv2.resize(outputs[k][:border_size[1], :border_size[0]],
-                                        tuple(ori_img_size), interpolation=cv2.INTER_CUBIC)
-
-                    # save the logits map
-                    if self.configer.get('test', 'save_prob'):
-                        prob_path = os.path.join(self.save_dir, "prob/", '{}.npy'.format(names[k]))
-                        FileHelper.make_dirs(prob_path, is_file=True)
-                        np.save(prob_path, softmax(logits, axis=-1))
-                    #! semantic prediction
-                    label_img = np.asarray(np.argmax(logits, axis=-1), dtype=np.uint8)
-
-                    #! use gpu for faster speed
-                    # get the top 3 largest softmax class-wise prediction confidence
-                    if self.configer.get(
-                            'ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
-                        logits = torch.from_numpy(logits).cuda()
-                        m = nn.Softmax(dim=-1)
-                        logits = m(logits)
-                        val, ind = torch.topk(logits, k=3, dim=-1)  # [h, w, 3]
-                        uncer_img = torch.zeros(
-                            [label_img.shape[0],
-                             label_img.shape[1],
-                             3],
-                            dtype=torch.int64)
-                        for i in range(3):
-                            ''' 
-                            logits: [0, 1]
-                            class id: int
-                            confidence img: (class id[i] + logit[i]) * 100
-                            '''
-                            # [h, w, num_cls]([h, w])
-                            uncer_img[:, :, i] = ((val[:, :, i] + ind[:, :, i]) * 100).long()
-
-                        uncer_img = uncer_img.cpu().numpy()  # int64
-                        uncer_img = uncer_img.astype(np.uint8)
-                        # uncer_img = cv2.cvtColor(uncer_img, cv2.CV_16UC1)
-                        uncer_img_ros.append(uncer_img)
-                        
-                    label_img = self.__remap_pred(label_img)
-                    if self.configer.exists('dataset_train') and len(self.configer.get('dataset_train')) > 1: 
-                        color_img_ = FS_CS_COLOR_MAP[label_img].astype(np.uint8)
-                    else: 
-                        if self.configer.get('dataset') == 'hkustgz':
-                            color_img_ = HKUSTGZ_COLOR_MAP[color_img_].astype(np.uint8)
-                        elif self.configer.get('dataset') == 'cityscapes':
-                            color_img_ = CS_COLOR_MAP[color_img_].astype(np.uint8)
-                        else: 
-                            raise RuntimeError('Invalid dataset type.')
-                    # save semantic image
-                    vis_path = os.path.join(self.save_dir, "vis/", '{}.png'.format(names[k]))
-                    FileHelper.make_dirs(vis_path, is_file=True)
-                    ImageHelper.save(color_img_, save_path=vis_path)
-
+                outputs = self.seg_net.forward(inputs) # [b c h w]
+                logits = outputs['seg']  # [b c h w]
+                ori_img_size = metas[0]['ori_img_size']
+                uncertainty = outputs['confidence']  # [b h w k]
+                uncertainty = F.interpolate(
+                            input=uncertainty.unsqueeze(1), size=(ori_img_size[1], ori_img_size[0]),
+                            mode='bilinear', align_corners=True)  # [b, 1, h, w]
+                uncertainty = uncertainty.squeeze(1) # [b h w]
+                batch_size = uncertainty.shape[0]
+                batch_size = inputs.shape[0]
+                for i in range(batch_size):
+                    self.uncer_visualizer.vis_uncertainty(
+                                        uncertainty[i], name='{}'.format(names[i]))
+                    
+                    # =========== vis prediction img =========== #
+                    pred = torch.argmax(
+                        logits, dim=1)  # [b h w]
+                    pred_img = self.seg_visualizer.vis_pred(inputs[i], pred[i], names[i])
+                    
                     if self.configer.get(
                             'ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
                         ''' 
@@ -304,41 +233,40 @@ class Tester(object):
                         - with top 3 largest uncertainties
                         - each channel: 1000 *(training class id(int) + prediciton confidence(0-1))  
                         '''
-                        sem_img_ros.append(label_img)
+                        sem_img_ros.append(pred_img)
+                        
+                        # =========== vis uncertainty img =========== #
+                        # logits_i = cv2.resize(logits[i].cpu().numpy(),
+                        #                     tuple(ori_img_size), interpolation=cv2.INTER_CUBIC)
+        
+                        logits = F.interpolate(
+                            input=logits, size=(ori_img_size[1], ori_img_size[0]),
+                            mode='bilinear', align_corners=True)  # [b, 1, 2048, 1536]
+                        logits = logits[i].permute(1, 2, 0) # [2048, 1536, 23/num_cls]
 
-                    if self.vis_pred:
-                        # =============== visualie ===============　#
-                        from lib.datasets.tools.transforms import DeNormalize
-                        mean = self.configer.get('normalize', 'mean')
-                        std = self.configer.get('normalize', 'std')
-                        div_value = self.configer.get('normalize', 'div_value')
-                        org_img = DeNormalize(div_value, mean, std)(inputs[k])
-                        org_img = org_img.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
-                        org_img = cv2.cvtColor(org_img, cv2.COLOR_BGR2RGB)
+                        # get the top 3 largest softmax class-wise prediction confidence
+                        # logits_i = torch.from_numpy(logits_i).cuda()
+                        m = nn.Softmax(dim=-1)
+                        logits = m(logits)
+                        val, ind = torch.topk(logits, k=3, dim=-1)  # [h, w, 3]
+                        uncer_img = torch.zeros(
+                            [ori_img_size[1],
+                             ori_img_size[0],
+                             3],
+                            dtype=torch.int64)
+                        for j in range(3):
+                            ''' 
+                            logits: [0, 1]
+                            class id: int
+                            confidence img: (class id[i] + logit[i]) * 100
+                            '''
+                            # [h, w, num_cls]([h, w])
+                            uncer_img[:, :, j] = ((val[:, :, j] + ind[:, :, j]) * 100).long()
 
-                        color_img_ = cv2.resize(
-                            color_img_, (org_img.shape[1],
-                                        org_img.shape[0]),
-                            interpolation=cv2.INTER_NEAREST)
-
-                        # save semantic overlay image
-                        sys_img_part = cv2.addWeighted(org_img, 0.5, color_img_, 0.5, 0.0)
-
-                        sys_img_part = cv2.cvtColor(sys_img_part, cv2.COLOR_RGB2BGR)
-
-                        for i in range(0, 200):
-                            mask = np.zeros_like(color_img_)
-                            mask[color_img_ == i] = 1
-
-                            contours = cv2.findContours(
-                                mask.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[-2]
-                            cv2.drawContours(sys_img_part, contours, -1, (255, 255, 255),
-                                                1, cv2.LINE_AA)
-
-                        vis_overlay_path = os.path.join(self.save_dir, "vis_overlay/",
-                                                '{}.png'.format(names[k]))
-                        FileHelper.make_dirs(vis_overlay_path, is_file=True)
-                        ImageHelper.save(sys_img_part, save_path=vis_overlay_path)
+                        uncer_img = uncer_img.cpu().numpy()  # int64
+                        uncer_img = uncer_img.astype(np.uint8)
+                        # uncer_img = cv2.cvtColor(uncer_img, cv2.CV_16UC1)
+                        uncer_img_ros.append(uncer_img)
 
             self.batch_time.update(time.time() - start_time)
             start_time = time.time()
@@ -350,49 +278,17 @@ class Tester(object):
             return sem_img_ros, uncer_img_ros
 
     def ss_test(self, inputs, scale=1):
-        if isinstance(inputs, torch.Tensor):
-            n, c, h, w = inputs.size(0), inputs.size(1), inputs.size(2), inputs.size(3)
-            scaled_inputs = F.interpolate(
-                inputs, size=(int(h * scale),
-                              int(w * scale)),
-                mode="bilinear", align_corners=True)
-            start = timeit.default_timer()
-            outputs = self.seg_net.forward(scaled_inputs)
-            torch.cuda.synchronize()
-            end = timeit.default_timer()
+        outputs = self.seg_net.forward(inputs)
+        torch.cuda.synchronize()
 
-            if isinstance(outputs, list):
-                outputs = outputs[-1]
-            elif isinstance(outputs, dict):
-                outputs = outputs['seg']
-            elif isinstance(outputs, tuple):
-                outputs = outputs[-1]
-            outputs = F.interpolate(outputs, size=(h, w), mode='bilinear', align_corners=True)
-            return outputs
-        elif isinstance(inputs, collections.Sequence):
-            device_ids = self.configer.get('gpu')
-            replicas = nn.parallel.replicate(self.seg_net.module, device_ids)
-            scaled_inputs, ori_size, outputs = [], [], []
-            for i, d in zip(inputs, device_ids):
-                h, w = i.size(1), i.size(2)
-                ori_size.append((h, w))
-                i = F.interpolate(
-                    i.unsqueeze(0),
-                    size=(int(h * scale),
-                          int(w * scale)),
-                    mode="bilinear", align_corners=True)
-                scaled_inputs.append(i.cuda(d, non_blocking=True))
-            scaled_outputs = nn.parallel.parallel_apply(
-                replicas[:len(scaled_inputs)], scaled_inputs)
-            for i, output in enumerate(scaled_outputs):
-                outputs.append(
-                    F.interpolate(
-                        output[-1],
-                        size=ori_size[i],
-                        mode='bilinear', align_corners=True))
-            return outputs
-        else:
-            raise RuntimeError("Unsupport data type: {}".format(type(inputs)))
+        if isinstance(outputs, list):
+            outputs = outputs[-1]
+        elif isinstance(outputs, dict):
+            outputs = outputs['seg']
+        elif isinstance(outputs, tuple):
+            outputs = outputs[-1]
+        outputs = F.interpolate(outputs, size=(h, w), mode='bilinear', align_corners=True)
+        return outputs
 
     def flip(self, x, dim):
         indices = [slice(None)] * x.dim()

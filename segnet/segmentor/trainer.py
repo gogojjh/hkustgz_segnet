@@ -442,7 +442,8 @@ class Trainer(object):
                                         pred, dim=1)  # [b h w]
 
                                     self.seg_visualizer.vis_error(
-                                        inputs[i], pred[i], targets[i], names[i])
+                                        pred[i], targets[i], names[i])
+                                    pred_img = self.seg_visualizer.vis_pred(inputs[i], pred[i], names[i])
                     if self.vis_prototype and self.configer.get('iters') % (self.configer.get('solver', 'test_interval') * 4) == 0:
                         if (j % (self.configer.get(
                                 'uncertainty_visualizer', 'vis_inter_iter'))) == 0:
