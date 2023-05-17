@@ -8,7 +8,6 @@
 *.pt
 *.pth
 *.log
-*.png
 
 wandb
 log
@@ -18,4 +17,4 @@ segnet_ros/devel
 segnet_ros/logs
 segnet_ros/.vscode
 segnet_ros/.catkin_tools
-
+segnet_ros/src/none/label/*.png
