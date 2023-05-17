@@ -23,6 +23,36 @@ SEG_DIR = 'vis/results/seg'
 ERROR_MAP_DIR = 'vis/results/error_map'
 
 
+FS_COLOR_MAP = np.array([
+    [177, 165, 25], # 0: 'void/unlabelled'
+    [0, 162, 170],  # 1: 'drivable road'
+    [162, 248, 63],  # 2 'sidewalk'
+    [241, 241, 241],  # 3:'parking'
+    [147, 109, 6],  # 4 'curb'
+    [122, 172, 9],  # 5 'bike Path'
+    [12, 217, 219],  # 6 'road marking'
+    [7, 223, 115],  # 7 'low-speed road'
+    [161, 161, 149],  # 8 'lane'  
+    [231, 130, 130],  # 9 'person'
+    [252, 117, 35],  # 10 'rider'
+    [92, 130, 216], # 11 'car'
+    [0, 108, 114],  # 12 'bicycle'
+    [0, 68, 213], # 13 'motorcycle'
+    [91, 0, 231],  # 14 'truck'
+    [227, 68, 255],  # 15 'building'
+    [168, 38, 191],  # 16 fence
+    [106, 0, 124],  # 17 'wall'
+    [255, 215, 73],  # 18 'vegetation'
+    [209, 183, 91],  # 19 'terrain'
+    [244, 255, 152], # 'river'
+    [138, 164, 165], # 'pole'
+    [175, 0, 106], # 'traffic sign'
+    [228, 0, 140], # 'traffic light'
+    [234, 178, 200], # 'road block'
+    [255, 172, 172] # 'sky'
+])
+
+
 FS_CS_COLOR_MAP = np.array([
     [105, 105, 105], # 0: 'void/unlabelled'
     [128, 64, 128],  # 1: 'road'
@@ -47,7 +77,7 @@ FS_CS_COLOR_MAP = np.array([
     [119, 11, 32],  # 20 'bicycle'
     [12, 217, 219], # 21 'road marking'
     [244, 255, 152], # 22: 'river'
-    [234, 178, 200] # 23: 'road block'
+    [234, 178, 200], # 23: 'road block'
 ])
 
 # Define colors (in RGB) for different labels
@@ -143,7 +173,12 @@ class SegVisualizer(object):
         
         # vis semantic image
         pred = self.__remap_pred(pred)
-        pred = FS_CS_COLOR_MAP[pred].astype(np.uint8)
+        if self.configer.get('data', 'num_classes') == 23:
+            pred = FS_CS_COLOR_MAP[pred].astype(np.uint8)
+        elif self.configer.get('data', 'num_classes') == 25:
+            pred = FS_COLOR_MAP[pred].astype(np.uint8)
+        else: 
+            pred = CS_COLOR_MAP[pred].astype(np.uint8)
         
         if self.configer.get('val', 'vis_pred') or self.configer.get('test', 'vis_pred'):
             weighted_img = cv2.addWeighted(ori_img, 0.5, pred, 0.5, 0.0)

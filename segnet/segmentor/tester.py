@@ -130,7 +130,6 @@ class Tester(object):
         self.module_runner = ModuleRunner(configer)
         self.model_manager = ModelManager(configer)
         self.optim_scheduler = OptimScheduler(configer)
-        self.seg_data_loader = DataLoader(configer)
         self.save_dir = self.configer.get('train', 'out_dir')
         self.seg_net = None
         self.test_loader = None
@@ -152,12 +151,6 @@ class Tester(object):
         self.seg_net = self.model_manager.semantic_segmentor()
         self.seg_net = self.module_runner.load_net(self.seg_net)
 
-        '''if 'test' in self.save_dir:
-            self.test_loader = self.seg_data_loader.get_testloader()
-            self.test_size = len(self.test_loader) * self.configer.get('test', 'batch_size')
-        else:
-            self.test_loader = None
-            self.test_size = 1'''
         self.test_loader = None
         self.test_size = 1
 

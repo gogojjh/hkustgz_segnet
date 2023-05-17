@@ -41,9 +41,6 @@ class ModuleRunner(object):
         if not self.configer.exists('network', 'bn_type'):
             self.configer.add(['network', 'bn_type'], 'torchbn')
 
-        # if self.configer.get('phase') == 'train':
-        #     assert len(self.configer.get('gpu')) > 1 or self.configer.get('network', 'bn_type') == 'torchbn'
-
         Log.info('BN Type is {}.'.format(
             self.configer.get('network', 'bn_type')))
 
@@ -116,7 +113,7 @@ class ModuleRunner(object):
 
             # load state_dict
             if hasattr(net, 'module'):
-                if self.configer.get('dataset') == 'hkustgz':
+                if self.configer.get('dataset') == 'hkustgz' and self.configer.get('phase') == 'train':
                     self.load_state_dict_hkustgz(net.module, checkpoint_dict, False)
                 else:
                     self.load_state_dict(net.module, checkpoint_dict, self.configer.get(
@@ -168,6 +165,54 @@ class ModuleRunner(object):
 
         return net
     
+    @staticmethod
+    def load_state_dict(module, state_dict, strict=False):
+        """Load state_dict to a module.
+        This method is modified from :meth:`torch.nn.Module.load_state_dict`.
+        Default value for ``strict`` is set to ``False`` and the message for
+        param mismatch will be shown even if strict is False.
+        Args:
+            module (Module): Module that receives the state_dict.
+            state_dict (OrderedDict): Weights.
+            strict (bool): whether to strictly enforce that the keys
+                in :attr:`state_dict` match the keys returned by this module's
+                :meth:`~torch.nn.Module.state_dict` function. Default: ``False``.
+        """
+        unexpected_keys = []
+        own_state = module.state_dict()
+        for name, param in state_dict.items():
+            if name not in own_state:
+                unexpected_keys.append(name)
+                continue
+            if isinstance(param, torch.nn.Parameter):
+                # backwards compatibility for serialized parameters
+                param = param.data
+
+            try:
+                own_state[name].copy_(param)
+            except Exception:
+                Log.warn('While copying the parameter named {}, '
+                         'whose dimensions in the model are {} and '
+                         'whose dimensions in the checkpoint are {}.'
+                         .format(name, own_state[name].size(),
+                                 param.size()))
+
+        missing_keys = set(own_state.keys()) - set(state_dict.keys())
+
+        err_msg = []
+        if unexpected_keys:
+            err_msg.append('unexpected key in source state_dict: {}\n'.format(
+                ', '.join(unexpected_keys)))
+        if missing_keys:
+            # we comment this to fine-tune the models with some missing keys.
+            err_msg.append('missing keys in source state_dict: {}\n'.format(
+                ', '.join(missing_keys)))
+        err_msg = '\n'.join(err_msg)
+        if err_msg:
+            if strict:
+                raise RuntimeError(err_msg)
+            else:
+                Log.warn(err_msg)
     
     @staticmethod
     def load_state_dict_hkustgz(module, state_dict, strict=False):

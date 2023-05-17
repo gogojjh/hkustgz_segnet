@@ -39,9 +39,7 @@ class UncertaintyVisualizer(object):
         if get_rank() == 0:
             wandb.log({'uncertainty image': [im]})
 
-    def vis_uncertainty(self, uncertainty, gt, name='default'):
-        # uncertainty[gt == self.ignore_label] = 0
-
+    def vis_uncertainty(self, uncertainty, name='default'):
         base_dir = os.path.join(self.configer.get('train', 'out_dir'), UNCERTAINTY_DIR)
 
         if not isinstance(uncertainty, np.ndarray):

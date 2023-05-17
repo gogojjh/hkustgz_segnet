@@ -10,15 +10,10 @@ import rospy
 import sys
 sys.path.append('/home/catkin_ws/src/segnet')
 
-from segmentor.tester import Tester
-from lib.utils.tools.configer import Configer
-from lib.utils.tools.logger import Logger as Log
-from lib.utils.distributed import handle_distributed
-
 
 warnings.filterwarnings('ignore')
 
-CONFIG_PATH = '/home/hkustgz_segnet/src/segnet/configs/segnet_cobra/segnet_cobra.json'
+CONFIG_PATH = '/home/catkin_ws/src/segnet/configs/segnet_cobra/segnet_cobra.json'
 
 
 def str2bool(v):
@@ -175,6 +170,10 @@ if __name__ == "__main__":
 
     args_parser = parser.parse_args()
 
+    from segmentor.tester import Tester
+    from lib.utils.tools.configer import Configer
+    from lib.utils.tools.logger import Logger as Log
+    from lib.utils.distributed import handle_distributed
     handle_distributed(args_parser, os.path.expanduser(
         os.path.abspath(__file__)))
 

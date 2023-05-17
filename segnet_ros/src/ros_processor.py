@@ -8,7 +8,7 @@ from lib.extensions.parallel.data_container import DataContainer
 from lib.datasets.tools.collate import collate
 import lib.datasets.tools.transforms as trans
 import sys
-sys.path.append('/home/hkustgz_segnet/src/segnet')
+sys.path.append('/home/catkin_ws/src/segnet')
 # from custom_imagemsg.msg import CustomImage
 
 

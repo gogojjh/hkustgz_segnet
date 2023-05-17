@@ -269,5 +269,7 @@ class ProbProtoSegHead(nn.Module):
         elif self.configer.get('proto_visualizer', 'vis_prototype'):
             sim_mat = sim_mat.reshape(b_size, h_size, -1, self.num_classes * self.num_prototype)
             return {'seg': out_seg, 'logits': sim_mat}
+        elif self.configer.get('phase') == 'test_ros':
+            return {'seg': out_seg}
         else:
             return out_seg

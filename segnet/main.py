@@ -228,11 +228,6 @@ if __name__ == "__main__":
             wandb.watch(model.seg_net, criterion=model.pixel_loss, log_freq=10, log='all')
             wandb.save(args_parser.configs)
 
-    #! for resume training
-    # if configer.get('network', 'resume') is not None:
-    #     configer.update(('phase',), 'train')
-    #     configer.update(('network', 'resume_continue'), True)
-
     if configer.get('phase') == 'train' or configer.get('phase') == 'val':
         model.train()
         wandb.finish()
