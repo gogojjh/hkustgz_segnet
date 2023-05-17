@@ -143,4 +143,4 @@ $DATA_ROOT
 
 Training data: Cityscapes
 Test data: HKUSTGZ
-![image](docs/media/1669971886354309510.png)
+![image](docs/media/rviz_screenshot.png)
