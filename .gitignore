@@ -20,5 +20,8 @@ segnet_ros/.catkin_tools
 segnet_ros/src/none/label/*.png
 
 # config files
+segnet/checkpoints
 segnet/configs/cityscapes/*.json
 segnet/configs/hkustgz/*.json
+
+segnet_ros/scripts/run_segnet_ros.sh

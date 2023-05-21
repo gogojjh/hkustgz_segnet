@@ -8,8 +8,7 @@ import torch.backends.cudnn as cudnn
 import warnings
 import rospy
 import sys
-sys.path.append('/home/catkin_ws/src/segnet')
-
+# sys.path.append('/home/catkin_ws/src/segnet')
 
 warnings.filterwarnings('ignore')
 

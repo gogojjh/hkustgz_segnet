@@ -17,6 +17,7 @@ class ROSProcessor():
         self.configer = configer
         self.img_topic = self.configer.get('ros', 'image_topic')
         self.sem_img_topic = self.configer.get('ros', 'sem_image_topic')
+        self.sem_rgb_img_topic = self.configer.get('ros', 'sem_rgb_image_topic')
         self.uncer_img_topic = self.configer.get('ros', 'uncer_image_topic')
         self.msg_type = self.configer.get('ros', 'msg_type')
 
@@ -48,22 +49,34 @@ class ROSProcessor():
             self.img_sub = rospy.Subscriber(
                 self.img_topic, Image, self._image_callback, queue_size=1, buff_size=52428800)
         self.sem_img_pub = rospy.Publisher(self.sem_img_topic, Image, queue_size=1)
+        self.sem_rgb_img_pub = rospy.Publisher(self.sem_rgb_img_topic, Image, queue_size=1)
         self.uncer_img_pub = rospy.Publisher(self.uncer_img_topic, Image, queue_size=1)
 
     def pub_semimg_msg(self, sem_img, ori_header):
+        import numpy as np
         bridge = CvBridge()
-
         try:
-            self.sem_img_pub.publish(bridge.cv2_to_imgmsg(sem_img, encoding="passthrough", header=ori_header))
+            sem_img_16UC1 = sem_img.astype(np.uint16)
+            self.sem_img_pub.publish(bridge.cv2_to_imgmsg(
+                sem_img_16UC1, 'mono16', header=ori_header))
             Log.info('pub sem img topic')
+        except CvBridgeError as e:
+            Log.error(e)
+
+    def pub_semrgbimg_msg(self, sem_rgb_img, ori_header):
+        import numpy as np
+        bridge = CvBridge()
+        try:
+            self.sem_rgb_img_pub.publish(bridge.cv2_to_imgmsg(
+                sem_rgb_img, 'bgr8', header=ori_header))
+            Log.info('pub sem rgb img topic')
         except CvBridgeError as e:
             Log.error(e)
 
     def pub_uncerimg_msg(self, uncer_img, ori_header):
         bridge = CvBridge()
-
         try:
-            self.uncer_img_pub.publish(bridge.cv2_to_imgmsg(uncer_img, encoding="passthrough",
+            self.uncer_img_pub.publish(bridge.cv2_to_imgmsg(uncer_img, encoding="bgr8",
                                                             header=ori_header))
             Log.info('pub uncertainty img topic')
         except CvBridgeError as e:
@@ -74,10 +87,11 @@ class ROSProcessor():
 
         sem_img_ros, uncer_img_ros_list = self.model.test()  # test phase of the model
         assert uncer_img_ros_list[0].shape[-1] == 3
-        assert len(sem_img_ros) == 1
+        assert len(sem_img_ros) == 2
 
         self.pub_uncerimg_msg(uncer_img_ros_list[0], ori_header)
         self.pub_semimg_msg(sem_img_ros[0], ori_header)
+        self.pub_semrgbimg_msg(sem_img_ros[1], ori_header)
 
     def _prepare_data_dict(self, img, timestamp):
         ''' 

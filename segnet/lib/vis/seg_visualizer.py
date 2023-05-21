@@ -170,30 +170,36 @@ class SegVisualizer(object):
         ori_img = DeNormalize(div_value, mean, std)(ori_img)
         ori_img = ori_img.permute(1, 2, 0).cpu().numpy().astype(np.uint8)  # [1024 2048 3]
         # ori_img = cv2.cvtColor(ori_img, cv2.COLOR_BGR2RGB)
-        
+
         # vis semantic image
         pred = self.__remap_pred(pred)
+        prev_rgb_vis = pred
         if self.configer.get('data', 'num_classes') == 23:
-            pred = FS_CS_COLOR_MAP[pred].astype(np.uint8)
+            prev_rgb_vis = FS_CS_COLOR_MAP[pred].astype(np.uint8)
         elif self.configer.get('data', 'num_classes') == 25:
-            pred = FS_COLOR_MAP[pred].astype(np.uint8)
+            prev_rgb_vis = FS_COLOR_MAP[pred].astype(np.uint8)
         else: 
-            pred = CS_COLOR_MAP[pred].astype(np.uint8)
-        
+            prev_rgb_vis = CS_COLOR_MAP[pred].astype(np.uint8)
+       
         if self.configer.get('val', 'vis_pred') or self.configer.get('test', 'vis_pred'):
-            weighted_img = cv2.addWeighted(ori_img, 0.5, pred, 0.5, 0.0)
+            weighted_img = cv2.addWeighted(ori_img, 0.5, prev_rgb_vis, 0.5, 0.0)
 
-            #weighted_img = cv2.cvtColor(weighted_img, cv2.COLOR_RGB2BGR)
+            #weighted_img = cv2.cvtColor(weighted_img, cv2.COLOR_RGB2BGR)           
             
             pred_path = os.path.join(base_dir, '{}_pred.png'.format(name))
             FileHelper.make_dirs(pred_path, is_file=True)
-            ImageHelper.save(weighted_img, save_path=pred_path)
+            ImageHelper.save(prev_rgb_vis, save_path=pred_path)
             Log.info('Saving {}_pred.png'.format(name))
+
+            pred_path = os.path.join(base_dir, '{}_pred_orig.png'.format(name))
+            FileHelper.make_dirs(pred_path, is_file=True)
+            ImageHelper.save(weighted_img, save_path=pred_path)
+            Log.info('Saving {}_pred_orig.png'.format(name))
 
             if self.wandb_mode == 'online':
                 self.wandb_log_pred_img(pred_path, '{}_pred.jpg'.format(name))
-            
-        return pred
+
+        return pred, prev_rgb_vis
 
     def vis_error(self, pred, gt, name='default'):
         base_dir = os.path.join(self.configer.get('train', 'out_dir'), ERROR_MAP_DIR)
