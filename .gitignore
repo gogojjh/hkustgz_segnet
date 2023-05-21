@@ -18,3 +18,7 @@ segnet_ros/logs
 segnet_ros/.vscode
 segnet_ros/.catkin_tools
 segnet_ros/src/none/label/*.png
+
+# config files
+segnet/configs/cityscapes/*.json
+segnet/configs/hkustgz/*.json
