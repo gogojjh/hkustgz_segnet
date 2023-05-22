@@ -1,0 +1,253 @@
+{
+	"dataset": "hkustgz",
+	"dataset_train": ["hkustgz", "cityscapes"],
+	"method": "fcn_segmentor",
+	"data": {
+		"image_tool": "cv2",
+		"input_mode": "BGR",
+		"num_classes": 22,
+		"label_list": {
+			"label_list_fs": [
+				[10, 20, 40, 35, 45],
+				15,
+				80,
+				90,
+				85,
+				110,
+				120,
+				115,
+				95,
+				100,
+				130,
+				50,
+				55,
+				60,
+				75,
+				-1,
+				-1,
+				70,
+				65,
+				25,
+				105,
+				125
+			],
+			"label_list_cs": [
+				7, 8, 11, 12, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33
+			]
+		},
+		"ignore_label_id": {
+			"ignore_label_id_fs": [135, 30],
+			"ignore_label_id_cs": 0
+		},
+		"data_dir": "/data/HKUSTGZ",
+		"data_dir_train": ["/data/HKUSTGZ", "/data/Cityscapes"],
+		"workers": 8
+	},
+	"train": {
+		"batch_size": 12,
+		"data_transformer": {
+			"size_mode": "fix_size",
+			"input_size": [1024, 768],
+			"align_method": "only_pad",
+			"pad_mode": "random"
+		},
+		"out_dir": "/save_data/hkustgz"
+	},
+	"val": {
+		"batch_size": 4,
+		"mode": "ss_test",
+		"data_transformer": {
+			"size_mode": "fix_size",
+			"input_size": [2048, 1536],
+			"align_method": "only_pad"
+		},
+		"vis_prototype": true,
+		"vis_proto_inter": 60,
+		"vis_pred": true
+	},
+	"test": {
+		"batch_size": 4,
+		"mode": "ss_test",
+		"out_dir": "/data/hkustgz_result",
+		"data_transformer": {
+			"size_mode": "fix_size",
+			"input_size": [2048, 1536],
+			"align_method": "only_pad"
+		},
+		"vis_prototype": false,
+		"vis_pred": true
+	},
+	"train_trans": {
+		"trans_seq": ["random_resize", "random_crop", "random_hflip", "random_brightness"],
+		"duplicate_num": 4,
+		"random_brightness": {
+			"ratio": [1.0, 0.5, 0.7, 1.5],
+			"shift_value": [10, 30, 20, 40]
+		},
+		"random_hflip": {
+			"ratio": [0.5, 0.3, 0.4, 0.6],
+			"swap_pair": []
+		},
+		"random_resize": {
+			"ratio": 1.0,
+			"method": "random",
+			"scale_range": [
+				[0.5, 2.0],
+				[0.75, 1.25],
+				[0.25, 1.5],
+				[0.8, 1.4]
+			],
+			"aspect_range": [
+				[0.9, 1.1],
+				[0.8, 1.2],
+				[0.7, 0.9],
+				[1.1, 0.9]
+			]
+		},
+		"random_crop": {
+			"ratio": 1.0,
+			"crop_size": [
+				[1024, 768],
+				[1024, 768],
+				[1024, 768],
+				[1024, 768]
+			],
+			"method": "random",
+			"allow_outside_center": false
+		}
+	},
+	"val_trans": {
+		"trans_seq": []
+	},
+	"normalize": {
+		"div_value": 255.0,
+		"mean_value": [0.485, 0.456, 0.406],
+		"mean": [0.485, 0.456, 0.406],
+		"std": [0.229, 0.224, 0.225]
+	},
+	"checkpoints": {
+		"checkpoints_name": "hkustgz_seg",
+		"checkpoints_dir": "/save_data/checkpoints/hkustgz",
+		"save_iters": 1000
+	},
+	"network": {
+		"backbone": "hrnet48",
+		"resume": null,
+		"resume_cityscapes": null,
+		"resume_continue": false,
+		"multi_grid": [1, 1, 1],
+		"model_name": "base_ocnet",
+		"stride": 8,
+		"bn_type": "torchsyncbn",
+		"factors": [[8, 8]],
+		"loss_weights": {
+			"corr_loss": 0.01,
+			"aux_loss": 0.4,
+			"seg_loss": 1.0
+		}
+	},
+	"logging": {
+		"logfile_level": "info",
+		"stdout_level": "info",
+		"log_file": "/save_data/log/hkustgz/hr_w48_attn_uncer_proto_hkustgz.log",
+		"log_format": "%(asctime)s %(levelname)-7s %(message)s",
+		"rewrite": true
+	},
+	"lr": {
+		"base_lr": 0.01,
+		"metric": "iters",
+		"lr_policy": "lambda_poly",
+		"step": {
+			"gamma": 0.5,
+			"step_size": 100
+		}
+	},
+	"var_lr": {
+		"base_lr": 0.0001,
+		"lr_policy": "warmup_cosine",
+		"metric": "iters",
+		"warmup_steps": 1000,
+		"t_total": 80000
+	},
+	"solver": {
+		"display_iter": 10,
+		"test_interval": 2000,
+		"max_iters": 50000
+	},
+	"optim": {
+		"optim_method": "sgd",
+		"adam": {
+			"betas": [0.9, 0.999],
+			"eps": 1e-8,
+			"weight_decay": 0.0001
+		},
+		"sgd": {
+			"weight_decay": 0.0005,
+			"momentum": 0.9,
+			"nesterov": false
+		}
+	},
+	"loss": {
+		"loss_type": "pixel_prob_prototype_ce_loss",
+		"proto_alignment_loss": true,
+		"init_shift": 15,
+		"init_negative_scale": 15,
+		"focal_gamma": 2,
+		"params": {
+			"ce_reduction": "elementwise_mean",
+			"ce_ignore_index": -1,
+			"ohem_minkeep": 100000,
+			"ohem_thresh": 0.9
+		}
+	},
+	"protoseg": {
+		"mean_gamma": 0.999,
+		"var_gamma": 0.999,
+		"num_prototype": 10,
+		"pretrain_prototype": false,
+		"use_rmi": false,
+		"use_prototype": true,
+		"update_prototype": true,
+		"warmup_iters": 0,
+		"similarity_measure": "cosine",
+		"use_uncertainty": false,
+		"sinkhorn_epsilon": 0.05,
+		"sinkhorn_iterations": 3,
+		"prob_ppd_weight": 0.1,
+		"prob_ppc_weight": 0.01,
+		"uncer_seg_loss_weight": 0.1,
+		"confidence_seg_loss_weight": 0.2,
+		"proj_dim": 720,
+		"ndf_dim": 32,
+		"use_boundary": false,
+		"reparam_k": 4,
+		"cosine_classifier": true,
+		"top_k_num": 3,
+		"max_proto_voting": false
+	},
+	"uncertainty_visualizer": {
+		"vis_uncertainty": true,
+		"vis_interval_img": 1,
+		"vis_inter_iter": 1,
+		"dataset": "val"
+	},
+	"proto_visualizer": {
+		"vis_prototype": false,
+		"vis_interval_img": 1,
+		"vis_inter_iter": 60,
+		"dataset": "val"
+	},
+	"wandb": {
+		"mode": "online"
+	},
+	"run": {
+		"server": 0
+	},
+	"ros": {
+		"use_ros": true,
+		"image_topic": "/stereo/frame_left/image_raw/compressed",
+		"sem_image_topic": "/semantic_image",
+		"uncer_image_topic": "/uncertainty_image",
+		"msg_type": "sensor_msgs/CompressedImage"
+	}
+}
