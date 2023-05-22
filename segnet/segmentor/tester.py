@@ -216,7 +216,7 @@ class Tester(object):
                     # =========== vis prediction img =========== #
                     pred = torch.argmax(
                         logits, dim=1)  # [b h w]
-                    pred_img = self.seg_visualizer.vis_pred(inputs[i], pred[i], names[i])
+                    pred_img, pred_rgb_vis = self.seg_visualizer.vis_pred(inputs[i], pred[i], names[i])
                     
                     if self.configer.get(
                             'ros', 'use_ros') and self.configer.get('phase') == 'test_ros':
@@ -227,6 +227,7 @@ class Tester(object):
                         - each channel: 1000 *(training class id(int) + prediciton confidence(0-1))  
                         '''
                         sem_img_ros.append(pred_img)
+                        sem_img_ros.append(pred_rgb_vis)
                         
                         # =========== vis uncertainty img =========== #
                         # logits_i = cv2.resize(logits[i].cpu().numpy(),

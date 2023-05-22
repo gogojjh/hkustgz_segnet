@@ -5,7 +5,7 @@
 	"data": {
 		"image_tool": "cv2",
 		"input_mode": "BGR",
-		"num_classes": 23,
+		"num_classes": 25,
 		"label_list": {
 			"label_list_fs": [
 				[10, 20, 40],
@@ -133,7 +133,7 @@
 	},
 	"network": {
 		"backbone": "hrnet48",
-		"resume": "/data/checkpoints/cs_fs.pth",
+		"resume": "/data/checkpoints/cs_backbone_fs.pth",
 		"resume_cityscapes": null,
 		"resume_continue": false,
 		"multi_grid": [1, 1, 1],
@@ -249,6 +249,7 @@
 		"image_topic": "/stereo/frame_left/image_raw/compressed",
 		"sem_image_topic": "/semantic_image",
 		"uncer_image_topic": "/uncertainty_image",
+		"sem_rgb_image_topic": "/semantic_rgb_image",
 		"msg_type": "sensor_msgs/CompressedImage"
 	}
 }

@@ -8,11 +8,11 @@ import torch.backends.cudnn as cudnn
 import warnings
 import rospy
 import sys
-# sys.path.append('/home/catkin_ws/src/segnet')
+sys.path.append('/home/catkin_ws/src/segnet')
 
 warnings.filterwarnings('ignore')
 
-CONFIG_PATH = '/home/catkin_ws/src/segnet/configs/segnet_cobra/segnet_cobra.json'
+# CONFIG_PATH = '/home/catkin_ws/src/segnet/configs/segnet_cobra/segnet_cobra.json'
 
 
 def str2bool(v):

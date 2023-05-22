@@ -173,22 +173,22 @@ class SegVisualizer(object):
 
         # vis semantic image
         pred = self.__remap_pred(pred)
-        prev_rgb_vis = pred
+        pred_rgb_vis = pred
         if self.configer.get('data', 'num_classes') == 23:
-            prev_rgb_vis = FS_CS_COLOR_MAP[pred].astype(np.uint8)
+            pred_rgb_vis = FS_CS_COLOR_MAP[pred].astype(np.uint8)
         elif self.configer.get('data', 'num_classes') == 25:
-            prev_rgb_vis = FS_COLOR_MAP[pred].astype(np.uint8)
+            pred_rgb_vis = FS_COLOR_MAP[pred].astype(np.uint8)
         else: 
-            prev_rgb_vis = CS_COLOR_MAP[pred].astype(np.uint8)
+            pred_rgb_vis = CS_COLOR_MAP[pred].astype(np.uint8)
        
         if self.configer.get('val', 'vis_pred') or self.configer.get('test', 'vis_pred'):
-            weighted_img = cv2.addWeighted(ori_img, 0.5, prev_rgb_vis, 0.5, 0.0)
+            weighted_img = cv2.addWeighted(ori_img, 0.5, pred_rgb_vis, 0.5, 0.0)
 
             #weighted_img = cv2.cvtColor(weighted_img, cv2.COLOR_RGB2BGR)           
             
             pred_path = os.path.join(base_dir, '{}_pred.png'.format(name))
             FileHelper.make_dirs(pred_path, is_file=True)
-            ImageHelper.save(prev_rgb_vis, save_path=pred_path)
+            ImageHelper.save(pred_rgb_vis, save_path=pred_path)
             Log.info('Saving {}_pred.png'.format(name))
 
             pred_path = os.path.join(base_dir, '{}_pred_orig.png'.format(name))
@@ -199,7 +199,7 @@ class SegVisualizer(object):
             if self.wandb_mode == 'online':
                 self.wandb_log_pred_img(pred_path, '{}_pred.jpg'.format(name))
 
-        return pred, prev_rgb_vis
+        return pred, pred_rgb_vis
 
     def vis_error(self, pred, gt, name='default'):
         base_dir = os.path.join(self.configer.get('train', 'out_dir'), ERROR_MAP_DIR)
