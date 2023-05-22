@@ -86,6 +86,7 @@ roslaunch segnet_ros segnet_ros.launch
 ### Configure the Running Scripe
 
 In [run_segnet_ros.sh](segnet_ros/scripts/run_segnet_ros.sh):
+
 ```
 # change the checkpoint path
 CHECKPOINTS_ROOT="/data/checkpoints"
@@ -111,7 +112,6 @@ CHECKPOINTS_NAME="hr_w48_attn_uncer_proto_hkustgz_max_performance.pth"
 		"vis_pred": true
 	}
 ```
-
 
 ### Config for ROS
 
@@ -141,6 +141,26 @@ In [hkustgz_ros.json](segnet/configs/hkustgz/hkustgz_ros.json):
 	}
 ```
 
+## Config Versions
+
+### version_1([semantic_fusionportable_v1.json](segnet/configs/hkustgz/v1/semantic_fusionportable_v1.json)/[semantic_fusionportable_v1.yaml](segnet/configs/hkustgz/v1/semantic_fusionportable_v1.yaml))
+
+Training with 25 classes of Fusionportable in total, and the training data only includes Fusionportable.
+
+### version_2([fusionportable_cityscapes_v2.json](segnet/configs/hkustgz/v2/fusionportable_cityscapes_v2.json)/[fusionportable_cityscapes_v2.yaml](segnet/configs/hkustgz/v2/fusionportable_cityscapes_v2.yaml))
+
+Integrate some classes of the original Fusionportable dataset into one class for training, and the resulting number of classes is 23. Training data includes both Fusionportable and Cityscapes (class_id = 15: 'bus', class_id = 16: 'train' only exist in Cityscapes).
+
+-   'parking' and 'low-speed road' are integrated into 'drivable road'
+-   'bike path' is integrated into 'sidewalk'
+-   'road marking' is integrated into 'lane'
+
+### version_3([fusionportable_cityscapes_v3.json](segnet/configs/hkustgz/v3/fusionportable_cityscapes_v3.json)/[fusionportable_cityscapes_v3.yaml](segnet/configs/hkustgz/v3/fusionportable_cityscapes_v3.yaml))
+
+Integrate some classes of the original Fusionportable dataset into one class for training, and the resulting number of classes is 23. Training data includes both Fusionportable and Cityscapes (class_id = 15: 'bus', class_id = 16: 'train' only exist in Cityscapes).
+
+-   'parking', 'low-speed road', 'road marking', 'lane' are integrated into 'drivable road'
+
 ## Usages of different folders:
 
 ### Datasets
@@ -162,16 +182,12 @@ In [hkustgz_ros.json](segnet/configs/hkustgz/hkustgz_ros.json):
 ```
 $DATA_ROOT
 ├── hkustgz
-│   ├── coarse
-│   │   ├── image
-│   │   ├── instance
-│   │   └── label
 │   ├── train
 │   │   ├── image
-│   │   └── label
+│   │   └── label_id
 │   ├── val
 │   │   ├── image
-│   │   └── label
+│   │   └── label_id
 ```
 
 ## Current Results

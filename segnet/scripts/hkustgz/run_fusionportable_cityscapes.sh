@@ -14,7 +14,7 @@ DATA_DIR="/data/HKUSTGZ"
 SAVE_DIR="${SCRATCH_ROOT}/hkustgz/seg_results/"
 BACKBONE="hrnet48"
 
-CONFIGS="configs/hkustgz/hkustgz_cityscapes.json"
+CONFIGS="configs/hkustgz/v3/fusionportable_cityscapes_v3.json"
 CONFIGS_TEST="configs/hkustgz/H_48_D_4_TEST.json"
 
 MODEL_NAME="hr_w48_attn_uncer_proto"
@@ -39,7 +39,7 @@ if [ "$1"x == "train"x ]; then
                        --log_to_file n \
                        --backbone ${BACKBONE} \
                        --model_name ${MODEL_NAME} \
-                       --gpu 0 1 2 3\
+                       --gpu 0 1\
                        --data_dir ${DATA_DIR} \
                        --loss_type ${LOSS_TYPE} \
                        --max_iters ${MAX_ITERS} \

@@ -150,7 +150,7 @@ class CityscapesFusionPortableLoader(data.Dataset):
         for i in range(len(label_list)):
             if not isinstance(label_list[i], list):
                 if label_list[i] == -1: 
-                    # class exist in cityscapes, but not exists in fusionportable
+                    #! class exist in cityscapes, but not exists in fusionportable
                     continue
                 else: 
                     class_id = label_list[i]
