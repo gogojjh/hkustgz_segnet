@@ -22,7 +22,7 @@ matplotlib.use('Agg')
 SEG_DIR = 'vis/results/seg'
 ERROR_MAP_DIR = 'vis/results/error_map'
 
-
+# num_classes = 25 + 1
 FS_COLOR_MAP = np.array([
     [177, 165, 25], # 0: 'void/unlabelled'
     [0, 162, 170],  # 1: 'drivable road'
@@ -52,11 +52,11 @@ FS_COLOR_MAP = np.array([
     [255, 172, 172] # 'sky'
 ])
 
-
+# num_classes = 23 + 1
 FS_CS_COLOR_MAP = np.array([
     [105, 105, 105], # 0: 'void/unlabelled'
     [128, 64, 128],  # 1: 'road'
-    [244, 35, 232],  # 2 'sidewalk'
+    [92, 130, 216],  # 2 'bike path'
     [70, 70, 70],  # 3:'building'
     [102, 102, 156],  # 4 wall
     [190, 153, 153],  # 5 fence
@@ -73,14 +73,42 @@ FS_CS_COLOR_MAP = np.array([
     [0, 60, 100],  # 16 bus
     [0, 80, 100],  # 17 train
     [0, 0, 230],  # 18 'motorcycle'
-    [147, 109, 6], # 19: 'curb
-    [119, 11, 32],  # 20 'bicycle'
-    [12, 217, 219], # 21 'road marking'
-    [244, 255, 152], # 22: 'river'
-    [234, 178, 200], # 23: 'road block'
+    [147, 109, 6], # 19: 'bicycle'
+    [119, 11, 32],  # 20 'curb'
+    [244, 255, 152], # 21: 'river'
+    [234, 178, 200], # 22: 'road block'
+    [244, 35, 232],  # 23 'sidewalk'
 ])
 
-# Define colors (in RGB) for different labels
+# num_classes = 22 + 1
+FS_CS_COLOR_MAP_V2 = np.array([
+    [105, 105, 105], # 0: 'void/unlabelled'
+    [128, 64, 128],  # 1: 'road'
+    [244, 35, 232], # 2 'sidewalk'
+    [70, 70, 70],  # 3:'building'
+    [102, 102, 156],  # 4 wall
+    [190, 153, 153],  # 5 fence
+    [153, 153, 153],  # 6 pole
+    [250, 170, 30],  # 7 'traffic light'
+    [220, 220, 0],  # 8 'traffic sign'
+    [107, 142, 35],  # 9 'vegetation'
+    [152, 251, 152],  # 10 'terrain'
+    [70, 130, 180], # 11 sky
+    [220, 20, 60],  # 12 person
+    [255, 0, 0], # 13 rider
+    [0, 0, 142],  # 14 car
+    [0, 0, 70],  # 15 truck
+    [0, 60, 100],  # 16 bus
+    [0, 80, 100],  # 17 train
+    [0, 0, 230],  # 18 'motorcycle'
+    [147, 109, 6], # 19: 'bicycle'
+    [119, 11, 32],  # 20 'curb'
+    [244, 255, 152], # 21: 'river'
+    [234, 178, 200], # 22: 'road block'
+])
+
+
+# num_classes = 19 + 1
 CS_COLOR_MAP = np.array([
     [105, 105, 105], # 0: 'void/unlabelled'
     [128, 64, 128],  # 1: 'road'
@@ -178,6 +206,8 @@ class SegVisualizer(object):
             pred_rgb_vis = FS_CS_COLOR_MAP[pred].astype(np.uint8)
         elif self.configer.get('data', 'num_classes') == 25:
             pred_rgb_vis = FS_COLOR_MAP[pred].astype(np.uint8)
+        elif self.configer.get('data', 'num_classes') == 22:
+            pred_rgb_vis = FS_CS_COLOR_MAP_V2[pred].astype(np.uint8)
         else: 
             pred_rgb_vis = CS_COLOR_MAP[pred].astype(np.uint8)
        

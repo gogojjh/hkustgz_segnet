@@ -5,7 +5,7 @@
 	"data": {
 		"image_tool": "cv2",
 		"input_mode": "BGR",
-		"num_classes": 25,
+		"num_classes": 23,
 		"label_list": {
 			"label_list_fs": [
 				[10, 20, 40],
@@ -133,7 +133,7 @@
 	},
 	"network": {
 		"backbone": "hrnet48",
-		"resume": "/data/checkpoints/cs_backbone_fs.pth",
+		"resume": "/data/checkpoints/bikepath_id_23.pth",
 		"resume_cityscapes": null,
 		"resume_continue": false,
 		"multi_grid": [1, 1, 1],

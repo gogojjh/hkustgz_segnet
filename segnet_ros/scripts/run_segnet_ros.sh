@@ -25,7 +25,7 @@ BATCH_SIZE=20
 BASE_LR=0.003
 
 echo "[single scale] test"
-  python3 -u -m debugpy --listen 5678 --wait-for-client inference.py --configs ${CONFIGS} \
+  python3 -u inference.py --configs ${CONFIGS} \
                         --backbone ${BACKBONE} --model_name ${MODEL_NAME} --checkpoints_name ${CHECKPOINTS_NAME} \
                         --phase test_ros --gpu 0 \
                         --test_dir ${DATA_DIR}/test --log_to_file n \
