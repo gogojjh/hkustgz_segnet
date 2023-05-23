@@ -133,7 +133,7 @@
 	},
 	"network": {
 		"backbone": "hrnet48",
-		"resume": "/data/checkpoints/bikepath_id_23.pth",
+		"resume": "/data/checkpoints/bikepath_id_2.pth",
 		"resume_cityscapes": null,
 		"resume_continue": false,
 		"multi_grid": [1, 1, 1],

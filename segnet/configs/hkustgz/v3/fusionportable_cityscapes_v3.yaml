@@ -1,54 +1,59 @@
 labels = [
     #       name                     id    resultId,  TrainId, category,        color          
-    Label(  'void'            ,       135  , 0,       255,     'void',          (177, 165, 25) ),
+    Label(  'void'            ,       135  , 0,       255,     'void',          (105, 105, 105) ),
 
-    Label(  'drivable road'         , 10 ,   1,        0,       'flat',         (0, 162, 170) ),
+    Label(  'drivable road'         , 10 ,   1,        0,       'flat',         (128, 64, 128) ),
 
-    Label(  'sidewalk' ,              15 ,   23,       22,      'flat',         (162, 248, 63) ),
+    Label(  'sidewalk' ,              15 ,   23,       22,      'flat',         (244, 35, 232) ),
 
-    Label(  'parking'           ,     20,    1,        0,       'flat',         (241, 241, 241) ),
+    Label(  'parking'           ,     20,    1,        0,       'flat',         (128, 64, 128) ),
 
-    Label(  'curb'               ,    25,    20,       19,      'flat',         (147, 109, 6) ),
+    Label(  'curb'               ,    25,    20,       19,      'flat',         (119, 11, 32) ),
 
-    Label(  'bike Path'           ,   30 ,   2,        1,       'flat',          (122, 172, 9) ),
+    Label(  'bike Path'           ,   30 ,   2,        1,       'flat',         (92, 130, 216) ),
 
-    Label(  'road marking'     ,       35 ,  1,        0,       'flat',         (12, 217, 219) ),
+    Label(  'road marking'     ,       35 ,  1,        0,       'flat',         (128, 64, 128) ),
 
-    Label(  'low-speed road'       ,   40 ,  1,        0,       'flat',         (7, 223, 115) ),
+    Label(  'low-speed road'       ,   40 ,  1,        0,       'flat',         (128, 64, 128) ),
 
-    Label(  'lane'             ,       45 ,  1,        0,       'flat',         (161, 161, 149) ),
+    Label(  'lane'             ,       45 ,  1,        0,       'flat',         (128, 64, 128) ),
 
-    Label(  'person'              ,    50    12,        11,      'human',        (231, 130, 130) ),
+    Label(  'person'              ,    50    12,        11,      'human',       (220, 20, 60) ),
 
-    Label(  'rider'           ,        55 ,  13,       12,      'human',        (252, 117, 35) ),
+    Label(  'rider'           ,        55 ,  13,       12,      'human',        (255, 0, 0) ),
 
-    Label(  'car'             ,        60 ,  14,       13,      'vehicle',      (92, 130, 216) ),
+    Label(  'car'             ,        60 ,  14,       13,      'vehicle',      (0, 0, 142) ),
 
-    Label(  'bicycle'             ,     65   19,      18,       'vehicle',      (0, 108, 114) ),
+    Label(  'bicycle'             ,     65   19,      18,       'vehicle',      (147, 109, 6) ),
 
-    Label(  'motorcycle'           ,    70 ,  18,      17,      'vehicle',      (0, 68, 213) ),
+    Label(  'motorcycle'           ,    70 ,  18,      17,      'vehicle',      (0, 0, 230) ),
 
-    Label(  'truck'           ,         75 ,  15,      14,      'vehicle',       (91, 0, 231) ),
+    Label(  'truck'           ,         75 ,  15,      14,      'vehicle',       (0, 0, 70) ),
 
-    Label(  'building'           ,      80 ,  3,       2,      'construction',   (227, 68, 255) ),
+    Label(  'building'           ,      80 ,  3,       2,      'construction',   (70, 70, 70) ),
 
-    Label(  'fence'               ,     85 ,  5,      4,       'construction',   (168, 38, 191) ),
+    Label(  'fence'               ,     85 ,  5,      4,       'construction',   (190, 153, 153) ),
 
-    Label(  'wall'                 ,    90 ,  4,      3,       'construction',   (106, 0, 124) ),
+    Label(  'wall'                 ,    90 ,  4,      3,       'construction',   (102, 102, 156) ),
 
-    Label(  'vegetation'            ,   95 ,  9,       8,      'nature',         (255, 215, 73) ),
+    Label(  'vegetation'            ,   95 ,  9,       8,      'nature',         (107, 142, 35) ),
 
-    Label(  'terrain'        ,          100,  10,      9,       'nature',         (209, 183, 91) ),
+    Label(  'terrain'        ,          100,  10,      9,       'nature',         (152, 251, 152) ),
 
-    Label(  'river'         ,           105,  21,      20,      'nature',         (244, 255, 152 ),
+    Label(  'river'         ,           105,  21,      20,      'nature',         (244, 255, 152) ),
 
-    Label(  'pole'           ,          110,  6,      5,       'object',         (138, 164, 165) ),
+    Label(  'pole'           ,          110,  6,      5,       'object',         (153, 153, 153) ),
 
-    Label(  'traffic sign'          ,   115,   8,     7,       'object',         (175, 0, 106) ),
+    Label(  'traffic sign'          ,   115,   8,     7,       'object',         (220, 220, 0) ),
 
-    Label(  'traffic light'         ,   120,   7,     6,       'object',         ( 228, 0, 140) ),
+    Label(  'traffic light'         ,   120,   7,     6,       'object',         (250, 170, 30) ),
 
     Label(  'road block'            ,   125,   22,      21,      'object',        (234, 178, 200) ),
 
-    Label(  'sky'                ,      130,   11,      10,       'sky',          (255, 172, 172) )
+    Label(  'sky'                ,      130,   11,      10,       'sky',          (70, 130, 180) )
+
+    Label(  'bus'                ,      -1,    16,      15,       'vehicle',       (0, 60, 100) ),
+
+    Label(  'train'             ,       -1,    17,      16,       'vehicle',       (0, 80, 100) )
+
 ]
