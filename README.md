@@ -95,17 +95,19 @@ CHECKPOINTS_NAME="hr_w48_attn_uncer_proto_hkustgz_max_performance.pth"
 
 ### Config for ROS
 
-In [hkustgz_cityscapes.json](segnet/configs/hkustgz/hkustgz_cityscapes.json):
-
-Or
-
 In [hkustgz_ros.json](segnet/configs/hkustgz/hkustgz_ros.json):
 
 ```
+# change number of classes according to corresponding yaml/json file
+"data": {
+		"num_classes": 23
+		}
+
 # change model path
 "network": {
 		"resume": "/data/checkpoints/hr_w48_attn_uncer_proto_hkustgz_max_performance.pth",
-	},
+	}
+
 # change ros topics
 "ros": {
 		"use_ros": true,
@@ -114,6 +116,7 @@ In [hkustgz_ros.json](segnet/configs/hkustgz/hkustgz_ros.json):
 		"uncer_image_topic": "/uncertainty_image",
 		"msg_type": "sensor_msgs/CompressedImage"
 	}
+
 # save result path
 "test": {
 		"out_dir": "/data/hkustgz_result",
@@ -122,6 +125,8 @@ In [hkustgz_ros.json](segnet/configs/hkustgz/hkustgz_ros.json):
 ```
 
 ## Config Versions
+### Current Config
+version_3([fusionportable_cityscapes_v3.json](segnet/configs/hkustgz/v3/fusionportable_cityscapes_v3.json)/[fusionportable_cityscapes_v3.yaml](segnet/configs/hkustgz/v3/fusionportable_cityscapes_v3.yaml))
 
 ### version_1([semantic_fusionportable_v1.json](segnet/configs/hkustgz/v1/semantic_fusionportable_v1.json)/[semantic_fusionportable_v1.yaml](segnet/configs/hkustgz/v1/semantic_fusionportable_v1.yaml))
 

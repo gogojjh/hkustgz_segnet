@@ -244,7 +244,7 @@
 	},
 	"network": {
 		"backbone": "hrnet48",
-		"resume": "/Spy/dataset/cobra_results/cobra_seg_results/checkpoints/hkustgz/bikepath_id_23.pth",
+		"resume": "/Spy/dataset/cobra_results/cobra_seg_results/checkpoints/hkustgz/bikepath_id_2.pth",
 		"resume_cityscapes": null,
 		"resume_continue": false,
 		"multi_grid": [
@@ -369,10 +369,10 @@
 	},
 	"ros": {
 		"use_ros": true,
-		"image_topic": "/stereo/frame_left/image_raw/compressed",
+		"image_topic": "/r3live/rectified_img/compressed",
+		"msg_type": "sensor_msgs/CompressedImage",
 		"sem_image_topic": "/stereo/frame_left/semantic_image",
 		"sem_rgb_image_topic": "/stereo/frame_left/semantic_rgb_image",
-		"uncer_image_topic": "/stereo/frame_left/semantic_uct_image",
-		"msg_type": "sensor_msgs/CompressedImage"
+		"uncer_image_topic": "/stereo/frame_left/semantic_uct_image"
 	}
 }

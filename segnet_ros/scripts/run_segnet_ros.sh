@@ -10,14 +10,15 @@ SINGLE_SCALE="ss"
 DATA_DIR="${DATA_ROOT}/HKUSTGZ"
 BACKBONE="hrnet48"
 
-CONFIGS="${PATH_SEGNET}/configs/hkustgz/hkustgz_ros.json"
-CONFIGS_TEST="${PATH_SEGNET}/configs/hkustgz/hkustgz_ros.json"
+# TODO by users
+CONFIGS="${PATH_SEGNET}/configs/hkust/hkust_ros.json"
+CONFIGS_TEST="${PATH_SEGNET}/configs/hkust/hkust_ros.json"
 
 MODEL_NAME="hr_w48_attn_uncer_proto"
 LOSS_TYPE="pixel_uncer_prototype_ce_loss"
 CHECKPOINTS_ROOT="${DATA_ROOT}/checkpoints/hkustgz"
 CHECKPOINTS_NAME="cs_fs.pth"
-LOG_FILE="${SCRATCH_ROOT}/logs/hkustgz/${CHECKPOINTS_NAME}.log"
+LOG_FILE="${SCRATCH_ROOT}/logs/hkust/${CHECKPOINTS_NAME}.log"
 echo "Logging to $LOG_FILE"
 mkdir -p `dirname $LOG_FILE`
 
